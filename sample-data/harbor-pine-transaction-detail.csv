@@ -1,0 +1,530 @@
+Harbor & Pine Design Co.
+Transaction Detail by Account
+"January - June, 2026"
+
+,Date,Transaction Type,Num,Name,Customer,Memo/Description,Split,Amount,Balance
+Checking
+,01/01/2026,Check,1040,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,-3200.00
+,01/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,-3329.99
+,01/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-11955.10,-15285.09
+,01/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10035.94,-5249.15
+,01/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3772.67,-1476.48
+,01/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5295.45,3818.97
+,01/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2721.94,6540.91
+,01/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,8940.91
+,02/01/2026,Check,1041,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,5740.91
+,02/07/2026,Expense,,,,POS DEBIT 4471 SQ *MAKERS,Uncategorized Expense,-212.00,5528.91
+,02/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,5398.92
+,02/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-11967.43,-6568.51
+,02/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),9944.19,3375.68
+,02/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4033.79,7409.47
+,02/19/2026,Expense,,Venmo,,Venmo payment,Uncategorized Expense,-350.00,7059.47
+,02/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5390.71,12450.18
+,02/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3205.23,15655.41
+,02/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,18055.41
+,03/01/2026,Check,1042,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,14855.41
+,03/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,14725.42
+,03/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12235.85,2489.57
+,03/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10996.33,13485.90
+,03/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3867.11,17353.01
+,03/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),6337.47,23690.48
+,03/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2840.46,26530.94
+,03/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,28930.94
+,03/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),7153.41,36084.35
+,03/27/2026,Deposit,,,,Mobile deposit,Uncategorized Income,1850.00,37934.35
+,03/30/2026,Transfer,,,,Transfer to savings,Bank Fees,-2500.00,35434.35
+,04/01/2026,Check,1043,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,32234.35
+,04/02/2026,Expense,,,,ACH DEBIT WEB PMT 88213,Uncategorized Expense,-1200.00,31034.35
+,04/02/2026,Expense,,Brightline Properties,,ONLINE PMT BRIGHTLINE PROP,Rent & Lease,-3200.00,27834.35
+,04/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,27704.36
+,04/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12206.95,15497.41
+,04/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11043.27,26540.68
+,04/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4169.13,30709.81
+,04/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5430.21,36140.02
+,04/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2756.28,38896.30
+,04/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,41296.30
+,04/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),8651.58,49947.88
+,04/24/2026,Expense,,Costco,,COSTCO WHSE #0412,Uncategorized Expense,-318.27,49629.61
+,05/01/2026,Check,1044,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,46429.61
+,05/06/2026,Sales Receipt,1009,Walk-in client,,Logo consult,Advertising & Marketing,450.00,46879.61
+,05/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,46749.62
+,05/13/2026,Expense,,Uber,,UBER *TRIP,Uncategorized Expense,-64.18,46685.44
+,05/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12250.57,34434.87
+,05/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10022.98,44457.85
+,05/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4120.28,48578.13
+,05/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5724.87,54303.00
+,05/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3294.65,57597.65
+,05/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,59997.65
+,05/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),8298.79,68296.44
+,05/29/2026,Deposit,,Stripe,,STRIPE TRANSFER,Uncategorized Income,642.30,68938.74
+,06/01/2026,Check,1045,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,65738.74
+,06/11/2026,Check,1046,R. Patel,,Check - no memo,Ask My Accountant,-750.00,64988.74
+,06/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,64858.75
+,06/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12157.13,52701.62
+,06/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10774.92,63476.54
+,06/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3917.55,67394.09
+,06/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5568.24,72962.33
+,06/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3024.76,75987.09
+,06/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,78387.09
+,06/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),8508.63,86895.72
+Total for Checking,,,,,,,,"$86,895.72",
+Accounts Receivable (A/R)
+,01/03/2026,Invoice,2101,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jan services,Design Services Income,10035.94,10035.94
+,01/04/2026,Invoice,2102,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jan services,Design Services Income,3772.67,13808.61
+,01/05/2026,Invoice,2103,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Jan services,Design Services Income,5295.45,19104.06
+,01/06/2026,Invoice,2104,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Jan services,Design Services Income,2721.94,21826.00
+,01/07/2026,Invoice,2105,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Jan services,Design Services Income,2400.00,24226.00
+,01/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-10035.94,14190.06
+,01/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-3772.67,10417.39
+,01/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Checking,-5295.45,5121.94
+,01/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-2721.94,2400.00
+,01/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,-0.00
+,02/03/2026,Invoice,2106,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Feb services,Design Services Income,9944.19,9944.19
+,02/04/2026,Invoice,2107,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Feb services,Design Services Income,4033.79,13977.98
+,02/05/2026,Invoice,2108,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Feb services,Design Services Income,5390.71,19368.69
+,02/06/2026,Invoice,2109,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Feb services,Design Services Income,3205.23,22573.92
+,02/07/2026,Invoice,2110,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Feb services,Design Services Income,2400.00,24973.92
+,02/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-9944.19,15029.73
+,02/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-4033.79,10995.94
+,02/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Checking,-5390.71,5605.23
+,02/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-3205.23,2400.00
+,02/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,-0.00
+,03/03/2026,Invoice,2111,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Mar services,Design Services Income,10996.33,10996.33
+,03/04/2026,Invoice,2112,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Mar services,Design Services Income,3867.11,14863.44
+,03/05/2026,Invoice,2113,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Mar services,Design Services Income,6337.47,21200.91
+,03/06/2026,Invoice,2114,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Mar services,Design Services Income,2840.46,24041.37
+,03/07/2026,Invoice,2115,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Mar services,Design Services Income,2400.00,26441.37
+,03/08/2026,Invoice,2116,Harborview Hotel,Harborview Hotel:Signage,Signage - Mar services,Design Services Income,7153.41,33594.78
+,03/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-10996.33,22598.45
+,03/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-3867.11,18731.34
+,03/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Checking,-6337.47,12393.87
+,03/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-2840.46,9553.41
+,03/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,7153.41
+,03/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Checking,-7153.41,-0.00
+,04/03/2026,Invoice,2117,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Apr services,Design Services Income,11043.27,11043.27
+,04/04/2026,Invoice,2118,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Apr services,Design Services Income,4169.13,15212.40
+,04/05/2026,Invoice,2119,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Apr services,Design Services Income,5430.21,20642.61
+,04/06/2026,Invoice,2120,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Apr services,Design Services Income,2756.28,23398.89
+,04/07/2026,Invoice,2121,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Apr services,Design Services Income,2400.00,25798.89
+,04/08/2026,Invoice,2122,Harborview Hotel,Harborview Hotel:Signage,Signage - Apr services,Design Services Income,8651.58,34450.47
+,04/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-11043.27,23407.20
+,04/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-4169.13,19238.07
+,04/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Checking,-5430.21,13807.86
+,04/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-2756.28,11051.58
+,04/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,8651.58
+,04/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Checking,-8651.58,-0.00
+,05/03/2026,Invoice,2123,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - May services,Design Services Income,10022.98,10022.98
+,05/04/2026,Invoice,2124,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - May services,Design Services Income,4120.28,14143.26
+,05/05/2026,Invoice,2125,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - May services,Design Services Income,5724.87,19868.13
+,05/06/2026,Invoice,2126,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - May services,Design Services Income,3294.65,23162.78
+,05/07/2026,Invoice,2127,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - May services,Design Services Income,2400.00,25562.78
+,05/08/2026,Invoice,2128,Harborview Hotel,Harborview Hotel:Signage,Signage - May services,Design Services Income,8298.79,33861.57
+,05/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-10022.98,23838.59
+,05/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-4120.28,19718.31
+,05/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Checking,-5724.87,13993.44
+,05/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-3294.65,10698.79
+,05/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,8298.79
+,05/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Checking,-8298.79,-0.00
+,06/03/2026,Invoice,2129,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jun services,Design Services Income,10774.92,10774.92
+,06/04/2026,Invoice,2130,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jun services,Design Services Income,3917.55,14692.47
+,06/05/2026,Invoice,2131,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Jun services,Design Services Income,5568.24,20260.71
+,06/06/2026,Invoice,2132,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Jun services,Design Services Income,3024.76,23285.47
+,06/07/2026,Invoice,2133,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Jun services,Design Services Income,2400.00,25685.47
+,06/08/2026,Invoice,2134,Harborview Hotel,Harborview Hotel:Signage,Signage - Jun services,Design Services Income,8508.63,34194.10
+,06/18/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-10774.92,23419.18
+,06/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-3917.55,19501.63
+,06/20/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Checking,-5568.24,13933.39
+,06/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-3024.76,10908.63
+,06/22/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,8508.63
+,06/23/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Checking,-8508.63,-0.00
+Total for Accounts Receivable (A/R),,,,,,,,"$-0.00",
+Chase Ink Card (4417)
+,01/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,79.99,79.99
+,01/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,99.99
+,01/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,114.98
+,01/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,158.73
+,01/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,174.72
+,01/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,240.72
+,01/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,312.72
+,01/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,332.71
+,01/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,116.57,449.28
+,01/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,479.77
+,01/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,515.77
+,01/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,605.77
+,01/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,635.76
+,01/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,655.76
+,01/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,95.54,751.30
+,01/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,763.29
+,01/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,775.29
+,01/22/2026,Expense,,Amazon,,AMZN Mktp US*2K41,Uncategorized Expense,86.44,861.73
+,02/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,79.99,941.72
+,02/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,961.72
+,02/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,976.71
+,02/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,1020.46
+,02/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,1036.45
+,02/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,1102.45
+,02/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,1174.45
+,02/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,1194.44
+,02/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,83.08,1277.52
+,02/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,1308.01
+,02/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,1344.01
+,02/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,1434.01
+,02/14/2026,Expense,,Staples,,Printer toner,Design Services Income,94.12,1528.13
+,02/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,1558.12
+,02/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,1578.12
+,02/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,124.03,1702.15
+,02/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,1714.14
+,02/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,1726.14
+,02/26/2026,Expense,,Squarespace,,Squarespace Business annual plan,Software & Subscriptions,276.00,2002.14
+,03/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,79.99,2082.13
+,03/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,2102.13
+,03/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,2117.12
+,03/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,2160.87
+,03/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,2176.86
+,03/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,2242.86
+,03/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,2314.86
+,03/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,2334.85
+,03/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,84.96,2419.81
+,03/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,2450.30
+,03/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,2486.30
+,03/11/2026,Expense,,Amazon,,AMZN Mktp US*7Q02,Uncategorized Expense,143.90,2630.20
+,03/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,2720.20
+,03/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,2750.19
+,03/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,2770.19
+,03/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,57.98,2828.17
+,03/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,2840.16
+,03/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,2852.16
+,04/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,2942.15
+,04/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,2962.15
+,04/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,2977.14
+,04/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,3020.89
+,04/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,3036.88
+,04/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,3102.88
+,04/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,3174.88
+,04/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,3194.87
+,04/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,119.41,3314.28
+,04/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,3344.77
+,04/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,3380.77
+,04/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,3470.77
+,04/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,3500.76
+,04/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,3520.76
+,04/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,102.46,3623.22
+,04/20/2026,Expense,,The Home Depot,,Shelving,Meals,227.40,3850.62
+,04/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,3862.61
+,04/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,3874.61
+,05/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,3964.60
+,05/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,3984.60
+,05/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,3999.59
+,05/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,4043.34
+,05/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,4059.33
+,05/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,4125.33
+,05/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,4197.33
+,05/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,4217.32
+,05/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,101.93,4319.25
+,05/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,4349.74
+,05/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,4385.74
+,05/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,4475.74
+,05/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,4505.73
+,05/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,4525.73
+,05/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,152.33,4678.06
+,05/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,4690.05
+,05/21/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,88.50,4778.55
+,05/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,4790.55
+,05/22/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,88.50,4879.05
+,06/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,4969.04
+,06/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,4989.04
+,06/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,5004.03
+,06/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,5047.78
+,06/05/2026,Expense,,Best Buy,,BESTBUY 00012,Uncategorized Expense,1499.99,6547.77
+,06/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,6563.76
+,06/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,6629.76
+,06/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,6701.76
+,06/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,6721.75
+,06/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,113.44,6835.19
+,06/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,6865.68
+,06/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,6901.68
+,06/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,6991.68
+,06/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,7021.67
+,06/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,7041.67
+,06/18/2026,Expense,,,,Card purchase,Office Supplies,58.20,7099.87
+,06/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,89.44,7189.31
+,06/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,7201.30
+,06/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,7213.30
+Total for Chase Ink Card (4417),,,,,,,,"$7,213.30",
+Accounts Payable (A/P)
+,01/10/2026,Bill,B-10,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2997.09,2997.09
+,01/11/2026,Bill,B-11,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,776.84,3773.93
+,01/12/2026,Bill,B-12,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2295.44,6069.37
+,01/13/2026,Bill,B-13,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2212.55,8281.92
+,01/14/2026,Bill,B-14,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,319.40,8601.32
+,02/10/2026,Bill,B-20,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2862.23,11463.55
+,02/11/2026,Bill,B-21,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,729.82,12193.37
+,02/12/2026,Bill,B-22,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2622.55,14815.92
+,02/13/2026,Bill,B-23,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2997.25,17813.17
+,02/14/2026,Bill,B-24,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,282.34,18095.51
+,03/10/2026,Bill,B-30,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2786.42,20881.93
+,03/11/2026,Bill,B-31,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,722.92,21604.85
+,03/12/2026,Bill,B-32,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,3084.26,24689.11
+,03/12/2026,Bill,B-31,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,722.92,25412.03
+,03/13/2026,Bill,B-33,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2721.09,28133.12
+,03/14/2026,Bill,B-34,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,288.38,28421.50
+,03/15/2026,Bill,B-35,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4263.60,32685.10
+,04/10/2026,Bill,B-40,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2732.66,35417.76
+,04/11/2026,Bill,B-41,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,740.53,36158.29
+,04/12/2026,Bill,B-42,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2842.14,39000.43
+,04/13/2026,Bill,B-43,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2188.30,41188.73
+,04/14/2026,Bill,B-44,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,311.78,41500.51
+,04/15/2026,Bill,B-45,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,5379.56,46880.07
+,05/10/2026,Bill,B-50,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3171.31,50051.38
+,05/11/2026,Bill,B-51,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,851.96,50903.34
+,05/12/2026,Bill,B-52,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2337.47,53240.81
+,05/13/2026,Bill,B-53,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2541.33,55782.14
+,05/14/2026,Bill,B-54,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,245.97,56028.11
+,05/15/2026,Bill,B-55,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4988.62,61016.73
+,06/10/2026,Bill,B-60,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3040.80,64057.53
+,06/11/2026,Bill,B-61,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,715.36,64772.89
+,06/12/2026,Bill,B-62,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2572.17,67345.06
+,06/13/2026,Bill,B-63,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2944.30,70289.36
+,06/14/2026,Bill,B-64,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,323.78,70613.14
+,06/15/2026,Bill,B-65,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4494.30,75107.44
+Total for Accounts Payable (A/P),,,,,,,,"$75,107.44",
+Design Services Income
+,01/03/2026,Invoice,2101,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jan services,Accounts Receivable (A/R),10035.94,10035.94
+,01/04/2026,Invoice,2102,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jan services,Accounts Receivable (A/R),3772.67,13808.61
+,01/05/2026,Invoice,2103,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Jan services,Accounts Receivable (A/R),5295.45,19104.06
+,01/06/2026,Invoice,2104,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Jan services,Accounts Receivable (A/R),2721.94,21826.00
+,01/07/2026,Invoice,2105,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Jan services,Accounts Receivable (A/R),2400.00,24226.00
+,02/03/2026,Invoice,2106,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Feb services,Accounts Receivable (A/R),9944.19,34170.19
+,02/04/2026,Invoice,2107,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Feb services,Accounts Receivable (A/R),4033.79,38203.98
+,02/05/2026,Invoice,2108,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Feb services,Accounts Receivable (A/R),5390.71,43594.69
+,02/06/2026,Invoice,2109,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Feb services,Accounts Receivable (A/R),3205.23,46799.92
+,02/07/2026,Invoice,2110,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Feb services,Accounts Receivable (A/R),2400.00,49199.92
+,02/14/2026,Expense,,Staples,,Printer toner,Chase Ink Card (4417),94.12,49294.04
+,03/03/2026,Invoice,2111,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Mar services,Accounts Receivable (A/R),10996.33,60290.37
+,03/04/2026,Invoice,2112,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Mar services,Accounts Receivable (A/R),3867.11,64157.48
+,03/05/2026,Invoice,2113,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Mar services,Accounts Receivable (A/R),6337.47,70494.95
+,03/06/2026,Invoice,2114,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Mar services,Accounts Receivable (A/R),2840.46,73335.41
+,03/07/2026,Invoice,2115,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Mar services,Accounts Receivable (A/R),2400.00,75735.41
+,03/08/2026,Invoice,2116,Harborview Hotel,Harborview Hotel:Signage,Signage - Mar services,Accounts Receivable (A/R),7153.41,82888.82
+,04/03/2026,Invoice,2117,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Apr services,Accounts Receivable (A/R),11043.27,93932.09
+,04/04/2026,Invoice,2118,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Apr services,Accounts Receivable (A/R),4169.13,98101.22
+,04/05/2026,Invoice,2119,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Apr services,Accounts Receivable (A/R),5430.21,103531.43
+,04/06/2026,Invoice,2120,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Apr services,Accounts Receivable (A/R),2756.28,106287.71
+,04/07/2026,Invoice,2121,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Apr services,Accounts Receivable (A/R),2400.00,108687.71
+,04/08/2026,Invoice,2122,Harborview Hotel,Harborview Hotel:Signage,Signage - Apr services,Accounts Receivable (A/R),8651.58,117339.29
+,05/03/2026,Invoice,2123,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - May services,Accounts Receivable (A/R),10022.98,127362.27
+,05/04/2026,Invoice,2124,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - May services,Accounts Receivable (A/R),4120.28,131482.55
+,05/05/2026,Invoice,2125,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - May services,Accounts Receivable (A/R),5724.87,137207.42
+,05/06/2026,Invoice,2126,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - May services,Accounts Receivable (A/R),3294.65,140502.07
+,05/07/2026,Invoice,2127,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - May services,Accounts Receivable (A/R),2400.00,142902.07
+,05/08/2026,Invoice,2128,Harborview Hotel,Harborview Hotel:Signage,Signage - May services,Accounts Receivable (A/R),8298.79,151200.86
+,06/03/2026,Invoice,2129,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jun services,Accounts Receivable (A/R),10774.92,161975.78
+,06/04/2026,Invoice,2130,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jun services,Accounts Receivable (A/R),3917.55,165893.33
+,06/05/2026,Invoice,2131,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Jun services,Accounts Receivable (A/R),5568.24,171461.57
+,06/06/2026,Invoice,2132,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Jun services,Accounts Receivable (A/R),3024.76,174486.33
+,06/07/2026,Invoice,2133,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Jun services,Accounts Receivable (A/R),2400.00,176886.33
+,06/08/2026,Invoice,2134,Harborview Hotel,Harborview Hotel:Signage,Signage - Jun services,Accounts Receivable (A/R),8508.63,185394.96
+Total for Design Services Income,,,,,,,,"$185,394.96",
+Uncategorized Income
+,03/27/2026,Deposit,,,,Mobile deposit,Checking,1850.00,1850.00
+,05/29/2026,Deposit,,Stripe,,STRIPE TRANSFER,Checking,642.30,2492.30
+Total for Uncategorized Income,,,,,,,,"$2,492.30",
+Advertising & Marketing
+,05/06/2026,Sales Receipt,1009,Walk-in client,,Logo consult,Checking,450.00,450.00
+Total for Advertising & Marketing,,,,,,,,"$450.00",
+Ask My Accountant
+,06/11/2026,Check,1046,R. Patel,,Check - no memo,Checking,750.00,750.00
+Total for Ask My Accountant,,,,,,,,"$750.00",
+Bank Fees
+,03/30/2026,Transfer,,,,Transfer to savings,Checking,2500.00,2500.00
+Total for Bank Fees,,,,,,,,"$2,500.00",
+Job Materials & Printing
+,01/11/2026,Bill,B-11,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),776.84,776.84
+,01/13/2026,Bill,B-13,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2212.55,2989.39
+,02/11/2026,Bill,B-21,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),729.82,3719.21
+,02/13/2026,Bill,B-23,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2997.25,6716.46
+,03/11/2026,Bill,B-31,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),722.92,7439.38
+,03/12/2026,Bill,B-31,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),722.92,8162.30
+,03/13/2026,Bill,B-33,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2721.09,10883.39
+,03/15/2026,Bill,B-35,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Accounts Payable (A/P),4263.60,15146.99
+,04/11/2026,Bill,B-41,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),740.53,15887.52
+,04/13/2026,Bill,B-43,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2188.30,18075.82
+,04/15/2026,Bill,B-45,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Accounts Payable (A/P),5379.56,23455.38
+,05/11/2026,Bill,B-51,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),851.96,24307.34
+,05/13/2026,Bill,B-53,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2541.33,26848.67
+,05/15/2026,Bill,B-55,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Accounts Payable (A/P),4988.62,31837.29
+,06/11/2026,Bill,B-61,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),715.36,32552.65
+,06/13/2026,Bill,B-63,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2944.30,35496.95
+,06/15/2026,Bill,B-65,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Accounts Payable (A/P),4494.30,39991.25
+Total for Job Materials & Printing,,,,,,,,"$39,991.25",
+Meals
+,01/09/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),116.57,116.57
+,02/09/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),83.08,199.65
+,03/09/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),84.96,284.61
+,04/09/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),119.41,404.02
+,04/20/2026,Expense,,The Home Depot,,Shelving,Chase Ink Card (4417),227.40,631.42
+,05/09/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),101.93,733.35
+,05/21/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),88.50,821.85
+,05/22/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),88.50,910.35
+,06/09/2026,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),113.44,1023.79
+Total for Meals,,,,,,,,"$1,023.79",
+Office Supplies
+,01/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),95.54,95.54
+,02/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),124.03,219.57
+,03/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),57.98,277.55
+,04/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),102.46,380.01
+,05/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),152.33,532.34
+,06/18/2026,Expense,,,,Card purchase,Chase Ink Card (4417),58.20,590.54
+,06/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),89.44,679.98
+Total for Office Supplies,,,,,,,,"$679.98",
+Payroll Expenses:Wages
+,01/15/2026,Expense,,Gusto,,Payroll,Checking,11955.10,11955.10
+,02/15/2026,Expense,,Gusto,,Payroll,Checking,11967.43,23922.53
+,03/15/2026,Expense,,Gusto,,Payroll,Checking,12235.85,36158.38
+,04/15/2026,Expense,,Gusto,,Payroll,Checking,12206.95,48365.33
+,05/15/2026,Expense,,Gusto,,Payroll,Checking,12250.57,60615.90
+,06/15/2026,Expense,,Gusto,,Payroll,Checking,12157.13,72773.03
+Total for Payroll Expenses:Wages,,,,,,,,"$72,773.03",
+Rent & Lease
+,01/01/2026,Check,1040,Brightline Properties,,Studio rent,Checking,3200.00,3200.00
+,02/01/2026,Check,1041,Brightline Properties,,Studio rent,Checking,3200.00,6400.00
+,03/01/2026,Check,1042,Brightline Properties,,Studio rent,Checking,3200.00,9600.00
+,04/01/2026,Check,1043,Brightline Properties,,Studio rent,Checking,3200.00,12800.00
+,04/02/2026,Expense,,Brightline Properties,,ONLINE PMT BRIGHTLINE PROP,Checking,3200.00,16000.00
+,05/01/2026,Check,1044,Brightline Properties,,Studio rent,Checking,3200.00,19200.00
+,06/01/2026,Check,1045,Brightline Properties,,Studio rent,Checking,3200.00,22400.00
+Total for Rent & Lease,,,,,,,,"$22,400.00",
+Software & Subscriptions
+,01/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),79.99,79.99
+,01/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,99.99
+,01/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,114.98
+,01/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,158.73
+,01/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Chase Ink Card (4417),15.99,174.72
+,01/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Chase Ink Card (4417),66.00,240.72
+,01/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Chase Ink Card (4417),72.00,312.72
+,01/08/2026,Expense,,Dropbox,,Dropbox subscription,Chase Ink Card (4417),19.99,332.71
+,01/10/2026,Expense,,Asana,,Asana subscription,Chase Ink Card (4417),30.49,363.20
+,01/11/2026,Expense,,Monday.com,,Monday.com subscription,Chase Ink Card (4417),36.00,399.20
+,01/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Chase Ink Card (4417),90.00,489.20
+,01/16/2026,Expense,,Zapier,,Zapier subscription,Chase Ink Card (4417),29.99,519.19
+,01/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,539.19
+,01/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,551.18
+,01/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,563.18
+,02/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),79.99,643.17
+,02/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,663.17
+,02/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,678.16
+,02/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,721.91
+,02/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Chase Ink Card (4417),15.99,737.90
+,02/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Chase Ink Card (4417),66.00,803.90
+,02/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Chase Ink Card (4417),72.00,875.90
+,02/08/2026,Expense,,Dropbox,,Dropbox subscription,Chase Ink Card (4417),19.99,895.89
+,02/10/2026,Expense,,Asana,,Asana subscription,Chase Ink Card (4417),30.49,926.38
+,02/11/2026,Expense,,Monday.com,,Monday.com subscription,Chase Ink Card (4417),36.00,962.38
+,02/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Chase Ink Card (4417),90.00,1052.38
+,02/16/2026,Expense,,Zapier,,Zapier subscription,Chase Ink Card (4417),29.99,1082.37
+,02/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,1102.37
+,02/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,1114.36
+,02/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,1126.36
+,02/26/2026,Expense,,Squarespace,,Squarespace Business annual plan,Chase Ink Card (4417),276.00,1402.36
+,03/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),79.99,1482.35
+,03/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,1502.35
+,03/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,1517.34
+,03/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,1561.09
+,03/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Chase Ink Card (4417),15.99,1577.08
+,03/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Chase Ink Card (4417),66.00,1643.08
+,03/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Chase Ink Card (4417),72.00,1715.08
+,03/08/2026,Expense,,Dropbox,,Dropbox subscription,Chase Ink Card (4417),19.99,1735.07
+,03/10/2026,Expense,,Asana,,Asana subscription,Chase Ink Card (4417),30.49,1765.56
+,03/11/2026,Expense,,Monday.com,,Monday.com subscription,Chase Ink Card (4417),36.00,1801.56
+,03/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Chase Ink Card (4417),90.00,1891.56
+,03/16/2026,Expense,,Zapier,,Zapier subscription,Chase Ink Card (4417),29.99,1921.55
+,03/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,1941.55
+,03/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,1953.54
+,03/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,1965.54
+,04/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),89.99,2055.53
+,04/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,2075.53
+,04/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,2090.52
+,04/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,2134.27
+,04/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Chase Ink Card (4417),15.99,2150.26
+,04/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Chase Ink Card (4417),66.00,2216.26
+,04/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Chase Ink Card (4417),72.00,2288.26
+,04/08/2026,Expense,,Dropbox,,Dropbox subscription,Chase Ink Card (4417),19.99,2308.25
+,04/10/2026,Expense,,Asana,,Asana subscription,Chase Ink Card (4417),30.49,2338.74
+,04/11/2026,Expense,,Monday.com,,Monday.com subscription,Chase Ink Card (4417),36.00,2374.74
+,04/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Chase Ink Card (4417),90.00,2464.74
+,04/16/2026,Expense,,Zapier,,Zapier subscription,Chase Ink Card (4417),29.99,2494.73
+,04/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,2514.73
+,04/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,2526.72
+,04/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,2538.72
+,05/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),89.99,2628.71
+,05/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,2648.71
+,05/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,2663.70
+,05/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,2707.45
+,05/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Chase Ink Card (4417),15.99,2723.44
+,05/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Chase Ink Card (4417),66.00,2789.44
+,05/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Chase Ink Card (4417),72.00,2861.44
+,05/08/2026,Expense,,Dropbox,,Dropbox subscription,Chase Ink Card (4417),19.99,2881.43
+,05/10/2026,Expense,,Asana,,Asana subscription,Chase Ink Card (4417),30.49,2911.92
+,05/11/2026,Expense,,Monday.com,,Monday.com subscription,Chase Ink Card (4417),36.00,2947.92
+,05/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Chase Ink Card (4417),90.00,3037.92
+,05/16/2026,Expense,,Zapier,,Zapier subscription,Chase Ink Card (4417),29.99,3067.91
+,05/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,3087.91
+,05/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,3099.90
+,05/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,3111.90
+,06/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),89.99,3201.89
+,06/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,3221.89
+,06/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,3236.88
+,06/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,3280.63
+,06/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Chase Ink Card (4417),15.99,3296.62
+,06/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Chase Ink Card (4417),66.00,3362.62
+,06/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Chase Ink Card (4417),72.00,3434.62
+,06/08/2026,Expense,,Dropbox,,Dropbox subscription,Chase Ink Card (4417),19.99,3454.61
+,06/10/2026,Expense,,Asana,,Asana subscription,Chase Ink Card (4417),30.49,3485.10
+,06/11/2026,Expense,,Monday.com,,Monday.com subscription,Chase Ink Card (4417),36.00,3521.10
+,06/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Chase Ink Card (4417),90.00,3611.10
+,06/16/2026,Expense,,Zapier,,Zapier subscription,Chase Ink Card (4417),29.99,3641.09
+,06/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,3661.09
+,06/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,3673.08
+,06/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,3685.08
+Total for Software & Subscriptions,,,,,,,,"$3,685.08",
+Subcontractors
+,01/10/2026,Bill,B-10,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Accounts Payable (A/P),2997.09,2997.09
+,01/12/2026,Bill,B-12,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Accounts Payable (A/P),2295.44,5292.53
+,01/14/2026,Bill,B-14,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Accounts Payable (A/P),319.40,5611.93
+,02/10/2026,Bill,B-20,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Accounts Payable (A/P),2862.23,8474.16
+,02/12/2026,Bill,B-22,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Accounts Payable (A/P),2622.55,11096.71
+,02/14/2026,Bill,B-24,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Accounts Payable (A/P),282.34,11379.05
+,03/10/2026,Bill,B-30,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Accounts Payable (A/P),2786.42,14165.47
+,03/12/2026,Bill,B-32,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Accounts Payable (A/P),3084.26,17249.73
+,03/14/2026,Bill,B-34,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Accounts Payable (A/P),288.38,17538.11
+,04/10/2026,Bill,B-40,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Accounts Payable (A/P),2732.66,20270.77
+,04/12/2026,Bill,B-42,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Accounts Payable (A/P),2842.14,23112.91
+,04/14/2026,Bill,B-44,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Accounts Payable (A/P),311.78,23424.69
+,05/10/2026,Bill,B-50,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Accounts Payable (A/P),3171.31,26596.00
+,05/12/2026,Bill,B-52,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Accounts Payable (A/P),2337.47,28933.47
+,05/14/2026,Bill,B-54,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Accounts Payable (A/P),245.97,29179.44
+,06/10/2026,Bill,B-60,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Accounts Payable (A/P),3040.80,32220.24
+,06/12/2026,Bill,B-62,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Accounts Payable (A/P),2572.17,34792.41
+,06/14/2026,Bill,B-64,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Accounts Payable (A/P),323.78,35116.19
+Total for Subcontractors,,,,,,,,"$35,116.19",
+Uncategorized Expense
+,01/22/2026,Expense,,Amazon,,AMZN Mktp US*2K41,Chase Ink Card (4417),86.44,86.44
+,02/07/2026,Expense,,,,POS DEBIT 4471 SQ *MAKERS,Checking,212.00,298.44
+,02/19/2026,Expense,,Venmo,,Venmo payment,Checking,350.00,648.44
+,03/11/2026,Expense,,Amazon,,AMZN Mktp US*7Q02,Chase Ink Card (4417),143.90,792.34
+,04/02/2026,Expense,,,,ACH DEBIT WEB PMT 88213,Checking,1200.00,1992.34
+,04/24/2026,Expense,,Costco,,COSTCO WHSE #0412,Checking,318.27,2310.61
+,05/13/2026,Expense,,Uber,,UBER *TRIP,Checking,64.18,2374.79
+,06/05/2026,Expense,,Best Buy,,BESTBUY 00012,Chase Ink Card (4417),1499.99,3874.78
+Total for Uncategorized Expense,,,,,,,,"$3,874.78",
+Utilities
+,01/12/2026,Expense,,Comcast Business,,Internet,Checking,129.99,129.99
+,02/12/2026,Expense,,Comcast Business,,Internet,Checking,129.99,259.98
+,03/12/2026,Expense,,Comcast Business,,Internet,Checking,129.99,389.97
+,04/12/2026,Expense,,Comcast Business,,Internet,Checking,129.99,519.96
+,05/12/2026,Expense,,Comcast Business,,Internet,Checking,129.99,649.95
+,06/12/2026,Expense,,Comcast Business,,Internet,Checking,129.99,779.94
+Total for Utilities,,,,,,,,"$779.94",
+
+
+Accrual Basis Friday, July 3, 2026 09:14 AM GMT-05:00
