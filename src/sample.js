@@ -164,6 +164,11 @@
     add({ date: d26(5, 21), type: 'Expense', num: '', name: 'Blue Door Cafe', customer: '', memo: 'Client lunch', pnl: 'Meals', bs: CARD, amount: 88.5 });
     add({ date: d26(5, 22), type: 'Expense', num: '', name: 'Blue Door Cafe', customer: '', memo: 'Client lunch', pnl: 'Meals', bs: CARD, amount: 88.5 });
 
+    // Unusual: the internet provider bills for a year of equipment and install in one go.
+    // ...and a trade-show booth lifts marketing well above a normal month.
+    add({ date: d26(6, 16), type: 'Expense', num: '', name: 'Coastal Business Expo', customer: '', memo: 'Booth - fall expo', pnl: 'Advertising & Marketing', bs: CARD, amount: 1850 });
+    add({ date: d26(5, 12), type: 'Expense', num: '', name: 'Comcast Business', customer: '', memo: 'Internet - equipment and install', pnl: 'Utilities', bs: BANK, amount: 1184.5 });
+
     // Mismatches
     add({ date: d26(2, 14), type: 'Expense', num: '', name: 'Staples', customer: '', memo: 'Printer toner', pnl: 'Design Services Income', bs: CARD, amount: 94.12 });
     add({ date: d26(4, 20), type: 'Expense', num: '', name: 'The Home Depot', customer: '', memo: 'Shelving', pnl: 'Meals', bs: CARD, amount: 227.4 });

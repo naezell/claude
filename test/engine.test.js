@@ -62,8 +62,8 @@ test('debit/credit columns and journal imbalance', () => {
 
 test('sample "by Account" export: every seeded issue is found once', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
-  assert.equal(r.count, 1534);
-  assert.equal(r.entryCount, 767, 'each entry appears in two account sections');
+  assert.equal(r.count, 1538);
+  assert.equal(r.entryCount, 769, 'each entry appears in two account sections');
   assert.equal(r.audit.uncategorized.length, 11);
   assert.equal(r.audit.duplicates.length, 3);
   const kinds = r.audit.mismatches.map((m) => m.kind);
@@ -420,7 +420,7 @@ test('client questions: one per open item, no repeats, cleared items left out', 
   const cleared = E.analyze(p, { reviewed: { [r.audit.uncategorized[0].key]: { status: 'ok' } } });
   assert.equal(E.clientQuestions(cleared).count, q.count - 1);
   // Nothing open gives a short all-clear note.
-  const none = E.clientQuestions(r, { include: { uncategorized: false, duplicates: false, coding: false, receivables: false, w9: false } });
+  const none = E.clientQuestions(r, { include: { uncategorized: false, duplicates: false, coding: false, receivables: false, w9: false, unusual: false } });
   assert.equal(none.count, 0);
   assert.ok(/no questions this time/.test(none.text));
 });
@@ -603,4 +603,23 @@ test('budget vs actual: uploaded QuickBooks budget and one built from history', 
   const jan25 = trend.months.find((m) => m.key === '2025-01');
   const janBudget = hist.monthly.find((m) => m.month === '2026-01');
   assert.ok(Math.abs(janBudget.budgetRevenue - jan25.revenue * 1.1) < 0.1);
+});
+
+test('unusual activity: account swings and payments out of pattern', () => {
+  const p = E.parseTransactions(S.build());
+  const r = E.analyze(p);
+  const u = r.unusual;
+  assert.equal(u.month, '2026-06');
+  assert.ok(u.flux.some((f) => f.account === 'Advertising & Marketing' && f.up && f.concern));
+  assert.ok(!u.flux.some((f) => /uncategorized|ask my accountant/i.test(f.account)), 'holding accounts are already on the audit list');
+  const comcast = u.txns.find((t) => /Comcast/.test(t.detail));
+  assert.ok(comcast && comcast.kind === 'Out of pattern', 'a one-off bill far above a steady vendor');
+  assert.ok(!u.txns.some((t) => /PrintWorks/.test(t.detail)), 'a vendor with two regular bill sizes is not flagged');
+  assert.ok(u.txns.some((t) => t.kind === 'New payee' && /Coastal Business Expo/.test(t.detail)));
+  // Reviewing an item carries through, and the question drops out.
+  const q = E.clientQuestions(r);
+  assert.ok(q.sections.some((s) => s.title === 'Unusual payments'));
+  const done = E.analyze(p, { reviewed: Object.fromEntries(u.txns.map((t) => [t.key, { status: 'ok' }])) });
+  assert.ok(done.unusual.txns.every((t) => t.review && t.review.status === 'ok'));
+  assert.ok(!E.clientQuestions(done).sections.some((s) => s.title === 'Unusual payments'));
 });

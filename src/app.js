@@ -436,7 +436,7 @@
     const score = audit.healthScore;
     const scoreColor = score >= 90 ? 'var(--good)' : score >= 75 ? 'var(--warn)' : 'var(--critical)';
     const scoreWord = score >= 90 ? 'Clean' : score >= 75 ? 'Needs cleanup' : 'Significant issues';
-    const asked = [...audit.uncategorized, ...audit.duplicates, ...audit.mismatches].filter((x) => x.review && x.review.status === 'asked').length;
+    const asked = [...audit.uncategorized, ...audit.duplicates, ...audit.mismatches, ...(result.unusual ? [...result.unusual.flux, ...result.unusual.txns] : [])].filter((x) => x.review && x.review.status === 'asked').length;
     return html`
       <section class="kpis" aria-label="Audit summary">
         <div class="kpi">
@@ -473,6 +473,7 @@
       <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
       <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
       <${MismatchPanel} rows=${vis(audit.mismatches)} open=${audit.open.mismatches} onReview=${onReview} />
+      ${result.unusual && html`<${UnusualPanel} u=${result.unusual} vis=${vis} onReview=${onReview} />`}
       <${AccountMapping} accounts=${result.accounts} accountClass=${accountClass} setAccountClass=${setAccountClass} />
     `;
   }
@@ -563,6 +564,45 @@
             <td class="num"><${Money} v=${r.amount} /></td>
           </tr>`)}</tbody></table></div>
         </div>`) : html`<div class="empty">${Icon.check}No open duplicates.</div>`}
+      </div>
+    </section>`;
+  }
+
+  // Not errors, so not in the health score: amounts that look out of line and are worth a second look.
+  function UnusualPanel({ u, vis, onReview }) {
+    const flux = vis(u.flux);
+    const txns = vis(u.txns);
+    const open = [...u.flux, ...u.txns].filter((x) => !clearedOf(x)).length;
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Unusual activity</h2>
+        <span class=${`pill ${open ? 'medium' : 'good'}`}>${open} to look at</span>
+        <p>Accounts that moved sharply in ${u.monthLabel} against a typical month (${u.priorLabel}), and single payments well above what a payee is usually paid, or large first payments to someone new. These are not errors, just worth a second look before the books are closed.</p>
+      </div>
+      <div class="panel-body flush">
+        ${flux.length > 0 && html`<div class="table-wrap"><table>
+          <thead><tr><th>Review</th><th>Account</th><th class="num">${u.monthLabel}</th><th class="num">Typical month</th><th class="num">Change</th><th>What moved</th></tr></thead>
+          <tbody>${flux.map((f) => html`<tr key=${f.key} class=${clearedOf(f) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${f} onReview=${onReview} /></td>
+            <td>${f.account}<span class="sub">${f.cls === 'income' ? 'Income' : f.cls === 'cogs' ? 'Cost of sales' : 'Expense'}</span></td>
+            <td class="num">${fmtWhole(f.now)}</td>
+            <td class="num">${fmtWhole(f.typical)}</td>
+            <td class="num" style=${{ color: f.concern ? 'var(--critical)' : 'var(--good)' }}>${f.up ? '+' : '−'}${fmtWhole(Math.abs(f.diff))}</td>
+            <td>${f.detail}</td>
+          </tr>`)}</tbody>
+        </table></div>`}
+        ${txns.length > 0 && html`<div class="table-wrap"><table>
+          <thead><tr><th>Review</th><th>Date</th><th>Payee</th><th>Why it stands out</th><th>Account</th><th class="num">Amount</th></tr></thead>
+          <tbody>${txns.map((r) => html`<tr key=${r.key} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td class="nowrap num">${r.dateStr}</td>
+            <td>${counterpartyOf(r) || html`<span class="sub">No payee</span>`}<span class="sub">${r.type}</span></td>
+            <td><strong style=${{ fontWeight: 500 }}>${r.kind}</strong><span class="sub">${r.detail}</span></td>
+            <td>${leafAccount(r.account)}</td>
+            <td class="num"><${Money} v=${r.amount} /></td>
+          </tr>`)}</tbody>
+        </table></div>`}
+        ${!flux.length && !txns.length && html`<div class="empty">${Icon.check}${open ? 'All open items are hidden.' : 'Nothing out of the ordinary.'}</div>`}
       </div>
     </section>`;
   }

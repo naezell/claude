@@ -6,6 +6,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - **Uncategorized transactions**: anything in Uncategorized Income/Expense/Asset, Ask My Accountant, suspense, or with no account at all. Shows exact CSV row numbers.
 - **Potential duplicates**: same payee, same amount and same account within 3 days, or a reference number entered twice. Groups are ranked by dollars at risk.
 - **Mismatched entries**: transaction types that conflict with their account (an expense coded to income, a sales receipt coded to expense, a transfer touching the P&L), vendors coded to an unusual category, expenses with no payee, and journal entries whose debits and credits don't balance.
+- **Unusual activity**: a month-end variance review. Accounts that moved sharply in the latest full month against the median of the six months before, single payments far above what a payee is usually paid (and above anything they have billed before), and large first payments to someone new. These can be marked reviewed like any flag but don't count against the health score, and the payments feed the client questions.
 - A books health score, an issues-by-month chart, and an **account mapping** panel for correcting how any account is classified. Every figure recalculates when you change it.
 
 **Growth & Profitability Insights**
@@ -59,7 +60,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Monthly review workflow**
 - Mark each audit flag as *Not an issue*, *Fixed in QuickBooks* or *Asked the client*. Cleared flags drop out of the counts and health score and stay cleared when next month's export is loaded (flags are matched on what the entry is, not on row numbers).
-- **Client questions**: turns open uncategorized items, possible double charges, entries needing context, invoices over 90 days old and W-9 requests into a friendly, numbered question list ready to email. One click marks the included flags as asked.
+- **Client questions**: turns open uncategorized items, possible double charges, entries needing context, unusual payments, invoices over 90 days old and W-9 requests into a friendly, numbered question list ready to email. One click marks the included flags as asked.
 - **Saved clients**: account type corrections, reviewed flags, the cash cushion, benchmark industry and state, and loan and tax inputs are saved per client (matched on the company name in the report header) and restored when their file is loaded again. They are kept in this browser only; export a JSON backup to move them to another computer or share them with a colleague.
 
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.

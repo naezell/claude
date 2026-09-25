@@ -2555,6 +2555,73 @@
     };
   }
 
+  // ---------------------------------------------------------------- unusual activity
+
+  // Month-end variance review: accounts that swung away from their usual month, and single
+  // payments far outside a vendor's pattern (or large first payments to a new payee).
+  function unusualActivity(txns, accountClass, meta, trend, reviewed) {
+    if (!trend) return null;
+    const full = trend.months.filter((m) => !m.partial);
+    if (full.length < 4) return null;
+    const month = full[full.length - 1].key;
+    const prior = full.slice(-7, -1).map((m) => m.key);
+    const postings = toPostings(txns, accountClass);
+    const byAcct = new Map();
+    for (const p of postings) {
+      const k = p.t.dateStr.slice(0, 7);
+      if (k !== month && !prior.includes(k)) continue;
+      if (!byAcct.has(p.category)) byAcct.set(p.category, { cls: p.cls, byMonth: new Map() });
+      const a = byAcct.get(p.category);
+      a.byMonth.set(k, (a.byMonth.get(k) || 0) + p.value);
+    }
+    const flux = [];
+    for (const [account, a] of byAcct) {
+      // Holding accounts are already on the uncategorized list.
+      if (RX.uncategorized.test(account)) continue;
+      const now = round2(a.byMonth.get(month) || 0);
+      const typical = round2(median(prior.map((k) => a.byMonth.get(k) || 0)));
+      const diff = round2(now - typical);
+      const big = Math.abs(diff) >= Math.max(250, Math.abs(typical) * 0.5);
+      if (!big) continue;
+      const up = diff > 0;
+      const why = typical === 0 ? `No activity in a typical month; ${fmtWhole(now)} this month.`
+        : now === 0 ? `Usually ${fmtWhole(typical)} a month; nothing this month.`
+          : `${fmtWhole(now)} against a typical ${fmtWhole(typical)} (${up ? '+' : ''}${Math.round((diff / Math.abs(typical)) * 100)}%).`;
+      flux.push({ key: `x|flux|${lower(account)}|${month}`, account, cls: a.cls, month, now, typical, diff, up, detail: why, concern: a.cls === 'income' ? !up : up });
+    }
+    flux.sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff));
+
+    // Single payments: compare with the same payee's history before the recent window.
+    const recentStart = full[Math.max(0, full.length - 3)].key;
+    const byPayee = new Map();
+    for (const p of postings) {
+      if (p.cls === 'income' || p.value <= 0 || RX.uncategorized.test(p.category)) continue;
+      const who = payeeOf(p.t);
+      if (!who.key) continue;
+      if (!byPayee.has(who.key)) byPayee.set(who.key, []);
+      byPayee.get(who.key).push(p);
+    }
+    const txnFlags = [];
+    for (const list of byPayee.values()) {
+      const before = list.filter((p) => p.t.dateStr.slice(0, 7) < recentStart);
+      for (const p of list.filter((x) => x.t.dateStr.slice(0, 7) >= recentStart)) {
+        const name = counterpartyOf(p.t) || payeeOf(p.t).raw;
+        if (before.length >= 4) {
+          // Past the payee's usual amount and past anything they have billed before, so vendors
+          // with two regular sizes of bill (a retainer and a job) don't trip it.
+          const usual = median(before.map((x) => x.value));
+          const most = Math.max(...before.map((x) => x.value));
+          if (p.value >= 500 && p.value >= usual * 3 && p.value >= most * 1.5) txnFlags.push({ t: p.t, kind: 'Out of pattern', detail: `${fmtWhole(p.value)} to ${name}, about ${Math.round(p.value / usual)} times their usual ${fmtWhole(usual)}.` });
+        } else if (!before.length && p.value >= 1000 && list.length <= 2) {
+          txnFlags.push({ t: p.t, kind: 'New payee', detail: `${fmtWhole(p.value)} to ${name}, a payee not paid before this period.` });
+        }
+      }
+    }
+    const txnsOut = txnFlags.map((f) => ({ ...f.t, kind: f.kind, detail: f.detail, key: `x|txn|${rowKey(f.t)}` })).sort((a, b) => b.date - a.date);
+    for (const item of [...flux, ...txnsOut]) item.review = (reviewed && reviewed[item.key]) || null;
+    return { month, monthLabel: monthLabel(month), priorLabel: `${monthLabel(prior[0])} to ${monthLabel(prior[prior.length - 1])}`, flux, txns: txnsOut };
+  }
+
   // ---------------------------------------------------------------- review state & client questions
 
   // Keys that survive re-exporting: no line numbers or ids, only what the entry is.
@@ -2588,7 +2655,7 @@
   // A plain-language question list for the client, built from what is still open.
   function clientQuestions(result, opts) {
     opts = opts || {};
-    const inc = Object.assign({ uncategorized: true, duplicates: true, coding: true, receivables: true, w9: true }, opts.include || {});
+    const inc = Object.assign({ uncategorized: true, duplicates: true, coding: true, receivables: true, w9: true, unusual: true }, opts.include || {});
     const open = (item) => !isCleared(item.review);
     const sections = [];
     const keys = [];
@@ -2630,6 +2697,15 @@
         if (q) { items.push(q); keys.push(t.key); }
       }
       if (items.length) sections.push({ title: 'Entries we want to confirm', items });
+    }
+    if (inc.unusual && result.unusual) {
+      const items = result.unusual.txns.filter(open).filter((t) => !asked.has(rowKey(t))).sort((a, b) => a.date - b.date).map((t) => {
+        keys.push(t.key);
+        return t.kind === 'New payee'
+          ? `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}, a payee we have not seen before. What was this for?`
+          : `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}, well above what you usually pay them. Is this amount right, and what did it cover?`;
+      });
+      if (items.length) sections.push({ title: 'Unusual payments', items });
     }
     if (inc.receivables && result.cash) {
       const items = result.cash.ar.openInvoices.filter((i) => i.age > 90).map((i) => `Invoice${i.num ? ` #${i.num}` : ''} to ${i.party} for ${money(i.open)} from ${niceDate(i.dateStr)} is still unpaid after ${i.age} days. Do you still expect payment, or should we write it off?`);
@@ -2766,6 +2842,7 @@
       cashScenario,
     };
     out.tieOut = tieOut(txns, accountClass, parsed.meta, opts.pnl);
+    out.unusual = unusualActivity(txns, accountClass, parsed.meta, trend, opts.reviewed);
     // Budget: an uploaded QuickBooks budget, else one built from last year's actuals.
     const budget = opts.budget || (opts.budgetFromHistory !== false ? budgetFromHistory(txns, accountClass, parsed.meta, opts.budgetGrowth) : null);
     out.budget = budgetVsActual(txns, accountClass, parsed.meta, budget);
@@ -3283,6 +3360,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, buildHtmlReport, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, buildHtmlReport, unusualActivity, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });
