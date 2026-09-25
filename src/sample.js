@@ -19,7 +19,8 @@
   const BANK = 'Checking';
   const CARD = 'Chase Ink Card (4417)';
   const AR = 'Accounts Receivable (A/R)';
-  const OPENING_CASH = 26500;
+  const OPENING_CASH = 47500;
+  const LOAN_OPENING = 48000;
 
   const MONTHS = 18; // January 2025 through June 2026
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -110,6 +111,17 @@
       add({ date: d(k, 3), type: 'Expense', num: '', name: 'Notion Labs', customer: '', memo: 'Notion Plus - workspace A', pnl: 'Software & Subscriptions', bs: CARD, amount: 20.0 });
       if (in2026) add({ date: d(k, 17), type: 'Expense', num: '', name: 'Notion Labs', customer: '', memo: 'Notion Plus - workspace B', pnl: 'Software & Subscriptions', bs: CARD, amount: 20.0 });
     }
+    // SBA loan taken before 2025: $1,150 a month on the 5th, split into interest and principal.
+    let loanBal = LOAN_OPENING;
+    for (let k = 0; k < MONTHS; k++) {
+      const interest = Math.round(loanBal * 0.075 / 12 * 100) / 100;
+      const principal = Math.round((1150 - interest) * 100) / 100;
+      loanBal = Math.round((loanBal - principal) * 100) / 100;
+      const chk = String(num++);
+      add({ date: d(k, 5), type: 'Check', num: chk, name: 'Columbia Bank', customer: '', memo: 'SBA loan payment - interest', pnl: 'Interest Expense', bs: BANK, amount: interest });
+      add({ date: d(k, 5), type: 'Check', num: chk, name: 'Columbia Bank', customer: '', memo: 'SBA loan payment - principal', pnl: 'SBA Loan', bs: BANK, amount: principal });
+    }
+
     // Quarterly owner draws (equity, not an expense).
     [[2, 5000], [5, 6000], [8, 7000], [11, 11000], [14, 3000]].forEach(([k, amt]) => {
       add({ date: d(k, 28), type: 'Check', num: String(num++), name: 'Jordan Pike', customer: '', memo: 'Owner draw', pnl: "Owner's Draw", bs: BANK, amount: amt });
@@ -157,7 +169,7 @@
       add({ date: d(k, 25), type: 'Credit Card Payment', num: '', name: 'Chase Card Services', customer: '', memo: 'Card autopay', pnl: null, bs: BANK, bs2: CARD, amount: Math.round(due * 100) / 100 });
     }
 
-    return toCSV(entries, { [BANK]: OPENING_CASH });
+    return toCSV(entries, { [BANK]: OPENING_CASH, 'SBA Loan': LOAN_OPENING });
   }
 
   // Lay entries out QuickBooks-style: one section per account, each entry
@@ -227,5 +239,35 @@
     return lines.join('\n');
   }
 
-  return { build };
+  // The matching QuickBooks Online "Account List" export for the sample company.
+  function chartOfAccounts() {
+    const rows = [
+      ['Checking', 'Bank', 'Checking'],
+      ['Accounts Receivable (A/R)', 'Accounts receivable (A/R)', 'Accounts Receivable (A/R)'],
+      ['Chase Ink Card (4417)', 'Credit Card', 'Credit Card'],
+      ['Accounts Payable (A/P)', 'Accounts payable (A/P)', 'Accounts Payable (A/P)'],
+      ['SBA Loan', 'Long Term Liabilities', 'Notes Payable'],
+      ["Owner's Draw", 'Equity', "Owner's Equity"],
+      ['Design Services Income', 'Income', 'Service/Fee Income'],
+      ['Uncategorized Income', 'Income', 'Service/Fee Income'],
+      ['Subcontractors', 'Cost of Goods Sold', 'Cost of labor - COS'],
+      ['Job Materials & Printing', 'Cost of Goods Sold', 'Supplies & Materials - COGS'],
+      ['Payroll Expenses:Wages', 'Expenses', 'Payroll Expenses'],
+      ['Rent & Lease', 'Expenses', 'Rent or Lease of Buildings'],
+      ['Utilities', 'Expenses', 'Utilities'],
+      ['Office Supplies', 'Expenses', 'Office/General Administrative Expenses'],
+      ['Meals', 'Expenses', 'Entertainment Meals'],
+      ['Software & Subscriptions', 'Expenses', 'Office/General Administrative Expenses'],
+      ['Advertising & Marketing', 'Expenses', 'Advertising/Promotional'],
+      ['Bank Fees', 'Expenses', 'Bank Charges'],
+      ['Uncategorized Expense', 'Expenses', 'Other Miscellaneous Service Cost'],
+      ['Ask My Accountant', 'Expenses', 'Other Miscellaneous Service Cost'],
+      ['Interest Expense', 'Other Expense', 'Other Miscellaneous Expense'],
+    ];
+    const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    return ['Harbor & Pine Design Co.', 'Account List', '', 'Account,Type,Detail type,Description,Balance']
+      .concat(rows.map((r) => [...r, '', ''].map(q).join(','))).join('\n');
+  }
+
+  return { build, chartOfAccounts };
 });

@@ -15,6 +15,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Cash Forecast**
 - A **13-week cash flow forecast** built from the export: open invoices are collected on each customer's own median days-to-pay (measured from their payment history, not the invoice terms), customers who bill monthly keep billing, open bills are paid on each vendor's usual timing, and monthly costs like payroll, rent and software are projected forward.
+- Repeating payments that never show as expenses are projected too: owner draws, loan principal, and sales-tax or payroll-tax remittances.
 - Starting cash comes from the bank accounts' beginning balance plus period activity. You can override it and set a minimum cash cushion. The tool warns about weeks below the cushion or below zero and names what lands in the lowest week.
 - Receivables aging, a payment-speed chart per customer, and open invoice and bill schedules. Invoices over 90 days old are left out unless you include them. Open bills that the audit flags as possible duplicates are marked so nobody pays them twice.
 
@@ -38,6 +39,8 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - Live figures come from the Intuit QuickBooks benchmark service through the viewer's own claude.ai **Intuit QuickBooks** connector (`benchmarking_against_industry`). Around 30 common small-business industries are built in; any NAICS code can be entered.
 - Without the connector (for example when the file is opened locally), peer figures from any source, such as an RMA report or a trade survey, can be entered by hand. Either way the comparison flows into the client report.
 
+**Chart of Accounts**: upload the client's Account List (Chart of Accounts) export alongside the transactions, in the same batch or with **Add export**. Its account types (Bank, Credit Card, Long Term Liabilities, Equity, Cost of Goods Sold, and so on) replace the guesses made from account names everywhere, and Account mapping shows where each type came from. Manual corrections still win.
+
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
 
 **Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, vendors and 1099 review, benchmarks, and recommended next steps. Download it as `.txt` or copy it.
@@ -52,13 +55,14 @@ Open `index.html` in a browser, or serve the folder:
 npx serve .
 ```
 
-It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`.
+It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`, with its Chart of Accounts at `sample-data/harbor-pine-chart-of-accounts.csv`.
 
 ## Exporting from QuickBooks
 
 1. **Reports → Transaction Detail by Account** (or Transaction List by Date / Transaction Detail).
-2. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work. Include the balance-sheet accounts (bank, A/R, A/P, credit cards) so the cash forecast can see open invoices, bills and bank balances.
-3. Set the date range, then **Export → Export to CSV**. Twelve months or more unlocks the year-over-year comparisons in Trends; if QuickBooks limits the range, export each year separately and upload them together.
+2. For exact account types, also export **Reports → Account List** (the Chart of Accounts).
+3. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work. Include the balance-sheet accounts (bank, A/R, A/P, credit cards) so the cash forecast can see open invoices, bills and bank balances.
+4. Set the date range, then **Export → Export to CSV**. Twelve months or more unlocks the year-over-year comparisons in Trends; if QuickBooks limits the range, export each year separately and upload them together.
 
 The parser skips the report title rows, section headers and "Total for…" lines. In the "by Account" layout each entry appears once per account it touches; Ledger Lens collapses these to one entry so nothing is counted twice.
 

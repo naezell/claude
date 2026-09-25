@@ -1,0 +1,25 @@
+Harbor & Pine Design Co.
+Account List
+
+Account,Type,Detail type,Description,Balance
+Checking,Bank,Checking,,
+Accounts Receivable (A/R),Accounts receivable (A/R),Accounts Receivable (A/R),,
+Chase Ink Card (4417),Credit Card,Credit Card,,
+Accounts Payable (A/P),Accounts payable (A/P),Accounts Payable (A/P),,
+SBA Loan,Long Term Liabilities,Notes Payable,,
+Owner's Draw,Equity,Owner's Equity,,
+Design Services Income,Income,Service/Fee Income,,
+Uncategorized Income,Income,Service/Fee Income,,
+Subcontractors,Cost of Goods Sold,Cost of labor - COS,,
+Job Materials & Printing,Cost of Goods Sold,Supplies & Materials - COGS,,
+Payroll Expenses:Wages,Expenses,Payroll Expenses,,
+Rent & Lease,Expenses,Rent or Lease of Buildings,,
+Utilities,Expenses,Utilities,,
+Office Supplies,Expenses,Office/General Administrative Expenses,,
+Meals,Expenses,Entertainment Meals,,
+Software & Subscriptions,Expenses,Office/General Administrative Expenses,,
+Advertising & Marketing,Expenses,Advertising/Promotional,,
+Bank Fees,Expenses,Bank Charges,,
+Uncategorized Expense,Expenses,Other Miscellaneous Service Cost,,
+Ask My Accountant,Expenses,Other Miscellaneous Service Cost,,
+Interest Expense,Other Expense,Other Miscellaneous Expense,,

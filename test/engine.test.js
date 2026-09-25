@@ -62,8 +62,8 @@ test('debit/credit columns and journal imbalance', () => {
 
 test('sample "by Account" export: every seeded issue is found once', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
-  assert.equal(r.count, 1460);
-  assert.equal(r.entryCount, 730, 'each entry appears in two account sections');
+  assert.equal(r.count, 1532);
+  assert.equal(r.entryCount, 766, 'each entry appears in two account sections');
   assert.equal(r.audit.uncategorized.length, 11);
   assert.equal(r.audit.duplicates.length, 3);
   const kinds = r.audit.mismatches.map((m) => m.kind);
@@ -352,4 +352,33 @@ test('benchmarks: request arguments, payload reading and comparison', () => {
   assert.equal(by.expenses.read, 'Higher');
   assert.ok(E.INDUSTRIES.every((g) => g.industries.every((i) => /^\d{2,6}$/.test(i.code))));
   assert.equal(E.STATES.length, 51);
+});
+
+test('chart of accounts: parsing, exact types and roles beat name guesses', () => {
+  const chart = E.parseChartOfAccounts(S.chartOfAccounts());
+  assert.equal(chart.accounts.length, 21);
+  assert.equal(E.parseChartOfAccounts(S.build()), null, 'a transaction report is not a chart');
+  // Names that fool the guesser: a card and a bank account with no telltale words.
+  const coa = E.parseChartOfAccounts(['Account,Type,Detail type', 'Mercury 4471,Bank,Checking', 'Brex,Credit Card,Credit Card', 'Studio Revenue Share,Expenses,Other', 'Pike Capital,Equity,Owner draws'].join('\n'));
+  const { accountClass } = E.resolveAccounts(['Mercury 4471', 'Brex', 'Studio Revenue Share', 'Pike Capital', 'Rent'], { Rent: 'cogs' }, coa);
+  assert.equal(E.roleOf(accountClass, 'Mercury 4471'), 'cash');
+  assert.equal(E.roleOf(accountClass, 'Brex'), 'card');
+  assert.equal(accountClass['Studio Revenue Share'], 'expense', 'chart beats the "revenue" in the name');
+  assert.equal(E.roleOf(accountClass, 'Pike Capital'), 'equity');
+  assert.equal(accountClass.Rent, 'cogs', 'manual choice beats everything');
+  const r = E.analyze(E.parseTransactions(S.build()), { chart });
+  assert.deepEqual(r.chart, { accounts: 21, matched: 21, of: 21 });
+  assert.ok(r.accounts.every((a) => a.source === 'chart'));
+  assert.equal(r.accounts.find((a) => a.name === 'SBA Loan').role, 'loan');
+});
+
+test('forecast projects owner draws and loan principal from their history', () => {
+  const { cash } = E.analyze(E.parseTransactions(S.build()), { chart: E.parseChartOfAccounts(S.chartOfAccounts()) });
+  const by = Object.fromEntries(cash.balanceOut.map((b) => [b.label, b]));
+  assert.equal(by['Owner draws'].cadence, 'Quarterly');
+  assert.deepEqual(by['Owner draws'].next, ['2026-09-28'], 'the missed June draw is not back-filled');
+  assert.equal(by['Loan payments'].cadence, 'Monthly');
+  assert.deepEqual(by['Loan payments'].next, ['2026-07-05', '2026-08-05', '2026-09-05']);
+  assert.ok(cash.outflowRows.some((r) => r.label === 'Owner draws' && r.total === by['Owner draws'].amount));
+  assert.ok(cash.outflowRows.some((r) => r.label === 'Interest Expense'), 'loan interest is projected as a monthly expense');
 });

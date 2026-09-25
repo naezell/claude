@@ -80,6 +80,8 @@
 
   function App() {
     const [source, setSource] = useState({ kind: 'sample' });
+    const sourceRef = useRef(source);
+    sourceRef.current = source;
     const [error, setError] = useState('');
     const [tab, setTab] = useState(() => safeStore.get('ll.tab') || 'audit');
     const [groupBy, setGroupBy] = useState('customer');
@@ -98,11 +100,14 @@
         return { ok: E.mergeParsed(source.files.map((f) => f.parsed)) };
       } catch (e) { return { err: e.message }; }
     }, [source, sampleText]);
+    // The chart of accounts, when one was loaded, gives exact account types.
+    const sampleChart = useMemo(() => E.parseChartOfAccounts(window.LedgerSample.chartOfAccounts()), []);
+    const chart = source.kind === 'sample' ? sampleChart : source.chart ? source.chart.parsed : null;
 
     const startingCash = cashInputs.startingCash === '' ? undefined : parseFloat(cashInputs.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
-      accountClass, groupBy, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, startingCash, cashInputs.includeDoubtful]);
+      accountClass, groupBy, chart, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
+    }) : null), [parsed, accountClass, groupBy, chart, startingCash, cashInputs.includeDoubtful]);
     // Default cushion: one month of fixed costs, rounded to the nearest $1,000.
     const defaultCushion = result && result.breakeven ? Math.round(result.breakeven.base.fixed / 1000) * 1000 : 0;
     const cushion = cashInputs.cushion === '' || isNaN(parseFloat(cashInputs.cushion)) ? defaultCushion : parseFloat(cashInputs.cushion);
@@ -114,8 +119,12 @@
       if (!/\.(csv|txt)$/i.test(file.name)) { resolve({ name: file.name, error: 'is not a CSV. In QuickBooks, open the report and choose Export → Export to CSV.' }); return; }
       const reader = new FileReader();
       reader.onload = () => {
+        const text = String(reader.result || '');
         try {
-          const p = E.parseTransactions(String(reader.result || ''));
+          // A chart of accounts has Account and Type columns and no dates.
+          const coa = E.parseChartOfAccounts(text);
+          if (coa) { resolve({ name: file.name, chart: coa }); return; }
+          const p = E.parseTransactions(text);
           if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
           resolve({ name: file.name, parsed: p });
         } catch (e) { resolve({ name: file.name, error: e.message }); }
@@ -132,14 +141,23 @@
       const results = await Promise.all(files.map(readFile));
       const bad = results.filter((r) => r.error);
       const good = results.filter((r) => r.parsed);
-      setError(bad.map((b) => `${b.name} ${b.error}`).join(' '));
+      const charts = results.filter((r) => r.chart);
+      const chartFile = charts.length ? { name: charts[charts.length - 1].name, parsed: charts[charts.length - 1].chart } : null;
+      const errors = bad.map((b) => `${b.name} ${b.error}`);
+      const prev = sourceRef.current;
+      if (!good.length) {
+        // A chart on its own attaches to the transactions already loaded.
+        if (chartFile && prev.kind === 'upload') setSource({ ...prev, chart: chartFile });
+        else if (chartFile) errors.push(`${chartFile.name} is a chart of accounts. Upload the client's Transaction Detail with it.`);
+      } else {
+        const keepPrev = append && prev.kind === 'upload';
+        const kept = keepPrev ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
+        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null) });
+      }
+      setError(errors.join(' '));
       if (!good.length) return;
       setAccountClass({});
       setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false });
-      setSource((prev) => {
-        const kept = append && prev.kind === 'upload' ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
-        return { kind: 'upload', files: [...kept, ...good] };
-      });
     }, []);
 
     useEffect(() => {
@@ -183,6 +201,9 @@
           ${source.kind === 'sample'
             ? html`<span class="pill sample"><span class="dot"></span>Sample data</span><span>Showing a fictional design studio. Upload your QuickBooks <strong>Transaction Detail</strong> CSV (or several, such as one per year), or drop them anywhere on this page.</span>`
             : html`<span class="pill good"><span class="dot"></span>${source.files.length > 1 ? `${source.files.length} files combined` : 'Your file'}</span><strong>${source.files.map((f) => f.name).join(', ')}</strong>${parsed.ok && parsed.ok.meta.droppedOverlap ? html`<span>${parsed.ok.meta.droppedOverlap} overlapping rows skipped</span>` : ''}`}
+          ${result && (result.chart
+            ? html`<span class="pill good"><span class="dot"></span>Chart of accounts</span><span>${result.chart.matched} of ${result.chart.of} accounts typed from it</span>`
+            : source.kind === 'upload' && html`<span class="hint">Add the client's Chart of Accounts export (Account List report) for exact account types.</span>`)}
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
         ${error && html`<div class="error" role="alert">${error}</div>`}
@@ -378,15 +399,20 @@
     </section>`;
   }
 
+  const ROLE_LABEL = { cash: 'Bank', card: 'Credit card', ar: 'Receivable', ap: 'Payable', loan: 'Loan', equity: 'Owner equity', salestax: 'Sales tax', payrolltax: 'Payroll tax', otherbalance: 'Other balance sheet' };
+
   function AccountMapping({ accounts, accountClass, setAccountClass }) {
     const labels = { income: 'Income', cogs: 'Cost of goods sold', expense: 'Expense', balance: 'Balance sheet' };
     const changed = Object.keys(accountClass).length;
+    const fromChart = accounts.filter((a) => a.source === 'chart').length;
     return html`<details class="panel mapping">
-      <summary>Account mapping ${changed ? html`<span class="pill" style=${{ marginLeft: '8px' }}>${changed} overridden</span>` : html`<span style=${{ fontWeight: 400, fontFamily: 'var(--sans)', color: 'var(--muted)', fontSize: '13px', marginLeft: '8px' }}>Detected from account names. Correct any that are wrong and every figure updates.</span>`}</summary>
+      <summary>Account mapping ${changed ? html`<span class="pill" style=${{ marginLeft: '8px' }}>${changed} changed by you</span>` : ''}<span style=${{ fontWeight: 400, fontFamily: 'var(--sans)', color: 'var(--muted)', fontSize: '13px', marginLeft: '8px' }}>${fromChart ? `${fromChart} of ${accounts.length} typed from the chart of accounts.` : 'Guessed from account names.'} Correct any that are wrong and every figure updates.</span></summary>
       <div class="table-wrap"><table>
-        <thead><tr><th>Account</th><th class="num">Rows</th><th>Treated as</th></tr></thead>
-        <tbody>${accounts.map((a) => html`<tr key=${a.name}>
-          <td>${a.name}</td>
+        <thead><tr><th>Account</th><th class="num">Rows</th><th>Treated as</th><th>Source</th></tr></thead>
+        <tbody>${accounts.map((a) => {
+          const manual = accountClass[a.name] != null;
+          return html`<tr key=${a.name}>
+          <td>${a.name}${(accountClass[a.name] || a.detected) === 'balance' ? html`<span class="sub">${ROLE_LABEL[a.role] || ''}</span>` : ''}</td>
           <td class="num">${a.count}</td>
           <td>
             <select aria-label=${`Account type for ${a.name}`} value=${accountClass[a.name] || a.detected} onChange=${(e) => {
@@ -399,7 +425,9 @@
               ${a.detected === 'blank' && html`<option value="blank">Unassigned</option>`}
             </select>
           </td>
-        </tr>`)}</tbody>
+          <td class="sub" style=${{ display: 'table-cell' }}>${manual ? 'Changed by you' : a.source === 'chart' ? `Chart of accounts: ${a.type}` : 'Guessed from name'}</td>
+        </tr>`;
+        })}</tbody>
       </table></div>
     </details>`;
   }

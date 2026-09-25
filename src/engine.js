@@ -182,6 +182,110 @@
 
   const leafAccount = (s) => norm(s).split(':').pop().trim();
 
+  // ---------------------------------------------------------------- account roles & chart of accounts
+
+  // Account roles refine the "balance" class: where cash sits, what is owed, what the owner took.
+  const ROLES = typeof Symbol === 'function' ? Symbol('accountRoles') : '__accountRoles';
+  const BALANCE_ROLES = ['cash', 'card', 'ar', 'ap', 'loan', 'equity', 'salestax', 'payrolltax', 'otherbalance'];
+
+  function roleFromName(a) {
+    if (CASH_ACCOUNT.test(a)) return 'cash';
+    if (CARD_ACCOUNT.test(a)) return 'card';
+    if (/receivable/i.test(a)) return 'ar';
+    if (/sales tax/i.test(a)) return 'salestax';
+    if (/payroll (tax|liabilit)/i.test(a)) return 'payrolltax';
+    if (/payable/i.test(a)) return 'ap';
+    if (/\bloan\b|line of credit|notes? payable|mortgage|\bsba\b/i.test(a)) return 'loan';
+    if (/equity|\bowner|\bdraw|distribution|retained|capital|contribution|opening bal/i.test(a)) return 'equity';
+    return 'otherbalance';
+  }
+
+  // The class an account is treated as: manual choice, then chart of accounts, then its name.
+  const classOf = (accountClass, a) => (accountClass && accountClass[a]) || classifyAccount(a);
+
+  function roleOf(accountClass, a) {
+    if (!a) return null;
+    const c = classOf(accountClass, a);
+    if (c !== 'balance') return c;
+    const r = accountClass && accountClass[ROLES] && accountClass[ROLES].get(a);
+    return r || roleFromName(a);
+  }
+
+  // QuickBooks account types (Online and Desktop spellings) to class and role.
+  function typeToRole(type, detail) {
+    const t = lower(type), d = lower(detail);
+    if (!t) return null;
+    if (/^bank/.test(t)) return { cls: 'balance', role: 'cash' };
+    if (/receivable|^a\/r/.test(t)) return { cls: 'balance', role: 'ar' };
+    if (/credit card/.test(t)) return { cls: 'balance', role: 'card' };
+    if (/payable|^a\/p/.test(t)) return { cls: 'balance', role: 'ap' };
+    if (/long.?term liab/.test(t)) return { cls: 'balance', role: 'loan' };
+    if (/current liab|liabilit/.test(t)) {
+      if (/sales tax/.test(d) || /sales tax/.test(t)) return { cls: 'balance', role: 'salestax' };
+      if (/payroll/.test(d)) return { cls: 'balance', role: 'payrolltax' };
+      if (/loan|line of credit|notes? payable/.test(d)) return { cls: 'balance', role: 'loan' };
+      return { cls: 'balance', role: 'otherbalance' };
+    }
+    if (/equity/.test(t)) return { cls: 'balance', role: 'equity' };
+    if (/asset/.test(t)) return { cls: 'balance', role: 'otherbalance' };
+    if (/cost of (goods|sales)|cogs/.test(t)) return { cls: 'cogs', role: 'cogs' };
+    if (/income|revenue/.test(t)) return { cls: 'income', role: 'income' };
+    if (/expense/.test(t)) return { cls: 'expense', role: 'expense' };
+    return null;
+  }
+
+  // Reads a QuickBooks "Account List" (Chart of Accounts) export. Returns null when the
+  // text is not one, so callers can try it as a transaction report instead.
+  function parseChartOfAccounts(text) {
+    const rows = parseCSV(text);
+    for (let i = 0; i < Math.min(rows.length, 30); i++) {
+      const lc = rows[i].map(lower);
+      const nameIdx = ['account', 'full name', 'account full name', 'name', 'account name'].map((h) => lc.indexOf(h)).find((x) => x !== -1);
+      const typeIdx = ['type', 'account type'].map((h) => lc.indexOf(h)).find((x) => x !== -1);
+      if (nameIdx == null || typeIdx == null || lc.includes('date')) continue;
+      const detailIdx = ['detail type', 'detail', 'account subtype', 'subtype'].map((h) => lc.indexOf(h)).find((x) => x !== -1);
+      const accounts = [];
+      for (const r of rows.slice(i + 1)) {
+        const name = norm(r[nameIdx]);
+        const type = norm(r[typeIdx]);
+        if (!name || !type || /^total\b/i.test(name)) continue;
+        const mapped = typeToRole(type, detailIdx != null ? r[detailIdx] : '');
+        if (mapped) accounts.push({ name, type, detail: detailIdx != null ? norm(r[detailIdx]) : '', ...mapped });
+      }
+      return accounts.length ? { accounts } : null;
+    }
+    return null;
+  }
+
+  // Builds the lookup analyze() passes around: manual overrides beat the chart of accounts,
+  // which beats name-based guesses. Matches on full name, then on the last segment.
+  function resolveAccounts(names, overrides, chart) {
+    const out = {};
+    const roles = new Map();
+    const source = {};
+    if (chart && chart.accounts.length) {
+      const full = new Map(chart.accounts.map((a) => [lower(a.name), a]));
+      const leafCount = new Map();
+      for (const a of chart.accounts) leafCount.set(lower(leafAccount(a.name)), (leafCount.get(lower(leafAccount(a.name))) || 0) + 1);
+      const leaf = new Map(chart.accounts.filter((a) => leafCount.get(lower(leafAccount(a.name))) === 1).map((a) => [lower(leafAccount(a.name)), a]));
+      for (const n of names) {
+        const hit = full.get(lower(n)) || leaf.get(lower(leafAccount(n)));
+        if (!hit) continue;
+        out[n] = hit.cls;
+        if (hit.cls === 'balance') roles.set(n, hit.role);
+        source[n] = { from: 'chart', type: hit.type };
+      }
+    }
+    for (const [n, c] of Object.entries(overrides || {})) {
+      out[n] = c;
+      source[n] = { from: 'manual' };
+      if (c === 'balance' && !roles.has(n)) roles.set(n, roleFromName(n));
+      if (c !== 'balance') roles.delete(n);
+    }
+    out[ROLES] = roles;
+    return { accountClass: out, source };
+  }
+
   // ---------------------------------------------------------------- parse
 
   function parseTransactions(text, opts) {
@@ -279,7 +383,7 @@
   // and category side). Collapse to one row per entry, keeping true repeats: for
   // each entry key keep the rows of a single account, preferring a P&L account.
   function logicalRows(txns, accountClass) {
-    const cls = (a) => (accountClass && accountClass[a]) || classifyAccount(a);
+    const cls = (a) => classOf(accountClass, a);
     const byKey = new Map();
     for (const t of txns) {
       const k = entryKey(t);
@@ -362,7 +466,7 @@
   }
 
   function findMismatches(txns, accountClass, rawTxns) {
-    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const cls = (a) => classOf(accountClass, a);
     const issues = [];
     const add = (t, kind, detail, severity) => issues.push({ ...t, kind, detail, severity });
 
@@ -443,7 +547,7 @@
   // Turns raw rows into P&L postings: { t, category, cls, value } where value is
   // positive revenue for income and positive cost for expense/COGS.
   function toPostings(txns, accountClass) {
-    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const cls = (a) => classOf(accountClass, a);
     const isPnl = (c) => c === 'income' || c === 'expense' || c === 'cogs';
     const direct = [];
     const seen = new Set();
@@ -815,7 +919,7 @@
   function cashForecast(txns, accountClass, opts) {
     opts = opts || {};
     const weeksN = opts.weeks || 13;
-    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const cls = (a) => classOf(accountClass, a);
     const entries = logicalRows(txns, accountClass);
     if (!entries.length) return null;
     const asOf = dateRange(txns, opts.meta).last;
@@ -828,14 +932,14 @@
     const cashAccts = new Map();
     const cardAccts = new Map();
     for (const [a, v] of Object.entries(opening)) {
-      if (cls(a) !== 'balance') continue;
-      if (CASH_ACCOUNT.test(a)) cashAccts.set(a, v);
-      else if (CARD_ACCOUNT.test(a)) cardAccts.set(a, v);
+      const role = roleOf(accountClass, a);
+      if (role === 'cash') cashAccts.set(a, v);
+      else if (role === 'card') cardAccts.set(a, v);
     }
     for (const t of txns) {
-      if (cls(t.account) !== 'balance') continue;
-      if (CASH_ACCOUNT.test(t.account)) cashAccts.set(t.account, (cashAccts.get(t.account) || 0) + t.amount);
-      else if (CARD_ACCOUNT.test(t.account)) cardAccts.set(t.account, (cardAccts.get(t.account) || 0) + t.amount);
+      const role = roleOf(accountClass, t.account);
+      if (role === 'cash') cashAccts.set(t.account, (cashAccts.get(t.account) || 0) + t.amount);
+      else if (role === 'card') cardAccts.set(t.account, (cardAccts.get(t.account) || 0) + t.amount);
     }
     const estimatedCash = round2([...cashAccts.values()].reduce((s, v) => s + v, 0));
     const cardBalance = round2(Math.max(0, [...cardAccts.values()].reduce((s, v) => s + v, 0)));
@@ -928,13 +1032,52 @@
     const otherSpend = cashOut.filter((p) => p.t.date >= directCut && !/^bill$/i.test(p.t.type) && !recurringVendors.has(lower(vendorOf(p.t) || leafAccount(p.category))));
     const otherWeekly = round2(otherSpend.reduce((s, p) => s + p.value, 0) / 13);
 
-    // Assemble the week grid.
     const rowsIn = new Map();
     const rowsOut = new Map();
     const put = (map, key, week, amt) => {
       if (!map.has(key)) map.set(key, new Array(weeksN).fill(0));
       map.get(key)[week] = round2(map.get(key)[week] + amt);
     };
+
+    // Cash paid to balance-sheet accounts never shows as an expense: owner draws, loan
+    // principal, sales and payroll tax remittances. Project the ones that repeat.
+    const BS_LABEL = { equity: 'Owner draws', loan: 'Loan payments', salestax: 'Sales tax', payrolltax: 'Payroll taxes' };
+    const bsGroups = new Map();
+    for (const t of txns) {
+      if (t.amount >= 0 || roleOf(accountClass, t.account) !== 'cash') continue;
+      const role = roleOf(accountClass, t.split);
+      if (!BS_LABEL[role]) continue;
+      if (!bsGroups.has(t.split)) bsGroups.set(t.split, { account: t.split, role, rows: [] });
+      bsGroups.get(t.split).rows.push({ date: t.date, amount: -t.amount });
+    }
+    const balanceOut = [];
+    for (const g of bsGroups.values()) {
+      const rows = g.rows.sort((a, b) => a.date - b.date);
+      const gaps = [];
+      for (let i = 1; i < rows.length; i++) gaps.push((rows[i].date - rows[i - 1].date) / DAY);
+      if (!gaps.length) continue;
+      const gap = median(gaps);
+      const cadence = gap >= 12 && gap <= 17 ? { label: 'Every 2 weeks', months: 0, days: 14 }
+        : gap >= 25 && gap <= 35 ? { label: 'Monthly', months: 1 }
+          : gap >= 80 && gap <= 100 ? { label: 'Quarterly', months: 3 } : null;
+      const enough = cadence && (cadence.months === 3 ? rows.length >= 2 : rows.length >= 3);
+      const last = rows[rows.length - 1].date;
+      // Still active: the last payment is no more than two periods old.
+      if (!enough || (asOf - last) / DAY > gap * 2 + 7) continue;
+      const amount = round2(median(rows.slice(-3).map((r) => r.amount)));
+      const dates = [];
+      for (let n = 1; n <= 30; n++) {
+        const d = cadence.days ? addDays(last, cadence.days * n)
+          : new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + cadence.months * n, Math.min(last.getUTCDate(), 28)));
+        if (d > horizonEnd) break;
+        if (d > asOf) dates.push(d);
+      }
+      const label = BS_LABEL[g.role];
+      for (const d of dates) put(rowsOut, label, weekOf(d), amount);
+      balanceOut.push({ label, account: g.account, cadence: cadence.label, amount, count: rows.length, lastDate: isoDate(last), next: dates.map(isoDate) });
+    }
+
+    // Assemble the week grid.
     for (const inv of openInvoices) if (inv.week != null) put(rowsIn, 'Collections on open invoices', inv.week, inv.open);
     for (const b of newBillings) put(rowsIn, 'Collections on new billings', b.week, b.amount);
     if (directWeekly > 0) for (let w = 0; w < weeksN; w++) put(rowsIn, 'Other receipts (run-rate)', w, directWeekly);
@@ -969,7 +1112,10 @@
       'Customers billed in at least 3 of the last 4 months are assumed to keep billing at their recent monthly amount.',
       'Monthly bills and charges (rent, payroll, software, repeat vendors) are projected forward at their recent amount; other spending uses the last 13-week average.',
       cardBalance > 0 ? `The current credit card balance (${fmtMoney(cardBalance)}) is assumed paid in week 2.` : 'No outstanding credit card balance detected.',
-      'Card purchases are treated as cash out on the charge date. Loan payments, owner draws and taxes only appear if they are in the export.',
+      'Card purchases are treated as cash out on the charge date.',
+      balanceOut.length
+        ? `Repeating payments to balance-sheet accounts are projected too: ${balanceOut.map((b) => `${b.label.toLowerCase()} (${b.cadence.toLowerCase()}, about ${fmtWhole(b.amount)})`).join(', ')}.`
+        : 'No repeating owner draws, loan payments or tax remittances found in the export. Add them by hand if the client makes them.',
     ];
 
     const lagRows = [...ar.lags.entries()].map(([name, l]) => ({ name, medianDays: l.median, paid: l.paid }))
@@ -1009,6 +1155,7 @@
       },
       newBillings,
       recurring: recurringItems.map((i) => ({ ...i, dateStr: isoDate(i.date) })),
+      balanceOut,
       assumptions,
     };
   }
@@ -1143,7 +1290,7 @@
 
   function trends(txns, accountClass, opts) {
     opts = opts || {};
-    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const cls = (a) => classOf(accountClass, a);
     const postings = toPostings(txns, accountClass);
     if (!postings.length) return null;
     const entries = logicalRows(txns, accountClass);
@@ -1185,7 +1332,7 @@
     let apBal = 0;
     let idx = 0;
     const opening = opts.openingBalances || {};
-    const isCash = (a) => cls(a) === 'balance' && CASH_ACCOUNT.test(a);
+    const isCash = (a) => roleOf(accountClass, a) === 'cash';
     let cash = Object.entries(opening).filter(([a]) => isCash(a)).reduce((t, [, v]) => t + v, 0);
     const cashRows = txns.filter((t) => isCash(t.account)).sort((a, b) => a.date - b.date);
     const hasCash = cashRows.length > 0;
@@ -1457,7 +1604,7 @@
 
   // ---------------------------------------------------------------- vendors & payables
 
-  const LARGE_COMPANY = /comcast|xfinity|verizon|at&t|t-mobile|spectrum|cox comm|amazon|costco|home depot|lowe'?s|staples|office depot|walmart|target|best buy|uber|lyft|fedex|\bups\b|usps|delta air|united air|southwest|chase|bank of america|wells fargo|american express|paypal|stripe|square|gusto|adp\b|paychex|pg&e|con ed|duke energy|national grid/i;
+  const LARGE_COMPANY = /\bbank\b|credit union|comcast|xfinity|verizon|at&t|t-mobile|spectrum|cox comm|amazon|costco|home depot|lowe'?s|staples|office depot|walmart|target|best buy|uber|lyft|fedex|\bups\b|usps|delta air|united air|southwest|chase|bank of america|wells fargo|american express|paypal|stripe|square|gusto|adp\b|paychex|pg&e|con ed|duke energy|national grid/i;
   const CORP_SUFFIX = /\b(inc|incorporated|corp|corporation)\b\.?/i;
 
   const PAYROLL_ACCOUNT = /payroll|wages|salar/i;
@@ -1465,7 +1612,7 @@
 
   // Payments to each vendor by calendar year, split by bank and card, for 1099 review.
   function tax1099(txns, accountClass, meta) {
-    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const cls = (a) => classOf(accountClass, a);
     const entries = logicalRows(txns, accountClass);
     const postings = toPostings(txns, accountClass);
     const byYear = new Map();
@@ -1492,7 +1639,8 @@
       if (p.cls === 'income' || p.value <= 0 || /^bill$/i.test(p.t.type)) continue;
       if (PAYROLL_ACCOUNT.test(p.category)) continue;
       const funding = isPnlClass(cls(p.t.account)) ? p.t.split : p.t.account;
-      const method = CARD_ACCOUNT.test(funding) ? 'card' : CASH_ACCOUNT.test(funding) || cls(funding) === 'balance' ? 'bank' : null;
+      const fundRole = roleOf(accountClass, funding);
+      const method = fundRole === 'card' ? 'card' : fundRole === 'cash' || cls(funding) === 'balance' ? 'bank' : null;
       if (!method) continue;
       add(p.t.date.getUTCFullYear(), vendorOf(p.t), method, p.value, p.category);
     }
@@ -1547,7 +1695,7 @@
       const acct = leafAccount(p.category);
       v.accounts.set(acct, (v.accounts.get(acct) || 0) + p.value);
       if (/^bill$/i.test(p.t.type)) v.viaBills = true;
-      else if (CARD_ACCOUNT.test(p.t.split) || CARD_ACCOUNT.test(p.t.account)) v.card += p.value;
+      else if (roleOf(accountClass, p.t.split) === 'card' || roleOf(accountClass, p.t.account) === 'card') v.card += p.value;
       else v.bank += p.value;
     }
     const total = [...vendors.values()].reduce((t, v) => t + v.spend, 0) || 1;
@@ -1779,7 +1927,7 @@
 
   // ---------------------------------------------------------------- orchestration
 
-  function listAccounts(txns) {
+  function accountNames(txns) {
     const counts = new Map();
     for (const t of txns) {
       for (const a of [t.account, t.split]) {
@@ -1787,14 +1935,25 @@
         counts.set(a, (counts.get(a) || 0) + 1);
       }
     }
-    return [...counts.entries()].map(([name, count]) => ({ name, count, detected: classifyAccount(name) }))
-      .sort((a, b) => b.count - a.count);
+    return counts;
+  }
+
+  // `detected` is what the account is treated as without a manual choice: its chart of
+  // accounts type when one was loaded, otherwise the guess from its name.
+  function listAccounts(counts, chartResolved) {
+    return [...counts.entries()].map(([name, count]) => {
+      const chart = chartResolved.source[name] && chartResolved.source[name].from === 'chart' ? chartResolved.source[name] : null;
+      const detected = chart ? chartResolved.accountClass[name] : classifyAccount(name);
+      return { name, count, detected, source: chart ? 'chart' : 'name', type: chart ? chart.type : null, role: roleOf(chartResolved.accountClass, name) };
+    }).sort((a, b) => b.count - a.count);
   }
 
   function analyze(parsed, opts) {
     opts = opts || {};
-    const accountClass = opts.accountClass || {};
     const txns = parsed.transactions;
+    const counts = accountNames(txns);
+    const chartOnly = resolveAccounts(counts.keys(), {}, opts.chart);
+    const { accountClass } = resolveAccounts(counts.keys(), opts.accountClass, opts.chart);
     const entries = logicalRows(txns, accountClass);
     const uncategorized = findUncategorized(entries);
     const duplicates = findDuplicates(entries, opts.duplicateWindow);
@@ -1826,7 +1985,8 @@
       period: (() => { const r = dateRange(txns, parsed.meta); return { start: isoDate(r.first), end: isoDate(r.last) }; })(),
       count: txns.length,
       entryCount: entries.length,
-      accounts: listAccounts(txns),
+      accounts: listAccounts(counts, chartOnly),
+      chart: opts.chart ? { accounts: opts.chart.accounts.length, matched: Object.values(chartOnly.source).filter((x) => x.from === 'chart').length, of: counts.size } : null,
       audit: { uncategorized, uncategorizedTotal, duplicates, duplicateExposure, mismatches, flaggedCount: flaggedIds.size, healthScore },
       profit,
       subs,
@@ -2106,6 +2266,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, parsePeriod, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });
