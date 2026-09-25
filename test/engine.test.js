@@ -547,3 +547,30 @@ test('formatted report: owner and full versions, charts, escaping', () => {
   const cleared = E.analyze(p, { reviewed: Object.fromEntries(r.audit.uncategorized.map((u) => [u.key, { status: 'ok' }])) });
   assert.ok(!E.nextSteps(cleared).some((s) => /uncategorized items/.test(s)));
 });
+
+test('what-if scenarios change the forecast and leave the baseline alone', () => {
+  const p = E.parseTransactions(S.build());
+  const base = E.analyze(p);
+  assert.equal(base.cashScenario, null, 'no scenario, no second forecast');
+  const hire = E.analyze(p, { scenario: { levers: [{ type: 'monthly', label: 'New designer', amount: 5000, date: '2026-08-01' }] } });
+  assert.equal(hire.cash.totals.ending, base.cash.totals.ending, 'baseline untouched');
+  const row = hire.cashScenario.outflowRows.find((r) => r.label === 'New designer');
+  assert.equal(row.total, 10000, 'August and September fall inside the 13 weeks');
+  assert.ok(Math.abs(hire.cashScenario.totals.ending - (base.cash.totals.ending - 10000)) < 0.02);
+  // One-time money in raises every later week.
+  const loan = E.analyze(p, { scenario: { levers: [{ type: 'receipt', label: 'Loan', amount: 20000, date: '2026-07-10' }] } }).cashScenario;
+  assert.ok(Math.abs(loan.totals.ending - (base.cash.totals.ending + 20000)) < 0.02);
+  // Losing a customer removes only their future billing; open invoices still come in.
+  const lose = E.analyze(p, { scenario: { levers: [{ type: 'lose', customer: 'Northwind Outfitters' }] } }).cashScenario;
+  assert.ok(!lose.newBillings.some((b) => b.customer === 'Northwind Outfitters'));
+  assert.ok(lose.totals.inflow < base.cash.totals.inflow);
+  // A late payer moves money later; far enough and it leaves the forecast window.
+  const late = E.analyze(p, { scenario: { levers: [{ type: 'delay', customer: 'Harborview Hotel', days: 120 }] } }).cashScenario;
+  assert.ok(late.ar.openInvoices.filter((i) => i.party === 'Harborview Hotel').every((i) => i.week === null));
+  // Sales change scales new billing.
+  const down = E.analyze(p, { scenario: { levers: [{ type: 'sales', pct: -50 }] } }).cashScenario;
+  const sum = (c) => c.newBillings.reduce((t, b) => t + b.amount, 0);
+  assert.ok(Math.abs(sum(down) - sum(base.cash) / 2) < 1);
+  // Malformed changes are ignored.
+  assert.equal(E.analyze(p, { scenario: { levers: [{ type: 'monthly', amount: 'x' }, { type: 'nope' }] } }).cashScenario, null);
+});

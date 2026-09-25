@@ -184,6 +184,7 @@
     const [restored, setRestored] = useState(null);
     const [questionsOpen, setQuestionsOpen] = useState(false);
     const [clientsOpen, setClientsOpen] = useState(false);
+    const [scenario, setScenario] = useState({ levers: [] });
     const [loanInputs, setLoanInputs] = useState({ amount: '', rate: '10.5', years: '10', addBacks: '' });
     const [taxInputs, setTaxInputs] = useState({ entity: 'sole', rate: '', salary: '', paid: '' });
     // Forecast inputs. Empty strings mean "use the value estimated from the export".
@@ -204,11 +205,11 @@
     const pnl = source.kind === 'sample' ? samplePnl : source.pnl ? source.pnl.parsed : null;
 
     // Stable object: it only changes when one of the inputs does.
-    const typedNow = useMemo(() => ({ cash: cashInputs, loan: loanInputs, tax: taxInputs }), [cashInputs, loanInputs, taxInputs]);
+    const typedNow = useMemo(() => ({ cash: cashInputs, loan: loanInputs, tax: taxInputs, scenario }), [cashInputs, loanInputs, taxInputs, scenario]);
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
-      accountClass, groupBy, chart, pnl, reviewed,
+      accountClass, groupBy, chart, pnl, reviewed, scenario: typed.scenario,
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
@@ -222,6 +223,7 @@
       setReviewed(saved ? saved.reviewed || {} : {});
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
+      setScenario({ levers: [] });
       setLoanInputs(saved && saved.loan ? saved.loan : { amount: '', rate: '10.5', years: '10', addBacks: '' });
       setTaxInputs(saved && saved.tax ? saved.tax : { entity: 'sole', rate: '', salary: '', paid: '' });
       setRestored(saved && !emptyProfile(saved) ? { name: saved.name, updatedAt: saved.updatedAt, corrections: Object.keys(saved.accountClass || {}).length, reviews: Object.keys(saved.reviewed || {}).length } : null);
@@ -369,7 +371,7 @@
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
           ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} />`
-            : tab === 'cash' ? html`<${CashTab} cash=${result.cash} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
+            : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
             : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`
             : tab === 'trends' ? html`<${TrendsTab} trend=${result.trend} />`
             : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
@@ -860,16 +862,19 @@
     </label>`;
   }
 
-  function CashTab({ cash, inputs, setInputs, cushion, defaultCushion }) {
+  function CashTab({ cash: baseCash, scenarioCash, scenario, setScenario, inputs, setInputs, cushion, defaultCushion }) {
     const t = useTokens();
-    if (!cash) return html`<section class="panel"><div class="empty">Not enough dated transactions to build a forecast.</div></section>`;
+    if (!baseCash) return html`<section class="panel"><div class="empty">Not enough dated transactions to build a forecast.</div></section>`;
+    // With what-if changes, every figure below shows the changed forecast; the chart keeps the baseline for comparison.
+    const cash = scenarioCash || baseCash;
+    const was = (v) => (scenarioCash ? ` · was ${wholeMoney(v)}` : '');
     const set = (k) => (v) => setInputs({ ...inputs, [k]: v });
     const below = cash.weeks.filter((w) => w.ending < cushion);
     const low = cash.lowest;
     const lowIdx = low.week - 1;
     const drivers = cash.outflowRows.map((r) => ({ label: r.label, v: r.values[lowIdx] })).filter((r) => r.v > 0 && !/run-rate/.test(r.label)).sort((a, b) => b.v - a.v).slice(0, 2);
     const driverText = drivers.length ? ` ${drivers.map((d) => `${d.label} (${wholeMoney(d.v)})`).join(' and ')} land${drivers.length === 1 ? 's' : ''} that week.` : '';
-    const chartData = [{ label: 'Today', ending: cash.startingCash, start: cash.start }, ...cash.weeks.map((w) => ({ ...w, label: shortDate(w.start) }))];
+    const chartData = [{ label: 'Today', ending: cash.startingCash, baseline: baseCash.startingCash, start: cash.start }, ...cash.weeks.map((w, i) => ({ ...w, baseline: baseCash.weeks[i].ending, label: shortDate(w.start) }))];
     const minY = Math.min(0, ...chartData.map((d) => d.ending));
 
     return html`
@@ -882,6 +887,8 @@
         </div>
       </section>
 
+      <${ScenarioPanel} scenario=${scenario} setScenario=${setScenario} base=${baseCash} changed=${scenarioCash} cushion=${cushion} />
+
       ${cash.firstNegative
         ? html`<${Banner} level="high" label="Cash shortfall">Cash runs out in the week of <strong>${shortDate(cash.firstNegative.start)}</strong>, reaching ${wholeMoney(low.ending)} by ${shortDate(low.start)}.${driverText}</${Banner}>`
         : below.length
@@ -891,8 +898,8 @@
 
       <section class="kpis" aria-label="Cash summary">
         <div class="kpi"><span class="kpi-label">Starting cash</span><span class="kpi-value">${wholeMoney(cash.startingCash)}</span><span class="kpi-sub">${inputs.startingCash !== '' ? 'Entered manually' : `As of ${cash.asOf}`}</span></div>
-        <div class=${`kpi ${low.ending < 0 ? 'alert' : ''}`}><span class="kpi-label">Lowest balance</span><span class="kpi-value">${wholeMoney(low.ending)}</span><span class="kpi-sub">Week of ${shortDate(low.start)}</span></div>
-        <div class="kpi"><span class="kpi-label">Cash at week 13</span><span class="kpi-value">${wholeMoney(cash.totals.ending)}</span><span class="kpi-sub">${wholeMoney(cash.totals.inflow)} in · ${wholeMoney(cash.totals.outflow)} out</span></div>
+        <div class=${`kpi ${low.ending < 0 ? 'alert' : ''}`}><span class="kpi-label">Lowest balance</span><span class="kpi-value">${wholeMoney(low.ending)}</span><span class="kpi-sub">Week of ${shortDate(low.start)}${was(baseCash.lowest.ending)}</span></div>
+        <div class="kpi"><span class="kpi-label">Cash at week 13</span><span class="kpi-value">${wholeMoney(cash.totals.ending)}</span><span class="kpi-sub">${scenarioCash ? `was ${wholeMoney(baseCash.totals.ending)}` : `${wholeMoney(cash.totals.inflow)} in · ${wholeMoney(cash.totals.outflow)} out`}</span></div>
         <div class=${`kpi ${cash.ar.doubtfulTotal ? 'alert' : ''}`}><span class="kpi-label">Open receivables</span><span class="kpi-value">${wholeMoney(cash.ar.total)}</span><span class="kpi-sub">${cash.ar.doubtfulTotal ? `${wholeMoney(cash.ar.doubtfulTotal)} over 90 days` : 'Nothing over 90 days'}</span></div>
         <div class="kpi"><span class="kpi-label">Open bills</span><span class="kpi-value">${wholeMoney(cash.ap.total)}</span><span class="kpi-sub">${cash.ap.openBills.length} unpaid${cash.cardBalance ? ` + ${wholeMoney(cash.cardBalance)} on cards` : ''}</span></div>
       </section>
@@ -901,10 +908,10 @@
         <section class="panel">
           <div class="panel-head"><h2>Projected cash balance</h2><p>Cash at the end of each week. Points below your cushion are marked red.</p></div>
           <div class="panel-body">
-            <div class="legend"><span><i style=${{ background: t.s1 }}></i>Ending cash</span><span><i style=${{ background: t.warnLine, height: '2px' }}></i>Cushion</span></div>
+            <div class="legend"><span><i style=${{ background: t.s1 }}></i>${scenarioCash ? 'With your changes' : 'Ending cash'}</span>${scenarioCash && html`<span><i style=${{ background: t.neutral, height: '3px' }}></i>Baseline</span>`}<span><i style=${{ background: t.warnLine, height: '2px' }}></i>Cushion</span></div>
             <div style=${{ height: 260 }}>
               <${ResponsiveContainer} width="100%" height="100%">
-                <${AreaChart} data=${chartData} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                <${ComposedChart} data=${chartData} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
                   <${CartesianGrid} vertical=${false} stroke=${t.grid} />
                   <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${12} />
                   <${YAxis} domain=${[minY < 0 ? 'auto' : 0, 'auto']} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
@@ -914,7 +921,8 @@
                     { label: 'Cash in', value: fmtMoney(d.inflow) },
                     { label: 'Cash out', value: fmtMoney(d.outflow) },
                     { label: 'Ending cash', value: fmtMoney(d.ending), color: t.s1 },
-                  ] : [{ label: 'Starting cash', value: fmtMoney(d.ending), color: t.s1 }]} />`} />
+                  ].concat(scenarioCash ? [{ label: 'Baseline', value: fmtMoney(d.baseline), color: t.neutral }] : []) : [{ label: 'Starting cash', value: fmtMoney(d.ending), color: t.s1 }]} />`} />
+                  ${scenarioCash && html`<${Line} type="linear" dataKey="baseline" stroke=${t.neutral} strokeWidth=${2} dot=${false} isAnimationActive=${false} />`}
                   <${Area} type="linear" dataKey="ending" stroke=${t.s1} strokeWidth=${2} fill=${t.s1} fillOpacity=${0.12} isAnimationActive=${false}
                     dot=${(p) => html`<circle key=${p.index} cx=${p.cx} cy=${p.cy} r=${p.payload.ending < cushion ? 5 : 3.5} fill=${p.payload.ending < cushion ? t.neg : t.s1} stroke=${t.surface} strokeWidth=${2} />`}
                     activeDot=${{ r: 6, stroke: t.surface, strokeWidth: 2 }} />
@@ -962,6 +970,61 @@
         <div class="panel-body"><ul class="assumptions">${cash.assumptions.map((a) => html`<li key=${a}>${a}</li>`)}</ul></div>
       </details>
     `;
+  }
+
+  // ------------------------------------------------------------ what-if scenarios
+
+  const LEVER_TYPES = [
+    ['delay', 'A customer pays later'],
+    ['lose', 'Lose a customer'],
+    ['sales', 'Sales go up or down'],
+    ['monthly', 'New monthly cost (hire, lease)'],
+    ['payment', 'One-time payment'],
+    ['receipt', 'One-time money in (loan, owner)'],
+  ];
+
+  function ScenarioPanel({ scenario, setScenario, base, changed, cushion }) {
+    const levers = scenario.levers;
+    const customers = useMemo(() => [...new Set([...base.ar.openInvoices.map((i) => i.party), ...base.newBillings.map((b) => b.customer), ...base.ar.customerLags.map((l) => l.name)])].sort(), [base]);
+    const firstNext = (() => { const d = new Date(`${base.asOf}T00:00:00Z`); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0, 10); })();
+    const inAMonth = (() => { const d = new Date(`${base.asOf}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 30); return d.toISOString().slice(0, 10); })();
+    const defaults = {
+      delay: { customer: customers[0] || '', days: '30' }, lose: { customer: customers[0] || '' }, sales: { pct: '-10' },
+      monthly: { label: 'New hire', amount: '', date: firstNext }, payment: { label: 'Equipment purchase', amount: '', date: inAMonth }, receipt: { label: 'Loan proceeds', amount: '', date: inAMonth },
+    };
+    const add = (type) => setScenario({ levers: [...levers, { id: Date.now() + Math.random(), type, ...defaults[type] }] });
+    const upd = (id, patch) => setScenario({ levers: levers.map((l) => (l.id === id ? { ...l, ...patch } : l)) });
+    const del = (id) => setScenario({ levers: levers.filter((l) => l.id !== id) });
+    const belowBase = base.weeks.filter((w) => w.ending < cushion).length;
+    const belowNow = changed ? changed.weeks.filter((w) => w.ending < cushion).length : belowBase;
+    return html`<section class="panel">
+      <div class="panel-head"><h2>What if?</h2><p>Try changes before they happen. Everything on this tab updates; the chart keeps the baseline for comparison. Changes are not saved.</p>
+        ${levers.length > 0 && html`<button class="btn spacer" onClick=${() => setScenario({ levers: [] })}>Clear all</button>`}</div>
+      <div class="panel-body scenario">
+        ${levers.map((l) => html`<div class="lever" key=${l.id}>
+          <strong>${(LEVER_TYPES.find((x) => x[0] === l.type) || [])[1]}</strong>
+          <div class="lever-inputs">
+            ${(l.type === 'delay' || l.type === 'lose') && html`<label class="field" for=${`lv-c-${l.id}`}>Customer<select id=${`lv-c-${l.id}`} class="select" value=${l.customer} onChange=${(e) => upd(l.id, { customer: e.target.value })}>${customers.map((c) => html`<option key=${c} value=${c}>${c}</option>`)}</select></label>`}
+            ${l.type === 'delay' && html`<${NumberInput} id=${`lv-d-${l.id}`} label="Days later" suffix="days" value=${l.days} onChange=${(v) => upd(l.id, { days: v })} />`}
+            ${l.type === 'sales' && html`<${NumberInput} id=${`lv-p-${l.id}`} label="Change in new billing" suffix="%" value=${l.pct} onChange=${(v) => upd(l.id, { pct: v })} />`}
+            ${(l.type === 'monthly' || l.type === 'payment' || l.type === 'receipt') && html`
+              <label class="field" for=${`lv-l-${l.id}`}>Label<input id=${`lv-l-${l.id}`} class="text" value=${l.label} onInput=${(e) => upd(l.id, { label: e.target.value })} /></label>
+              <${NumberInput} id=${`lv-a-${l.id}`} label=${l.type === 'monthly' ? 'Per month' : 'Amount'} prefix="$" value=${l.amount} placeholder="e.g. 5,000" onChange=${(v) => upd(l.id, { amount: v })} />
+              <label class="field" for=${`lv-t-${l.id}`}>${l.type === 'monthly' ? 'Starts' : 'Date'}<input id=${`lv-t-${l.id}`} class="text" type="date" value=${l.date} onInput=${(e) => upd(l.id, { date: e.target.value })} /></label>`}
+          </div>
+          <button class="btn" aria-label="Remove this change" onClick=${() => del(l.id)}>Remove</button>
+        </div>`)}
+        <label class="field add-lever" for="add-lever">Add a change
+          <select id="add-lever" class="select" value="" onChange=${(e) => { if (e.target.value) add(e.target.value); e.target.value = ''; }}>
+            <option value="">Choose…</option>
+            ${LEVER_TYPES.map(([k, l]) => html`<option key=${k} value=${k}>${l}</option>`)}
+          </select>
+        </label>
+        ${changed && html`<${Banner} level=${changed.lowest.ending < 0 ? 'high' : belowNow > belowBase || changed.lowest.ending < base.lowest.ending ? 'medium' : 'good'} label="With these changes">
+          Lowest balance <strong>${wholeMoney(changed.lowest.ending)}</strong> (week of ${shortDate(changed.lowest.start)}), was ${wholeMoney(base.lowest.ending)}. Cash at week 13 <strong>${wholeMoney(changed.totals.ending)}</strong>, was ${wholeMoney(base.totals.ending)}. Weeks below the cushion: ${belowNow}, was ${belowBase}.${changed.firstNegative ? ` Cash runs out in the week of ${shortDate(changed.firstNegative.start)}.` : ''}
+        </${Banner}>`}
+      </div>
+    </section>`;
   }
 
   function WeekGrid({ cash, cushion }) {

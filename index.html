@@ -342,6 +342,15 @@
   .client-row .sub { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }
   .confirm { display: inline-flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-2); }
 
+  /* What-if scenarios */
+  .scenario { display: grid; gap: 12px; }
+  .lever { display: grid; grid-template-columns: minmax(150px, 200px) 1fr auto; gap: 8px 14px; align-items: end; padding: 10px 12px; border: 1px solid var(--hair); border-radius: 8px; }
+  .lever > strong { align-self: center; font-weight: 600; }
+  .lever-inputs { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+  .lever-inputs .field { flex: 1 1 150px; max-width: 240px; }
+  @media (max-width: 640px) { .lever { grid-template-columns: 1fr; } }
+  .add-lever { max-width: 320px; }
+
   /* Tax & lending */
   .loan-result { display: grid; gap: 12px; border-top: 1px solid var(--hair); }
   .loan-row { grid-template-columns: minmax(150px, 220px) 1fr auto; }

@@ -1049,6 +1049,34 @@
     return leaf;
   }
 
+  // Cleans up what-if inputs from the page; anything malformed is ignored.
+  function normalizeScenario(s) {
+    const out = { delay: new Map(), lost: new Set(), salesPct: 0, monthly: [], once: [], describe: [], active: false };
+    for (const lv of (s && s.levers) || []) {
+      const amt = Math.abs(+lv.amount || 0);
+      const date = lv.date ? new Date(`${lv.date}T00:00:00Z`) : null;
+      if (lv.type === 'delay' && lv.customer && +lv.days) {
+        out.delay.set(lower(lv.customer), (out.delay.get(lower(lv.customer)) || 0) + +lv.days);
+        out.describe.push(`${lv.customer} pays ${+lv.days} days later`);
+      } else if (lv.type === 'lose' && lv.customer) {
+        out.lost.add(lower(lv.customer));
+        out.describe.push(`No new billing to ${lv.customer}`);
+      } else if (lv.type === 'sales' && +lv.pct) {
+        out.salesPct += +lv.pct;
+        out.describe.push(`New sales ${+lv.pct > 0 ? 'up' : 'down'} ${Math.abs(+lv.pct)}%`);
+      } else if (lv.type === 'monthly' && amt && date && !isNaN(date)) {
+        out.monthly.push({ label: lv.label || 'New monthly cost', amount: amt, start: date });
+        out.describe.push(`${lv.label || 'New monthly cost'} of ${fmtWhole(amt)}/month from ${lv.date}`);
+      } else if ((lv.type === 'payment' || lv.type === 'receipt') && amt && date && !isNaN(date)) {
+        const dir = lv.type === 'receipt' ? 'in' : 'out';
+        out.once.push({ label: lv.label || (dir === 'in' ? 'One-time receipt' : 'One-time payment'), amount: amt, date, dir });
+        out.describe.push(`${lv.label || (dir === 'in' ? 'One-time receipt' : 'One-time payment')} of ${fmtWhole(amt)} on ${lv.date}`);
+      }
+    }
+    out.active = out.describe.length > 0;
+    return out;
+  }
+
   function cashForecast(txns, accountClass, opts) {
     opts = opts || {};
     const weeksN = opts.weeks || 13;
@@ -1059,6 +1087,7 @@
     const start = addDays(asOf, 1);
     const horizonEnd = addDays(asOf, weeksN * 7);
     const weekOf = (d) => Math.max(0, Math.min(weeksN - 1, Math.floor((d - start) / DAY / 7)));
+    const sc = normalizeScenario(opts.scenario);
 
     // Starting cash: opening balances plus period activity in cash accounts.
     const opening = opts.openingBalances || {};
@@ -1101,11 +1130,15 @@
       let expected = addDays(c.date, lag);
       const overdue = expected <= asOf;
       if (overdue) expected = addDays(asOf, 10); // past its usual timing: assume a nudge collects it soon
+      const delay = sc.delay.get(lower(c.party)) || 0;
+      if (delay) expected = addDays(expected, delay);
       const doubtful = age > doubtfulAfter;
       const b = buckets.find((x) => age <= x.max);
       b.amount = round2(b.amount + c.open);
       b.count++;
-      return { ...c, age, lag, lagKnown: ar.lags.has(c.party), expected, expectedStr: isoDate(expected), overdue, doubtful, week: doubtful && !opts.includeDoubtful ? null : weekOf(expected) };
+      // Money expected after the last forecast week is not counted in it.
+      const week = (doubtful && !opts.includeDoubtful) || expected > horizonEnd ? null : weekOf(expected);
+      return { ...c, age, lag, lagKnown: ar.lags.has(c.party), expected, expectedStr: isoDate(expected), overdue, doubtful, week };
     }).sort((a, b) => b.age - a.age);
 
     // Payables.
@@ -1145,19 +1178,21 @@
       const amount = round2(median(keys.slice(-3).map((k) => months.get(k))));
       const last = list.reduce((m, t) => (t.date > m ? t.date : m), list[0].date);
       const day = Math.min(28, Math.round(median(list.map((t) => t.date.getUTCDate()))));
-      const lag = arLagFor(cust);
+      if (sc.lost.has(lower(cust))) continue;
+      const lag = arLagFor(cust) + (sc.delay.get(lower(cust)) || 0);
+      const billed = round2(amount * (1 + sc.salesPct / 100));
       for (let m = 1; m <= 4; m++) {
         const inv = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + m, day));
         const pay = addDays(inv, lag);
         if (pay <= asOf || pay > horizonEnd) continue;
-        newBillings.push({ customer: cust, invoiceDate: isoDate(inv), date: pay, amount, week: weekOf(pay) });
+        newBillings.push({ customer: cust, invoiceDate: isoDate(inv), date: pay, amount: billed, week: weekOf(pay) });
       }
     }
 
     // Receipts that never touch A/R (sales receipts, direct deposits to income).
     const directCut = addDays(asOf, -91);
     const directReceipts = postings.filter((p) => p.cls === 'income' && !/invoice|credit memo|statement charge/i.test(p.t.type) && p.t.date >= directCut);
-    const directWeekly = round2(directReceipts.reduce((s, p) => s + p.value, 0) / 13);
+    const directWeekly = round2(directReceipts.reduce((s, p) => s + p.value, 0) / 13 * (1 + sc.salesPct / 100));
 
     // Outflows.
     const cashOut = postings.filter((p) => p.cls !== 'income' && p.value > 0 && !NON_CASH_ACCOUNT.test(p.category));
@@ -1218,6 +1253,19 @@
     if (cardBalance > 0) put(rowsOut, 'Credit card balance', Math.min(1, weeksN - 1), cardBalance);
     for (const it of recurringItems) put(rowsOut, it.group, weekOf(it.date), it.amount);
     if (otherWeekly > 0) for (let w = 0; w < weeksN; w++) put(rowsOut, 'Other spending (run-rate)', w, otherWeekly);
+
+    // What-if changes the bookkeeper added.
+    for (const m of sc.monthly) {
+      for (let n = 0; n < 12; n++) {
+        const d = new Date(Date.UTC(m.start.getUTCFullYear(), m.start.getUTCMonth() + n, Math.min(28, m.start.getUTCDate())));
+        if (d > horizonEnd) break;
+        if (d > asOf) put(rowsOut, m.label, weekOf(d), m.amount);
+      }
+    }
+    for (const o of sc.once) {
+      if (o.date <= asOf || o.date > horizonEnd) continue;
+      put(o.dir === 'in' ? rowsIn : rowsOut, o.label, weekOf(o.date), o.amount);
+    }
 
     const weeks = [];
     let bal = startingCash;
@@ -1289,6 +1337,7 @@
       newBillings,
       recurring: recurringItems.map((i) => ({ ...i, dateStr: isoDate(i.date) })),
       balanceOut,
+      scenario: sc.active ? sc.describe : null,
       assumptions,
     };
   }
@@ -2528,6 +2577,9 @@
       startingCash: opts.startingCash,
       includeDoubtful: opts.includeDoubtful,
     });
+    const cashScenario = opts.scenario && normalizeScenario(opts.scenario).active ? cashForecast(txns, accountClass, {
+      meta: parsed.meta, openingBalances: parsed.meta.openingBalances, startingCash: opts.startingCash, includeDoubtful: opts.includeDoubtful, scenario: opts.scenario,
+    }) : null;
     const breakeven = once('breakeven', () => breakEven(txns, accountClass, parsed.meta));
     // Open bills that the audit flags as possible duplicates should not be paid blindly.
     if (cash) {
@@ -2570,6 +2622,7 @@
       trend,
       customers,
       vendors,
+      cashScenario,
     };
     out.tieOut = tieOut(txns, accountClass, parsed.meta, opts.pnl);
     // The advisory views read the finished analysis (audit, forecast, trends, customers).

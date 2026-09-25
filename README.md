@@ -17,6 +17,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - A **13-week cash flow forecast** built from the export: open invoices are collected on each customer's own median days-to-pay (measured from their payment history, not the invoice terms), customers who bill monthly keep billing, open bills are paid on each vendor's usual timing, and monthly costs like payroll, rent and software are projected forward.
 - Repeating payments that never show as expenses are projected too: owner draws, loan principal, and sales-tax or payroll-tax remittances.
 - Starting cash comes from the bank accounts' beginning balance plus period activity. You can override it and set a minimum cash cushion. The tool warns about weeks below the cushion or below zero and names what lands in the lowest week.
+- **What if?** Stack changes and see the effect before they happen: a customer paying later, losing a customer, sales up or down, a new monthly cost such as a hire or lease, a one-time payment, or one-time money in such as loan proceeds. Every figure on the tab updates and the chart keeps the baseline for comparison. Changes are not saved or used in the client report.
 - Receivables aging, a payment-speed chart per customer, and open invoice and bill schedules. Invoices over 90 days old are left out unless you include them. Open bills that the audit flags as possible duplicates are marked so nobody pays them twice.
 
 **Break-even**
