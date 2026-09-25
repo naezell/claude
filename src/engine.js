@@ -1925,6 +1925,117 @@
     };
   }
 
+  // ---------------------------------------------------------------- review state & client questions
+
+  // Keys that survive re-exporting: no line numbers or ids, only what the entry is.
+  const rowKey = (t) => [t.dateStr, lower(t.type), t.num, lower(counterpartyOf(t)), Math.abs(t.amount).toFixed(2), lower(leafAccount(t.account))].join('|');
+  const REVIEW_STATUSES = { ok: 'Not an issue', fixed: 'Fixed in QuickBooks', asked: 'Asked the client' };
+  const isCleared = (r) => !!r && (r.status === 'ok' || r.status === 'fixed');
+
+  function applyReview(audit, reviewed) {
+    let cleared = 0;
+    const tag = (item, key) => {
+      item.key = key;
+      item.review = reviewed[key] || null;
+      if (isCleared(item.review)) cleared++;
+    };
+    audit.uncategorized.forEach((t) => tag(t, `u|${rowKey(t)}`));
+    audit.duplicates.forEach((g) => tag(g, `d|${g.rows.map(rowKey).sort().join('~')}`));
+    audit.mismatches.forEach((t) => tag(t, `m|${t.kind}|${rowKey(t)}`));
+    return { cleared };
+  }
+
+  // Saved settings are filed under the company name from the report header.
+  function clientKey(meta) {
+    return lower((meta && meta.company) || '').replace(/[^a-z0-9]+/g, ' ').trim() || null;
+  }
+
+  const niceDate = (iso) => {
+    const [y, m, d] = iso.split('-');
+    return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m - 1]} ${+d}, ${y}`;
+  };
+
+  // A plain-language question list for the client, built from what is still open.
+  function clientQuestions(result, opts) {
+    opts = opts || {};
+    const inc = Object.assign({ uncategorized: true, duplicates: true, coding: true, receivables: true, w9: true }, opts.include || {});
+    const open = (item) => !isCleared(item.review);
+    const sections = [];
+    const keys = [];
+    const who = (t) => counterpartyOf(t) || (t.memo ? `"${t.memo}"` : 'no payee recorded');
+    const money = (n) => fmtMoney(Math.abs(n));
+
+    const asked = new Set();
+    if (inc.uncategorized) {
+      const items = result.audit.uncategorized.filter(open).sort((a, b) => a.date - b.date).map((t) => {
+        asked.add(rowKey(t));
+        keys.push(t.key);
+        const incoming = classOf(null, t.account) === 'income' || /deposit|sales receipt/i.test(t.type);
+        return incoming
+          ? `${niceDate(t.dateStr)}: a deposit of ${money(t.amount)} (${who(t)}). Who paid this, and what was it for?`
+          : `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}${t.memo && counterpartyOf(t) ? ` (${t.memo})` : ''}. What was this for?`;
+      });
+      if (items.length) sections.push({ title: 'Transactions we could not categorize', items });
+    }
+    if (inc.duplicates) {
+      const items = result.audit.duplicates.filter(open).sort((a, b) => a.rows[0].date - b.rows[0].date).map((g) => {
+        keys.push(g.key);
+        const r = g.rows[0];
+        const dates = g.rows.map((x) => niceDate(x.dateStr)).join(' and ');
+        return /bill/i.test(r.type)
+          ? `Bill${r.num ? ` #${r.num}` : ''} from ${who(r)} for ${money(r.amount)} is entered ${g.rows.length} times (${dates}). Did you receive ${g.rows.length} separate bills?`
+          : `${who(r)} shows ${g.rows.length} charges of ${money(r.amount)} (${dates}). Were you charged ${g.rows.length === 2 ? 'twice' : `${g.rows.length} times`}, or is one of these a duplicate entry?`;
+      });
+      if (items.length) sections.push({ title: 'Possible double charges', items });
+    }
+    if (inc.coding) {
+      const items = [];
+      for (const t of result.audit.mismatches.filter(open).sort((a, b) => a.date - b.date)) {
+        // Already asked about as uncategorized: one question per transaction.
+        if (asked.has(rowKey(t))) continue;
+        let q = null;
+        if (t.kind === 'Missing payee') q = `${niceDate(t.dateStr)}: ${money(t.amount)}${t.memo ? ` ("${t.memo}")` : ''}. Who was this paid to?`;
+        else if (t.kind === 'Type / account conflict' && /transfer/i.test(t.type)) q = `${niceDate(t.dateStr)}: a ${money(t.amount)} transfer${t.memo ? ` ("${t.memo}")` : ''}. Was this a move to another account of yours, or a payment to someone?`;
+        else if (t.kind === 'Type / account conflict') q = `${niceDate(t.dateStr)}: ${money(t.amount)} with ${who(t)}${t.memo ? ` ("${t.memo}")` : ''}. Can you tell us what this was, so we can record it correctly?`;
+        if (q) { items.push(q); keys.push(t.key); }
+      }
+      if (items.length) sections.push({ title: 'Entries we want to confirm', items });
+    }
+    if (inc.receivables && result.cash) {
+      const items = result.cash.ar.openInvoices.filter((i) => i.age > 90).map((i) => `Invoice${i.num ? ` #${i.num}` : ''} to ${i.party} for ${money(i.open)} from ${niceDate(i.dateStr)} is still unpaid after ${i.age} days. Do you still expect payment, or should we write it off?`);
+      if (items.length) sections.push({ title: 'Old unpaid invoices', items });
+    }
+    if (inc.w9 && result.vendors) {
+      const names = [];
+      for (const y of result.vendors.tax) for (const v of y.vendors) if (v.status === 'Review' && !names.includes(v.vendor)) names.push(v.vendor);
+      const years = result.vendors.tax.filter((y) => y.reviewCount).map((y) => y.year);
+      if (names.length) sections.push({ title: 'W-9 forms for contractors', items: [`Please send W-9 forms for ${names.join(', ')} (paid enough in ${years.join(' or ')} to need a 1099), or tell us which ones you already have on file.`] });
+    }
+
+    const count = sections.reduce((t, x) => t + x.items.length, 0);
+    const end = result.period && result.period.end ? niceDate(result.period.end) : 'the latest period';
+    const L = [];
+    L.push(`Hi ${opts.greeting || 'there'},`);
+    L.push('');
+    if (!count) {
+      L.push(`We've reviewed the books through ${end} and have no questions this time. Thank you!`);
+    } else {
+      L.push(`We're reviewing the books through ${end} and have ${count} question${count === 1 ? '' : 's'}. Short answers are fine, and receipts help where you have them.`);
+      let n = 0;
+      for (const sec of sections) {
+        L.push('');
+        L.push(sec.title.toUpperCase());
+        for (const q of sec.items) L.push(`${++n}. ${q}`);
+      }
+      L.push('');
+      L.push('Reply whenever is convenient. Anything you are unsure about, just say so and we will look into it.');
+    }
+    L.push('');
+    L.push('Thanks,');
+    if (opts.preparer) L.push(opts.preparer);
+    return { text: L.join('\n'), count, sections, keys };
+  }
+
   // ---------------------------------------------------------------- orchestration
 
   function accountNames(txns) {
@@ -1978,7 +2089,13 @@
     const vendors = vendorAnalysis(txns, accountClass, cash, trend, parsed.meta);
     const uncategorizedTotal = round2(uncategorized.reduce((s, t) => s + Math.abs(t.amount), 0));
     const duplicateExposure = round2(duplicates.reduce((s, g) => s + g.exposure, 0));
-    const flaggedIds = new Set([...uncategorized.map((t) => t.id), ...duplicates.flatMap((g) => g.rows.map((r) => r.id)), ...mismatches.map((t) => t.id)]);
+    // Flags the bookkeeper cleared ("not an issue" or "fixed") drop out of the counts and score.
+    const reviewed = opts.reviewed || {};
+    const keyed = applyReview({ uncategorized, duplicates, mismatches }, reviewed);
+    const openUnc = uncategorized.filter((t) => !isCleared(t.review));
+    const openDup = duplicates.filter((g) => !isCleared(g.review));
+    const openMis = mismatches.filter((t) => !isCleared(t.review));
+    const flaggedIds = new Set([...openUnc.map((t) => t.id), ...openDup.flatMap((g) => g.rows.map((r) => r.id)), ...openMis.map((t) => t.id)]);
     const healthScore = entries.length ? Math.max(0, Math.round(100 - (flaggedIds.size / entries.length) * 100 * 1.5)) : 100;
     return {
       meta: parsed.meta,
@@ -1987,7 +2104,14 @@
       entryCount: entries.length,
       accounts: listAccounts(counts, chartOnly),
       chart: opts.chart ? { accounts: opts.chart.accounts.length, matched: Object.values(chartOnly.source).filter((x) => x.from === 'chart').length, of: counts.size } : null,
-      audit: { uncategorized, uncategorizedTotal, duplicates, duplicateExposure, mismatches, flaggedCount: flaggedIds.size, healthScore },
+      audit: {
+        uncategorized, uncategorizedTotal, duplicates, duplicateExposure, mismatches, flaggedCount: flaggedIds.size, healthScore,
+        open: { uncategorized: openUnc.length, duplicates: openDup.length, mismatches: openMis.length },
+        cleared: keyed.cleared,
+        uncategorizedOpenTotal: round2(openUnc.reduce((t, x) => t + Math.abs(x.amount), 0)),
+        duplicateOpenExposure: round2(openDup.reduce((t, g) => t + g.exposure, 0)),
+      },
+      clientKey: clientKey(parsed.meta),
       profit,
       subs,
       cash,
@@ -2029,9 +2153,10 @@
     L.push('EXECUTIVE SUMMARY');
     L.push(thin);
     L.push(`Books health score:          ${audit.healthScore}/100`);
-    L.push(`Uncategorized transactions:  ${audit.uncategorized.length} (${fmtMoney(audit.uncategorizedTotal)})`);
-    L.push(`Potential duplicate groups:  ${audit.duplicates.length} (${fmtMoney(audit.duplicateExposure)} at risk)`);
-    L.push(`Coding / entry mismatches:   ${audit.mismatches.length}`);
+    L.push(`Uncategorized transactions:  ${audit.open.uncategorized} (${fmtMoney(audit.uncategorizedOpenTotal)})`);
+    L.push(`Potential duplicate groups:  ${audit.open.duplicates} (${fmtMoney(audit.duplicateOpenExposure)} at risk)`);
+    L.push(`Coding / entry mismatches:   ${audit.open.mismatches}`);
+    if (audit.cleared) L.push(`Reviewed and cleared:        ${audit.cleared} flag${audit.cleared === 1 ? '' : 's'}`);
     L.push(`Revenue:                     ${fmtMoney(profit.totals.revenue)}`);
     L.push(`Net income:                  ${fmtMoney(profit.totals.netIncome)} (${fmtPct(profit.totals.netMargin)} net margin)`);
     L.push(`Recurring software spend:    ${fmtMoney(subs.totalAnnual)} per year`);
@@ -2266,6 +2391,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

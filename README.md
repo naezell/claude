@@ -41,6 +41,11 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Chart of Accounts**: upload the client's Account List (Chart of Accounts) export alongside the transactions, in the same batch or with **Add export**. Its account types (Bank, Credit Card, Long Term Liabilities, Equity, Cost of Goods Sold, and so on) replace the guesses made from account names everywhere, and Account mapping shows where each type came from. Manual corrections still win.
 
+**Monthly review workflow**
+- Mark each audit flag as *Not an issue*, *Fixed in QuickBooks* or *Asked the client*. Cleared flags drop out of the counts and health score and stay cleared when next month's export is loaded (flags are matched on what the entry is, not on row numbers).
+- **Client questions**: turns open uncategorized items, possible double charges, entries needing context, invoices over 90 days old and W-9 requests into a friendly, numbered question list ready to email. One click marks the included flags as asked.
+- **Saved clients**: account type corrections, reviewed flags, the cash cushion and benchmark industry and state are saved per client (matched on the company name in the report header) and restored when their file is loaded again. They are kept in this browser only; export a JSON backup to move them to another computer or share them with a colleague.
+
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
 
 **Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, vendors and 1099 review, benchmarks, and recommended next steps. Download it as `.txt` or copy it.

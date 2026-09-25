@@ -27,6 +27,63 @@
     set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } },
   };
 
+  // Saved client settings live in this browser only (the page never uploads client data).
+  // Everything goes through this object, so moving storage elsewhere is a one-place change.
+  const ClientStore = {
+    key: 'll.clients.v1',
+    all() { try { return JSON.parse(safeStore.get(this.key) || '{}') || {}; } catch (e) { return {}; } },
+    get(id) { return id ? this.all()[id] || null : null; },
+    put(id, profile) {
+      if (!id) return;
+      const all = this.all();
+      all[id] = { ...profile, updatedAt: new Date().toISOString() };
+      safeStore.set(this.key, JSON.stringify(all));
+    },
+    remove(id) { const all = this.all(); delete all[id]; safeStore.set(this.key, JSON.stringify(all)); },
+    // Import keeps whichever copy of each client was updated more recently.
+    merge(incoming) {
+      const all = this.all();
+      let n = 0;
+      for (const [id, p] of Object.entries(incoming || {})) {
+        if (!p || typeof p !== 'object') continue;
+        if (!all[id] || String(p.updatedAt || '') > String(all[id].updatedAt || '')) { all[id] = p; n++; }
+      }
+      safeStore.set(this.key, JSON.stringify(all));
+      return n;
+    },
+  };
+  const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.cushion && !p.bench);
+
+  async function saveTextFile(filename, data) {
+    const downloads = await downloadsReady;
+    if (downloads) {
+      try { await downloads.save({ filename, data }); return `Saved ${filename}`; } catch (e) {
+        const code = e && e.code;
+        return code === 'declined' ? 'Download cancelled.' : code === 'rate_limited' ? 'A save prompt is already open.' : 'Downloads are unavailable here. Use Copy instead.';
+      }
+    }
+    const url = URL.createObjectURL(new Blob([data], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return `Downloaded ${filename}`;
+  }
+
+  function copyText(text, el) {
+    const selectAll = () => {
+      const sel = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      sel.removeAllRanges(); sel.addRange(range);
+      return 'Text selected. Press Ctrl+C / Cmd+C to copy.';
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).then(() => 'Copied to clipboard.', selectAll);
+    return Promise.resolve(selectAll());
+  }
+
+  const slug = (s) => (s || 'client').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'client';
+
   // Chart colors come from CSS tokens so both themes stay in sync.
   function useTokens() {
     const read = () => {
@@ -89,6 +146,11 @@
     const [reportOpen, setReportOpen] = useState(false);
     const [dragging, setDragging] = useState(false);
     const [benchmarks, setBenchmarks] = useState(null);
+    const [reviewed, setReviewed] = useState({});
+    const [benchPrefs, setBenchPrefs] = useState(null);
+    const [restored, setRestored] = useState(null);
+    const [questionsOpen, setQuestionsOpen] = useState(false);
+    const [clientsOpen, setClientsOpen] = useState(false);
     // Forecast inputs. Empty strings mean "use the value estimated from the export".
     const [cashInputs, setCashInputs] = useState({ startingCash: '', cushion: '', includeDoubtful: false });
 
@@ -106,8 +168,37 @@
 
     const startingCash = cashInputs.startingCash === '' ? undefined : parseFloat(cashInputs.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
-      accountClass, groupBy, chart, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, startingCash, cashInputs.includeDoubtful]);
+      accountClass, groupBy, chart, reviewed, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
+    }) : null), [parsed, accountClass, groupBy, chart, reviewed, startingCash, cashInputs.includeDoubtful]);
+
+    // Restore a client's saved settings when their file loads; the sample always starts clean.
+    const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
+    useEffect(() => {
+      const saved = ClientStore.get(clientId);
+      setAccountClass(saved ? saved.accountClass || {} : {});
+      setReviewed(saved ? saved.reviewed || {} : {});
+      setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
+      setBenchPrefs(saved ? saved.bench || null : null);
+      setRestored(saved && !emptyProfile(saved) ? { name: saved.name, updatedAt: saved.updatedAt, corrections: Object.keys(saved.accountClass || {}).length, reviews: Object.keys(saved.reviewed || {}).length } : null);
+    }, [source, clientId]);
+    // Save as the bookkeeper works.
+    useEffect(() => {
+      if (!clientId) return;
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, cushion: cashInputs.cushion || '', bench: benchPrefs };
+      const saved = ClientStore.get(clientId);
+      if (emptyProfile(profile) && !saved) return;
+      ClientStore.put(clientId, profile);
+    }, [clientId, accountClass, reviewed, cashInputs.cushion, benchPrefs]);
+    const setReview = useCallback((keys, status) => {
+      setReviewed((prev) => {
+        const next = { ...prev };
+        for (const k of [].concat(keys)) {
+          if (!status) delete next[k];
+          else next[k] = { status, at: new Date().toISOString().slice(0, 10) };
+        }
+        return next;
+      });
+    }, []);
     // Default cushion: one month of fixed costs, rounded to the nearest $1,000.
     const defaultCushion = result && result.breakeven ? Math.round(result.breakeven.base.fixed / 1000) * 1000 : 0;
     const cushion = cashInputs.cushion === '' || isNaN(parseFloat(cashInputs.cushion)) ? defaultCushion : parseFloat(cashInputs.cushion);
@@ -155,9 +246,6 @@
         setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null) });
       }
       setError(errors.join(' '));
-      if (!good.length) return;
-      setAccountClass({});
-      setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false });
     }, []);
 
     useEffect(() => {
@@ -174,7 +262,7 @@
       };
     }, [loadFiles, dragging]);
 
-    const auditCount = result ? result.audit.uncategorized.length + result.audit.duplicates.length + result.audit.mismatches.length : 0;
+    const auditCount = result ? result.audit.open.uncategorized + result.audit.open.duplicates + result.audit.open.mismatches : 0;
 
     return html`
       <header class="topbar">
@@ -191,6 +279,8 @@
             ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
               <input id="csv-add" class="file-input" type="file" multiple accept=".csv,text/csv" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
             ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
+            <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.sample}Saved clients</button>
+            <button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
             <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>
           </div>
         </div>
@@ -207,6 +297,7 @@
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
         ${error && html`<div class="error" role="alert">${error}</div>`}
+        ${restored && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
 
         <div class="tabs" role="tablist">
           <button class="tab" role="tab" id="tab-audit" aria-selected=${tab === 'audit'} onClick=${() => setTab('audit')}>Diagnostic audit<span class="count">${auditCount}</span></button>
@@ -219,17 +310,19 @@
         </div>
 
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
-          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} />`
+          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
             : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`
             : tab === 'trends' ? html`<${TrendsTab} trend=${result.trend} />`
             : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
-            : html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} />`}
+            : html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`}
         </main>`}
-        <footer class="foot">Files are processed in your browser and never uploaded. Flags are leads for review, not confirmed errors.</footer>
+        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Saved clients. Flags are leads for review, not confirmed errors.</footer>
       </div>
 
+      ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
+      ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onClose=${() => setClientsOpen(false)} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
       ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} benchmarks=${benchmarks} onClose=${() => setReportOpen(false)} />`}
       ${dragging && html`<div class="drop-overlay">Drop the QuickBooks CSV to analyze it</div>`}
     `;
@@ -237,40 +330,59 @@
 
   // ------------------------------------------------------------ audit tab
 
-  function AuditTab({ result, accountClass, setAccountClass }) {
+  function ReviewSelect({ item, onReview }) {
+    const status = item.review ? item.review.status : '';
+    return html`<select class=${`review-select ${status}`} aria-label="Review status" value=${status} onChange=${(e) => onReview(item.key, e.target.value)}>
+      <option value="">Open</option>
+      ${Object.entries(E.REVIEW_STATUSES).map(([k, l]) => html`<option key=${k} value=${k}>${l}</option>`)}
+    </select>`;
+  }
+
+  const clearedOf = (x) => !!x.review && (x.review.status === 'ok' || x.review.status === 'fixed');
+
+  function AuditTab({ result, accountClass, setAccountClass, onReview }) {
     const { audit } = result;
+    const [showCleared, setShowCleared] = useState(false);
+    const vis = (list) => (showCleared ? list : list.filter((x) => !clearedOf(x)));
     const score = audit.healthScore;
     const scoreColor = score >= 90 ? 'var(--good)' : score >= 75 ? 'var(--warn)' : 'var(--critical)';
     const scoreWord = score >= 90 ? 'Clean' : score >= 75 ? 'Needs cleanup' : 'Significant issues';
+    const asked = [...audit.uncategorized, ...audit.duplicates, ...audit.mismatches].filter((x) => x.review && x.review.status === 'asked').length;
     return html`
       <section class="kpis" aria-label="Audit summary">
         <div class="kpi">
           <span class="kpi-label">Books health score</span>
           <span class="kpi-value">${score}<span style=${{ fontSize: '14px', color: 'var(--muted)' }}> / 100</span></span>
           <div class="meter"><span style=${{ width: `${score}%`, background: scoreColor }}></span></div>
-          <span class="kpi-sub">${scoreWord} · ${audit.flaggedCount} of ${result.entryCount} entries flagged</span>
+          <span class="kpi-sub">${scoreWord} · ${audit.flaggedCount} of ${result.entryCount} entries still flagged</span>
         </div>
-        <div class=${`kpi ${audit.uncategorized.length ? 'alert' : 'okay'}`}>
+        <div class=${`kpi ${audit.open.uncategorized ? 'alert' : 'okay'}`}>
           <span class="kpi-label">Uncategorized</span>
-          <span class="kpi-value">${audit.uncategorized.length}</span>
-          <span class="kpi-sub"><span class="num">${fmtMoney(audit.uncategorizedTotal)}</span> not yet coded</span>
+          <span class="kpi-value">${audit.open.uncategorized}</span>
+          <span class="kpi-sub"><span class="num">${fmtMoney(audit.uncategorizedOpenTotal)}</span> not yet coded</span>
         </div>
-        <div class=${`kpi ${audit.duplicates.length ? 'alert' : 'okay'}`}>
+        <div class=${`kpi ${audit.open.duplicates ? 'alert' : 'okay'}`}>
           <span class="kpi-label">Potential duplicates</span>
-          <span class="kpi-value">${audit.duplicates.length}</span>
-          <span class="kpi-sub"><span class="num">${fmtMoney(audit.duplicateExposure)}</span> possibly double-counted</span>
+          <span class="kpi-value">${audit.open.duplicates}</span>
+          <span class="kpi-sub"><span class="num">${fmtMoney(audit.duplicateOpenExposure)}</span> possibly double-counted</span>
         </div>
-        <div class=${`kpi ${audit.mismatches.length ? 'alert' : 'okay'}`}>
+        <div class=${`kpi ${audit.open.mismatches ? 'alert' : 'okay'}`}>
           <span class="kpi-label">Mismatched entries</span>
-          <span class="kpi-value">${audit.mismatches.length}</span>
-          <span class="kpi-sub">${audit.mismatches.filter((m) => m.severity === 'High').length} high severity</span>
+          <span class="kpi-value">${audit.open.mismatches}</span>
+          <span class="kpi-sub">${audit.mismatches.filter((m) => m.severity === 'High' && !clearedOf(m)).length} high severity</span>
         </div>
       </section>
 
+      <div class="review-bar">
+        <span>Mark each flag as you work through it. Cleared flags stay cleared when you load next month's export.</span>
+        <span class="hint">${audit.cleared} cleared · ${asked} asked the client</span>
+        ${audit.cleared > 0 && html`<label class="check" for="show-cleared" style=${{ paddingTop: 0 }}><input id="show-cleared" type="checkbox" checked=${showCleared} onChange=${(e) => setShowCleared(e.target.checked)} />Show cleared</label>`}
+      </div>
+
       <${IssuesByMonth} audit=${audit} />
-      <${UncategorizedPanel} rows=${audit.uncategorized} total=${audit.uncategorizedTotal} />
-      <${DuplicatesPanel} groups=${audit.duplicates} exposure=${audit.duplicateExposure} />
-      <${MismatchPanel} rows=${audit.mismatches} />
+      <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
+      <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
+      <${MismatchPanel} rows=${vis(audit.mismatches)} open=${audit.open.mismatches} onReview=${onReview} />
       <${AccountMapping} accounts=${result.accounts} accountClass=${accountClass} setAccountClass=${setAccountClass} />
     `;
   }
@@ -317,17 +429,18 @@
     </section>`;
   }
 
-  function UncategorizedPanel({ rows, total }) {
+  function UncategorizedPanel({ rows, open, total, onReview }) {
     return html`<section class="panel">
       <div class="panel-head">
         <h2>Uncategorized transactions</h2>
-        <span class=${`pill ${rows.length ? 'high' : 'good'}`}>${rows.length} rows · ${fmtMoney(total)}</span>
+        <span class=${`pill ${open ? 'high' : 'good'}`}>${open} open · ${fmtMoney(total)}</span>
         <p>Posted to Uncategorized Income/Expense, Ask My Accountant, or left without an account. Each needs a category before month-end close.</p>
       </div>
       <div class="panel-body flush">
         ${rows.length ? html`<div class="table-wrap scroll-y"><table>
-          <thead><tr><th>CSV row</th><th>Date</th><th>Type</th><th>Payee</th><th>Memo</th><th>Where it sits</th><th class="num">Amount</th></tr></thead>
-          <tbody>${rows.map((r) => html`<tr key=${r.id}>
+          <thead><tr><th>Review</th><th>CSV row</th><th>Date</th><th>Type</th><th>Payee</th><th>Memo</th><th>Where it sits</th><th class="num">Amount</th></tr></thead>
+          <tbody>${rows.map((r) => html`<tr key=${r.id} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
             <td class="row-no">${r.line}</td>
             <td class="nowrap num">${r.dateStr}</td>
             <td class="nowrap">${r.type}</td>
@@ -336,21 +449,21 @@
             <td>${r.reason}</td>
             <td class="num"><${Money} v=${r.amount} /></td>
           </tr>`)}</tbody>
-        </table></div>` : html`<div class="empty">${Icon.check}Every transaction has a category.</div>`}
+        </table></div>` : html`<div class="empty">${Icon.check}${open ? 'All open items are hidden.' : 'Nothing left to categorize.'}</div>`}
       </div>
     </section>`;
   }
 
-  function DuplicatesPanel({ groups, exposure }) {
+  function DuplicatesPanel({ groups, open, exposure, onReview }) {
     return html`<section class="panel">
       <div class="panel-head">
         <h2>Potential duplicates</h2>
-        <span class=${`pill ${groups.length ? 'high' : 'good'}`}>${groups.length} groups · ${fmtMoney(exposure)} exposure</span>
+        <span class=${`pill ${open ? 'high' : 'good'}`}>${open} open · ${fmtMoney(exposure)} exposure</span>
         <p>Same payee, same amount and same account within 3 days, or a reference number entered twice. Common causes: a bank-feed match missed after a manual entry, or a bill entered twice.</p>
       </div>
       <div class="panel-body flush">
-        ${groups.length ? groups.map((g) => html`<div class="dup-group" key=${g.id}>
-          <div class="dup-head"><${Severity} level=${g.confidence} /><strong>${counterpartyOf(g.rows[0]) || g.rows[0].memo || 'No payee'}</strong><span style=${{ color: 'var(--ink-2)' }}>${g.reason}</span><span class="exposure">${fmtMoney(g.exposure)} at risk</span></div>
+        ${groups.length ? groups.map((g) => html`<div class=${`dup-group ${clearedOf(g) ? 'cleared' : ''}`} key=${g.id}>
+          <div class="dup-head"><${ReviewSelect} item=${g} onReview=${onReview} /><${Severity} level=${g.confidence} /><strong>${counterpartyOf(g.rows[0]) || g.rows[0].memo || 'No payee'}</strong><span style=${{ color: 'var(--ink-2)' }}>${g.reason}</span><span class="exposure">${fmtMoney(g.exposure)} at risk</span></div>
           <div class="table-wrap"><table class="dup-table"><colgroup><col style=${{ width: '90px' }} /><col style=${{ width: '110px' }} /><col style=${{ width: '150px' }} /><col style=${{ width: '26%' }} /><col /><col style=${{ width: '120px' }} /></colgroup><tbody>${g.rows.map((r) => html`<tr key=${r.id}>
             <td class="row-no" style=${{ paddingLeft: '18px' }}>row ${r.line}</td>
             <td class="nowrap num">${r.dateStr}</td>
@@ -359,12 +472,12 @@
             <td>${r.memo}</td>
             <td class="num"><${Money} v=${r.amount} /></td>
           </tr>`)}</tbody></table></div>
-        </div>`) : html`<div class="empty">${Icon.check}No likely duplicates found.</div>`}
+        </div>`) : html`<div class="empty">${Icon.check}No open duplicates.</div>`}
       </div>
     </section>`;
   }
 
-  function MismatchPanel({ rows }) {
+  function MismatchPanel({ rows, open, onReview }) {
     const kinds = useMemo(() => {
       const m = new Map();
       rows.forEach((r) => m.set(r.kind, (m.get(r.kind) || 0) + 1));
@@ -375,7 +488,7 @@
     return html`<section class="panel">
       <div class="panel-head">
         <h2>Mismatched entries</h2>
-        <span class=${`pill ${rows.length ? 'medium' : 'good'}`}>${rows.length} rows</span>
+        <span class=${`pill ${open ? 'medium' : 'good'}`}>${open} open</span>
         <p>Transaction types that conflict with their account (an expense coded to income, a transfer hitting the P&L), vendors coded inconsistently, missing payees and unbalanced journal entries.</p>
       </div>
       ${rows.length > 0 && html`<div class="panel-body" style=${{ paddingBottom: '12px' }}>
@@ -385,8 +498,9 @@
       </div>`}
       <div class="panel-body flush">
         ${rows.length ? html`<div class="table-wrap scroll-y"><table>
-          <thead><tr><th>Severity</th><th>CSV row</th><th>Date</th><th>Payee</th><th>Issue</th><th class="num">Amount</th></tr></thead>
-          <tbody>${shown.map((r, i) => html`<tr key=${`${r.id}-${i}`}>
+          <thead><tr><th>Review</th><th>Severity</th><th>CSV row</th><th>Date</th><th>Payee</th><th>Issue</th><th class="num">Amount</th></tr></thead>
+          <tbody>${shown.map((r, i) => html`<tr key=${`${r.id}-${i}`} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
             <td><${Severity} level=${r.severity} /></td>
             <td class="row-no">${r.line}</td>
             <td class="nowrap num">${r.dateStr}</td>
@@ -1448,13 +1562,14 @@
     return null;
   }
 
-  function BenchmarksTab({ result, onResult }) {
+  function BenchmarksTab({ result, onResult, prefs, onPrefs }) {
     const t = useTokens();
     const inputs = useMemo(() => E.benchmarkInputs(result), [result]);
-    const [code, setCode] = useState(() => safeStore.get('ll.naics') || '541430');
-    const [customCode, setCustomCode] = useState(() => safeStore.get('ll.naicsCustom') || '');
-    const [customName, setCustomName] = useState(() => safeStore.get('ll.naicsCustomName') || '');
-    const [state, setState] = useState(() => safeStore.get('ll.state') || '');
+    // A saved client's industry and state win over the last ones used in this browser.
+    const [code, setCode] = useState(() => (prefs && prefs.code) || safeStore.get('ll.naics') || '541430');
+    const [customCode, setCustomCode] = useState(() => (prefs && prefs.customCode) || safeStore.get('ll.naicsCustom') || '');
+    const [customName, setCustomName] = useState(() => (prefs && prefs.customName) || safeStore.get('ll.naicsCustomName') || '');
+    const [state, setState] = useState(() => (prefs && prefs.state) || safeStore.get('ll.state') || '');
     const [mcp, setMcp] = useState(undefined);
     const [live, setLive] = useState({ phase: 'idle' });
     const [manual, setManual] = useState(() => {
@@ -1463,7 +1578,10 @@
     const industry = code === 'other' ? (/^\d{2,6}$/.test(customCode) ? { code: customCode, name: customName || `NAICS ${customCode}` } : null) : findIndustry(code);
 
     useEffect(() => { let on = true; mcpReady.then((m) => { if (on) setMcp(m || null); }); return () => { on = false; }; }, []);
-    useEffect(() => { safeStore.set('ll.naics', code); safeStore.set('ll.naicsCustom', customCode); safeStore.set('ll.naicsCustomName', customName); safeStore.set('ll.state', state); }, [code, customCode, customName, state]);
+    useEffect(() => {
+      safeStore.set('ll.naics', code); safeStore.set('ll.naicsCustom', customCode); safeStore.set('ll.naicsCustomName', customName); safeStore.set('ll.state', state);
+      if (onPrefs && (!prefs || prefs.code !== code || prefs.customCode !== customCode || prefs.customName !== customName || prefs.state !== state)) onPrefs({ code, customCode, customName, state });
+    }, [code, customCode, customName, state]);
     useEffect(() => { safeStore.set('ll.manualPeers', JSON.stringify(manual)); }, [manual]);
     // A new file or industry makes earlier live results stale.
     useEffect(() => { setLive({ phase: 'idle' }); }, [result, code, customCode, state]);
@@ -1605,52 +1723,120 @@
 
   // ------------------------------------------------------------ report drawer
 
+  function useEscape(onClose) {
+    useEffect(() => {
+      const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+      window.addEventListener('keydown', onKey);
+      return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+  }
+
+  // ------------------------------------------------------------ client questions drawer
+
+  const QUESTION_SECTIONS = [
+    ['uncategorized', 'Uncategorized transactions'],
+    ['duplicates', 'Possible double charges'],
+    ['coding', 'Entries to confirm'],
+    ['receivables', 'Invoices over 90 days'],
+    ['w9', 'W-9 requests'],
+  ];
+
+  function QuestionsDrawer({ result, onClose, onMarkAsked }) {
+    const [greeting, setGreeting] = useState('');
+    const [preparer, setPreparer] = useState(() => safeStore.get('ll.preparer') || '');
+    const [include, setInclude] = useState({ uncategorized: true, duplicates: true, coding: true, receivables: true, w9: true });
+    const [status, setStatus] = useState('');
+    const preRef = useRef(null);
+    const q = useMemo(() => E.clientQuestions(result, { greeting: greeting.trim() || undefined, preparer, include }), [result, greeting, preparer, include]);
+    const filename = `${slug(result.meta.company)}-questions-${result.period.end}.txt`;
+    useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
+    useEscape(onClose);
+    const toMark = q.keys.filter((k) => {
+      const all = [...result.audit.uncategorized, ...result.audit.duplicates, ...result.audit.mismatches];
+      const item = all.find((x) => x.key === k);
+      return item && !(item.review && item.review.status === 'asked');
+    });
+    return html`<div class="scrim" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="questions-title">
+        <div class="drawer-head"><h2 id="questions-title">Questions for the client</h2><button class="btn" onClick=${onClose}>Close</button></div>
+        <div class="drawer-fields">
+          <label class="field" for="q-greeting">Client's first name<input id="q-greeting" value=${greeting} onInput=${(e) => setGreeting(e.target.value)} placeholder="e.g. Jordan" /></label>
+          <label class="field" for="q-preparer">Signed by<input id="q-preparer" value=${preparer} onInput=${(e) => setPreparer(e.target.value)} placeholder="Your name or firm" /></label>
+          <div class="field" style=${{ gridColumn: '1 / -1' }}><span>Include</span>
+            <div class="chips">${QUESTION_SECTIONS.map(([k, l]) => html`<button key=${k} class="chip" aria-pressed=${include[k]} onClick=${() => setInclude({ ...include, [k]: !include[k] })}>${l}</button>`)}</div>
+          </div>
+        </div>
+        <pre class="report-pre" ref=${preRef}>${q.text}</pre>
+        <div class="drawer-foot">
+          <button class="btn primary" onClick=${async () => setStatus(await copyText(q.text, preRef.current))}>${Icon.copy}Copy text</button>
+          <button class="btn" onClick=${async () => setStatus(await saveTextFile(filename, q.text))}>${Icon.download}Download .txt</button>
+          ${toMark.length > 0 && html`<button class="btn" onClick=${() => { onMarkAsked(toMark); setStatus(`Marked ${toMark.length} flag${toMark.length === 1 ? '' : 's'} as asked.`); }}>Mark ${toMark.length} as asked</button>`}
+          <span class="status" role="status">${status || `${q.count} question${q.count === 1 ? '' : 's'}; cleared flags are left out.`}</span>
+        </div>
+      </aside>
+    </div>`;
+  }
+
+  // ------------------------------------------------------------ saved clients drawer
+
+  function ClientsDrawer({ currentId, onClose, onForget }) {
+    const [clients, setClients] = useState(() => ClientStore.all());
+    const [confirm, setConfirm] = useState(null);
+    const [status, setStatus] = useState('');
+    useEscape(onClose);
+    const list = Object.entries(clients).sort((a, b) => String(b[1].updatedAt || '').localeCompare(String(a[1].updatedAt || '')));
+    const refresh = () => setClients(ClientStore.all());
+    const doExport = async () => setStatus(await saveTextFile(`ledger-lens-clients-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ format: 'ledger-lens-clients', version: 1, clients: ClientStore.all() }, null, 2)));
+    const doImport = (file) => {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(String(reader.result || ''));
+          if (!data || data.format !== 'ledger-lens-clients') throw new Error('not a Ledger Lens backup');
+          const n = ClientStore.merge(data.clients);
+          refresh();
+          setStatus(`Imported ${n} client${n === 1 ? '' : 's'} (newer copies kept).`);
+        } catch (e) { setStatus(`${file.name} could not be imported: ${e.message}.`); }
+      };
+      reader.readAsText(file);
+    };
+    return html`<div class="scrim" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="clients-title">
+        <div class="drawer-head"><h2 id="clients-title">Saved clients</h2><button class="btn" onClick=${onClose}>Close</button></div>
+        <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Account type corrections, reviewed flags, the cash cushion and benchmark settings are saved per client, matched by the company name in the report header. They live in this browser only: export a backup to move them to another computer or share them with a colleague.</p></div>
+        <div class="clients-list">
+          ${list.length ? list.map(([id, c]) => html`<div class="client-row" key=${id}>
+            <div><strong>${c.name || id}</strong>${id === currentId ? html` <span class="pill good">Open now</span>` : ''}
+              <span class="sub">${Object.keys(c.accountClass || {}).length} account corrections · ${Object.keys(c.reviewed || {}).length} reviewed flags · saved ${String(c.updatedAt || '').slice(0, 10)}</span></div>
+            ${confirm === id
+              ? html`<span class="confirm">Forget this client? <button class="btn" onClick=${() => { ClientStore.remove(id); onForget(id); setConfirm(null); refresh(); }}>Forget</button><button class="btn" onClick=${() => setConfirm(null)}>Keep</button></span>`
+              : html`<button class="btn" onClick=${() => setConfirm(id)}>Forget</button>`}
+          </div>`) : html`<div class="empty">No saved clients yet. Upload a client's export and start reviewing; settings save as you go.</div>`}
+        </div>
+        <div class="drawer-foot">
+          <button class="btn primary" disabled=${!list.length} onClick=${doExport}>${Icon.download}Export backup (.json)</button>
+          <label class="btn" for="clients-import">${Icon.upload}Import backup</label>
+          <input id="clients-import" class="file-input" type="file" accept=".json,application/json" onChange=${(e) => { doImport(e.target.files[0]); e.target.value = ''; }} />
+          <span class="status" role="status">${status}</span>
+        </div>
+      </aside>
+    </div>`;
+  }
+
   function ReportDrawer({ result, groupBy, cushion, benchmarks, onClose }) {
     const [clientName, setClientName] = useState(() => result.meta.company || '');
     const [preparer, setPreparer] = useState(() => safeStore.get('ll.preparer') || '');
     const [status, setStatus] = useState('');
     const preRef = useRef(null);
     const report = useMemo(() => E.buildReport(result, { clientName, preparer, groupBy, cushion, benchmarks }), [result, clientName, preparer, groupBy, cushion, benchmarks]);
-    const filename = `${(clientName || 'client').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'client'}-books-review-${result.period.end}.txt`;
+    const filename = `${slug(clientName)}-books-review-${result.period.end}.txt`;
 
     useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
-    useEffect(() => {
-      const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-      window.addEventListener('keydown', onKey);
-      return () => window.removeEventListener('keydown', onKey);
-    }, [onClose]);
+    useEscape(onClose);
 
-    async function download() {
-      const downloads = await downloadsReady;
-      if (downloads) {
-        try {
-          await downloads.save({ filename, data: report });
-          setStatus(`Saved ${filename}`);
-        } catch (e) {
-          const code = e && e.code;
-          setStatus(code === 'declined' ? 'Download cancelled.' : code === 'rate_limited' ? 'A save prompt is already open.' : 'Downloads are unavailable here. Use Copy instead.');
-        }
-        return;
-      }
-      const url = URL.createObjectURL(new Blob([report], { type: 'text/plain;charset=utf-8' }));
-      const a = document.createElement('a');
-      a.href = url; a.download = filename;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setStatus(`Downloaded ${filename}`);
-    }
-
-    function copy() {
-      const selectAll = () => {
-        const sel = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(preRef.current);
-        sel.removeAllRanges(); sel.addRange(range);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(report).then(() => setStatus('Copied to clipboard.'), () => { selectAll(); setStatus('Text selected. Press Ctrl+C / Cmd+C to copy.'); });
-      } else { selectAll(); setStatus('Text selected. Press Ctrl+C / Cmd+C to copy.'); }
-    }
+    const download = async () => setStatus(await saveTextFile(filename, report));
+    const copy = async () => setStatus(await copyText(report, preRef.current));
 
     return html`<div class="scrim" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="report-title">

@@ -382,3 +382,45 @@ test('forecast projects owner draws and loan principal from their history', () =
   assert.ok(cash.outflowRows.some((r) => r.label === 'Owner draws' && r.total === by['Owner draws'].amount));
   assert.ok(cash.outflowRows.some((r) => r.label === 'Interest Expense'), 'loan interest is projected as a monthly expense');
 });
+
+test('review state: keys survive re-export, cleared flags leave the counts', () => {
+  const p = E.parseTransactions(S.build());
+  const r = E.analyze(p);
+  assert.equal(r.clientKey, 'harbor pine design co');
+  const dup = r.audit.duplicates[0];
+  const unc = r.audit.uncategorized[0];
+  const mis = r.audit.mismatches[0];
+  assert.ok(dup.key.startsWith('d|') && unc.key.startsWith('u|') && mis.key.startsWith('m|'));
+  assert.ok(!/\b\d{3,}\b.*row/.test(unc.key), 'keys do not use line numbers');
+  // Same data re-parsed (as next month's export would be) gives the same keys.
+  const again = E.analyze(E.parseTransactions(S.build()));
+  assert.equal(again.audit.duplicates[0].key, dup.key);
+  const reviewed = { [dup.key]: { status: 'ok' }, [unc.key]: { status: 'fixed' }, [mis.key]: { status: 'asked' } };
+  const r2 = E.analyze(p, { reviewed });
+  assert.equal(r2.audit.cleared, 2);
+  assert.equal(r2.audit.open.duplicates, r.audit.open.duplicates - 1);
+  assert.equal(r2.audit.open.uncategorized, r.audit.open.uncategorized - 1);
+  assert.equal(r2.audit.open.mismatches, r.audit.open.mismatches, '"asked" stays open');
+  assert.ok(r2.audit.flaggedCount < r.audit.flaggedCount);
+});
+
+test('client questions: one per open item, no repeats, cleared items left out', () => {
+  const p = E.parseTransactions(S.build());
+  const r = E.analyze(p);
+  const q = E.clientQuestions(r, { greeting: 'Jordan', preparer: 'The bookkeeper' });
+  assert.ok(q.text.startsWith('Hi Jordan,'));
+  assert.ok(q.text.trim().endsWith('The bookkeeper'));
+  const numbered = q.text.split('\n').filter((l) => /^\d+\. /.test(l));
+  assert.equal(numbered.length, q.count);
+  // The two uncategorized entries with no payee are asked about once, not twice.
+  assert.equal(numbered.filter((l) => l.includes('ACH DEBIT WEB PMT 88213')).length, 1);
+  assert.equal(numbered.filter((l) => /W-9/.test(l)).length, 1);
+  assert.ok(numbered.some((l) => /Cedar Ridge Dental/.test(l) && /write it off/.test(l)));
+  // Clearing an item removes its question.
+  const cleared = E.analyze(p, { reviewed: { [r.audit.uncategorized[0].key]: { status: 'ok' } } });
+  assert.equal(E.clientQuestions(cleared).count, q.count - 1);
+  // Nothing open gives a short all-clear note.
+  const none = E.clientQuestions(r, { include: { uncategorized: false, duplicates: false, coding: false, receivables: false, w9: false } });
+  assert.equal(none.count, 0);
+  assert.ok(/no questions this time/.test(none.text));
+});
