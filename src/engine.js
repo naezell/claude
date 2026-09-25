@@ -2313,6 +2313,7 @@
     const rows = parseCSV(text);
     const firstCells = rows.map((r) => lower(r.find((c) => norm(c)) || ''));
     if (!firstCells.includes('net income') || rows.slice(0, 12).some((r) => r.map(lower).includes('date'))) return null;
+    if (/budget/i.test(rows.slice(0, 6).map((r) => r.join(' ')).join(' '))) return null;
     const lastNum = (r) => { for (let i = r.length - 1; i >= 1; i--) { const n = parseAmount(r[i]); if (n != null) return n; } return null; };
     const SECTIONS = [
       [/^income$/, 'income'], [/^other income$/, 'otherIncome'], [/^cost of (goods sold|sales)$/, 'cogs'],
@@ -2411,6 +2412,146 @@
       ties, lines, accounts: accounts.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)),
       period: `${isoDate(start)} to ${isoDate(end)}`, basis: pnl.basis,
       companyMatches: !pnl.company || !meta.company || lower(pnl.company) === lower(meta.company),
+    };
+  }
+
+  // ---------------------------------------------------------------- budget vs actual
+
+  const MONTH_RX = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*[-/ ]?\s*'?(\d{2}|\d{4})$/i;
+  const monthKeyOf = (label) => {
+    const m = norm(label).match(MONTH_RX);
+    if (!m) return null;
+    const mi = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(lower(m[1]).slice(0, 3));
+    const y = m[2].length === 2 ? 2000 + +m[2] : +m[2];
+    return `${y}-${String(mi + 1).padStart(2, '0')}`;
+  };
+
+  // Reads a QuickBooks "Budget Overview" export: one column per month, one row per account.
+  function parseBudget(text) {
+    const rows = parseCSV(text);
+    const head = rows.slice(0, 6).map((r) => r.filter(Boolean).join(' ')).join(' ');
+    if (!/budget/i.test(head)) return null;
+    let headerIdx = -1, cols = [];
+    for (let i = 0; i < Math.min(rows.length, 15); i++) {
+      const found = rows[i].map((c, j) => ({ j, key: monthKeyOf(c) })).filter((x) => x.key);
+      if (found.length >= 3) { headerIdx = i; cols = found; break; }
+    }
+    if (headerIdx < 0) return null;
+    const SECTIONS = [[/^income$/, 'income'], [/^other income$/, 'income'], [/^cost of (goods sold|sales)$/, 'cogs'], [/^expenses?$/, 'expense'], [/^other expenses?$/, 'expense']];
+    const accounts = [];
+    let section = null;
+    for (const r of rows.slice(headerIdx + 1)) {
+      const label = norm(r.find((c) => norm(c)) || '');
+      const l = lower(label);
+      if (!label) continue;
+      const nums = cols.map((c) => parseAmount(r[c.j]));
+      const any = nums.some((n) => n != null);
+      if (!any) { const sec = SECTIONS.find(([rx]) => rx.test(l)); if (sec) section = sec[1]; continue; }
+      if (/^total |^gross profit$|^net (operating |other )?income$/.test(l)) continue;
+      const values = {};
+      cols.forEach((c, k) => { values[c.key] = nums[k] || 0; });
+      accounts.push({ name: label, section, values });
+    }
+    if (!accounts.length) return null;
+    const months = cols.map((c) => c.key);
+    return { source: 'upload', months, accounts, year: +months[0].slice(0, 4) };
+  }
+
+  // A budget for the latest year from the same months a year earlier, grown by the given rates.
+  function budgetFromHistory(txns, accountClass, meta, opts) {
+    opts = opts || {};
+    const rg = (+opts.revenueGrowth || 0) / 100, cg = (+opts.costGrowth || 0) / 100;
+    const range = dateRange(txns, meta);
+    const year = range.last.getUTCFullYear();
+    const byAcct = new Map();
+    const monthsSeen = new Set();
+    for (const p of toPostings(txns, accountClass)) {
+      const key = p.t.dateStr.slice(0, 7);
+      monthsSeen.add(key);
+      if (!byAcct.has(p.category)) byAcct.set(p.category, { cls: p.cls, byMonth: new Map() });
+      const a = byAcct.get(p.category);
+      a.byMonth.set(key, (a.byMonth.get(key) || 0) + p.value);
+    }
+    const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+    const priorYear = months.map((m) => `${year - 1}${m.slice(4)}`);
+    const hasPrior = priorYear.filter((m) => monthsSeen.has(m)).length >= 6;
+    const accounts = [];
+    for (const [name, a] of byAcct) {
+      const growth = a.cls === 'income' ? rg : cg;
+      // Same month last year keeps seasonality; without a year of history, use the average month.
+      const values = {};
+      const all = [...a.byMonth.values()];
+      const avg = all.reduce((t, v) => t + v, 0) / Math.max(1, monthsSeen.size);
+      months.forEach((m, i) => {
+        const base = hasPrior ? (a.byMonth.get(priorYear[i]) || 0) : avg;
+        values[m] = round2(base * (1 + growth));
+      });
+      if (Object.values(values).some((v) => Math.abs(v) >= 0.5)) accounts.push({ name, section: a.cls, values });
+    }
+    return { source: 'history', months, accounts, year, revenueGrowth: rg * 100, costGrowth: cg * 100, basis: hasPrior ? `${year - 1} actuals by month` : 'average month of the export' };
+  }
+
+  function budgetVsActual(txns, accountClass, meta, budget) {
+    if (!budget || !budget.accounts.length) return null;
+    const range = dateRange(txns, meta);
+    const lastEnd = new Date(Date.UTC(range.last.getUTCFullYear(), range.last.getUTCMonth() + 1, 0)).getUTCDate();
+    const lastFull = range.last.getUTCDate() >= lastEnd - 3 ? isoDate(range.last).slice(0, 7) : isoDate(new Date(Date.UTC(range.last.getUTCFullYear(), range.last.getUTCMonth(), 0))).slice(0, 7);
+    const ytd = budget.months.filter((m) => m <= lastFull && m >= isoDate(range.first).slice(0, 7));
+    const actual = new Map();
+    for (const p of toPostings(txns, accountClass)) {
+      const m = p.t.dateStr.slice(0, 7);
+      if (!ytd.includes(m)) continue;
+      const k = lower(p.category);
+      if (!actual.has(k)) actual.set(k, { name: p.category, cls: p.cls, byMonth: new Map() });
+      const a = actual.get(k);
+      a.byMonth.set(m, (a.byMonth.get(m) || 0) + p.value);
+    }
+    const findActual = (name) => actual.get(lower(name)) || [...actual.values()].find((a) => lower(leafAccount(a.name)) === lower(leafAccount(name)));
+    const used = new Set();
+    const rows = budget.accounts.map((b) => {
+      const a = findActual(b.name);
+      if (a) used.add(a);
+      const cls = b.section || (a ? a.cls : classOf(accountClass, b.name));
+      const budgetYtd = round2(ytd.reduce((t, m) => t + (b.values[m] || 0), 0));
+      const actualYtd = round2(a ? ytd.reduce((t, m) => t + (a.byMonth.get(m) || 0), 0) : 0);
+      const fullYear = round2(budget.months.reduce((t, m) => t + (b.values[m] || 0), 0));
+      return { name: b.name, cls, budgetYtd, actualYtd, fullYear };
+    });
+    for (const a of actual.values()) {
+      if (used.has(a)) continue;
+      const actualYtd = round2(ytd.reduce((t, m) => t + (a.byMonth.get(m) || 0), 0));
+      if (Math.abs(actualYtd) >= 1) rows.push({ name: a.name, cls: a.cls, budgetYtd: 0, actualYtd, fullYear: 0, unbudgeted: true });
+    }
+    for (const r of rows) {
+      r.variance = round2(r.actualYtd - r.budgetYtd);
+      r.pct = r.budgetYtd ? r.variance / Math.abs(r.budgetYtd) : null;
+      // Income above budget is good; costs above budget are not.
+      r.favorable = r.cls === 'income' ? r.variance >= 0 : r.variance <= 0;
+      r.flag = Math.abs(r.variance) >= 500 && (r.pct == null || Math.abs(r.pct) >= 0.1);
+    }
+    const sumBy = (cls, key) => round2(rows.filter((r) => (cls === 'cost' ? r.cls !== 'income' : r.cls === cls)).reduce((t, r) => t + r[key], 0));
+    const totals = {};
+    for (const key of ['budgetYtd', 'actualYtd', 'fullYear']) {
+      totals[key] = { revenue: sumBy('income', key), costs: sumBy('cost', key) };
+      totals[key].netIncome = round2(totals[key].revenue - totals[key].costs);
+    }
+    // Where the year lands if the rest of it goes to budget.
+    const remaining = budget.months.filter((m) => !ytd.includes(m));
+    const restBudget = (cls) => round2(budget.accounts.filter((b) => (cls === 'cost' ? (b.section || classOf(accountClass, b.name)) !== 'income' : (b.section || classOf(accountClass, b.name)) === 'income')).reduce((t, b) => t + remaining.reduce((s2, m) => s2 + (b.values[m] || 0), 0), 0));
+    const outlook = { revenue: round2(totals.actualYtd.revenue + restBudget('income')), costs: round2(totals.actualYtd.costs + restBudget('cost')) };
+    outlook.netIncome = round2(outlook.revenue - outlook.costs);
+    const monthly = budget.months.map((m) => {
+      const b = { revenue: 0, costs: 0 }, a = { revenue: 0, costs: 0 };
+      for (const bb of budget.accounts) { const c = (bb.section || classOf(accountClass, bb.name)) === 'income' ? 'revenue' : 'costs'; b[c] += bb.values[m] || 0; }
+      const done = ytd.includes(m);
+      if (done) for (const aa of actual.values()) { const c = aa.cls === 'income' ? 'revenue' : 'costs'; a[c] += aa.byMonth.get(m) || 0; }
+      return { month: m, label: `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m.slice(5) - 1]} ${m.slice(2, 4)}`, budgetRevenue: round2(b.revenue), budgetNet: round2(b.revenue - b.costs), actualRevenue: done ? round2(a.revenue) : null, actualNet: done ? round2(a.revenue - a.costs) : null };
+    });
+    return {
+      year: budget.year, source: budget.source, basis: budget.basis || null, revenueGrowth: budget.revenueGrowth, costGrowth: budget.costGrowth,
+      ytdMonths: ytd.length, ytdLabel: ytd.length ? `${monthLabel(ytd[0])} to ${monthLabel(ytd[ytd.length - 1])}` : 'no months yet',
+      totals, outlook, monthly,
+      rows: rows.sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance)),
     };
   }
 
@@ -2625,6 +2766,9 @@
       cashScenario,
     };
     out.tieOut = tieOut(txns, accountClass, parsed.meta, opts.pnl);
+    // Budget: an uploaded QuickBooks budget, else one built from last year's actuals.
+    const budget = opts.budget || (opts.budgetFromHistory !== false ? budgetFromHistory(txns, accountClass, parsed.meta, opts.budgetGrowth) : null);
+    out.budget = budgetVsActual(txns, accountClass, parsed.meta, budget);
     // The advisory views read the finished analysis (audit, forecast, trends, customers).
     out.loan = loanReadiness(txns, accountClass, out, opts.loan);
     const cushion = opts.cushion != null && opts.cushion !== '' && !isNaN(+opts.cushion) ? +opts.cushion : breakeven ? Math.round(breakeven.base.fixed / 1000) * 1000 : 0;
@@ -2766,6 +2910,8 @@
       if (tie) h.push(`<section class="keep"><h3>Ties to QuickBooks (${esc(tie.period)})</h3>${table(['Line', 'QuickBooks', 'This review', 'Difference'], tie.lines.map((l) => [l.label, fmtMoney(l.quickbooks), fmtMoney(l.ledgerLens), l.ties ? 'Ties' : fmtMoney(l.diff)]))}</section>`);
       h.push(`<section><h3>Profitability by customer</h3>${table(['Customer', 'Revenue', 'Direct cost', 'Gross margin', 'Net margin'], profit.groups.slice(0, 20).map((g) => [g.name, fmtWhole(g.revenue), fmtWhole(g.directCost), fmtPct(g.margin), fmtPct(g.netMargin)]))}</section>`);
       if (cr) h.push(`<section><h3>Customer concentration (${esc(cr.windowLabel)})</h3><p>${esc(cr.top.name)} is ${esc(fmtPct(cr.top1Share))} of revenue; the top 3 are ${esc(fmtPct(cr.top3Share))} (${esc(cr.level.label.toLowerCase())}).</p>${table(['Customer', 'Share', 'Gross margin', 'Open A/R', 'Pays in', 'Flags'], cr.rows.slice(0, 12).map((r) => [r.name, fmtPct(r.share), fmtPct(r.margin), fmtWhole(r.openAR), r.days != null ? `${r.days}d` : '-', r.flags.map((f) => f.kind).join(', ')]))}</section>`);
+      const bv = result.budget;
+      if (bv && bv.ytdMonths) h.push(`<section class="keep"><h3>Budget vs actual, ${esc(bv.ytdLabel)}</h3>${table(['', 'Budget', 'Actual', 'Difference'], [['Revenue', 'revenue'], ['Costs', 'costs'], ['Net income', 'netIncome']].map(([l, k]) => [l, fmtWhole(bv.totals.budgetYtd[k]), fmtWhole(bv.totals.actualYtd[k]), fmtWhole(bv.totals.actualYtd[k] - bv.totals.budgetYtd[k])]))}${table(['Account', 'Budget', 'Actual', 'Difference'], bv.rows.filter((r) => r.flag).slice(0, 10).map((r) => [r.name, fmtWhole(r.budgetYtd), fmtWhole(r.actualYtd), fmtWhole(r.variance)]))}</section>`);
       if (be) h.push(`<section class="keep"><h3>Break-even</h3>${table(['Measure', 'Per month'], [['Average revenue', fmtWhole(be.base.revenue)], ['Variable costs', fmtWhole(be.base.variable)], ['Fixed costs', fmtWhole(be.base.fixed)], ['Break-even revenue', be.breakEvenRevenue != null ? fmtWhole(be.breakEvenRevenue) : 'n/a'], ['Margin of safety', fmtPct(be.marginOfSafety)]])}</section>`);
       if (vd) {
         h.push(`<section><h3>Largest vendors (${esc(vd.windowLabel)})</h3>${table(['Vendor', 'Per month', 'Share', 'Pays in', 'Type'], vd.rows.slice(0, 10).map((r) => [r.name, fmtWhole(r.monthly), fmtPct(r.share), r.days != null ? `${r.days}d` : '-', r.type]))}</section>`);
@@ -3105,6 +3251,22 @@
       L.push('');
     }
 
+    const bv = result.budget;
+    if (bv && bv.ytdMonths) {
+      L.push(`14. BUDGET VS ACTUAL (${bv.year}, ${bv.ytdLabel})`);
+      L.push(thin);
+      L.push(`Budget:                       ${bv.source === 'upload' ? 'QuickBooks budget' : `built from ${bv.basis}`}`);
+      L.push(`  ${pad('', 18)} ${padL('Budget', 13)} ${padL('Actual', 13)} ${padL('Difference', 13)}`);
+      for (const [label, k] of [['Revenue', 'revenue'], ['Costs', 'costs'], ['Net income', 'netIncome']]) L.push(`  ${pad(label, 18)} ${padL(fmtMoney(bv.totals.budgetYtd[k]), 13)} ${padL(fmtMoney(bv.totals.actualYtd[k]), 13)} ${padL(fmtMoney(bv.totals.actualYtd[k] - bv.totals.budgetYtd[k]), 13)}`);
+      L.push(`  On track for ${fmtMoney(bv.outlook.netIncome)} of net income for the year (budget ${fmtMoney(bv.totals.fullYear.netIncome)}).`);
+      const flagged = bv.rows.filter((r) => r.flag).slice(0, 8);
+      if (flagged.length) {
+        L.push('  Largest differences:');
+        for (const r of flagged) L.push(`   - ${r.name}: ${fmtMoney(r.variance)} ${r.favorable ? '(favorable)' : '(over budget)'}${r.unbudgeted ? ', not in the budget' : ''}`);
+      }
+      L.push('');
+    }
+
     L.push('RECOMMENDED NEXT STEPS');
     L.push(thin);
     const steps = nextSteps(result, opts);
@@ -3121,6 +3283,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, buildHtmlReport, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, buildHtmlReport, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

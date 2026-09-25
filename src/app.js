@@ -185,6 +185,7 @@
     const [questionsOpen, setQuestionsOpen] = useState(false);
     const [clientsOpen, setClientsOpen] = useState(false);
     const [scenario, setScenario] = useState({ levers: [] });
+    const [budgetPrefs, setBudgetPrefs] = useState({ mode: 'auto', revenueGrowth: '10', costGrowth: '5' });
     const [loanInputs, setLoanInputs] = useState({ amount: '', rate: '10.5', years: '10', addBacks: '' });
     const [taxInputs, setTaxInputs] = useState({ entity: 'sole', rate: '', salary: '', paid: '' });
     // Forecast inputs. Empty strings mean "use the value estimated from the export".
@@ -203,17 +204,21 @@
     const chart = source.kind === 'sample' ? sampleChart : source.chart ? source.chart.parsed : null;
     const samplePnl = useMemo(() => E.parseProfitAndLoss(window.LedgerSample.profitAndLoss()), []);
     const pnl = source.kind === 'sample' ? samplePnl : source.pnl ? source.pnl.parsed : null;
+    const sampleBudget = useMemo(() => E.parseBudget(window.LedgerSample.budgetOverview()), []);
+    const uploadedBudget = source.kind === 'sample' ? { name: 'Sample FY2026 budget', parsed: sampleBudget } : source.budget || null;
 
     // Stable object: it only changes when one of the inputs does.
-    const typedNow = useMemo(() => ({ cash: cashInputs, loan: loanInputs, tax: taxInputs, scenario }), [cashInputs, loanInputs, taxInputs, scenario]);
+    const typedNow = useMemo(() => ({ cash: cashInputs, loan: loanInputs, tax: taxInputs, scenario, budget: budgetPrefs }), [cashInputs, loanInputs, taxInputs, scenario, budgetPrefs]);
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
       accountClass, groupBy, chart, pnl, reviewed, scenario: typed.scenario,
+      budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
+      budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, reviewed, startingCash, cashInputs.includeDoubtful, typed]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, startingCash, cashInputs.includeDoubtful, typed]);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
@@ -224,6 +229,7 @@
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
       setScenario({ levers: [] });
+      setBudgetPrefs(saved && saved.budgetPrefs ? saved.budgetPrefs : { mode: 'auto', revenueGrowth: '10', costGrowth: '5' });
       setLoanInputs(saved && saved.loan ? saved.loan : { amount: '', rate: '10.5', years: '10', addBacks: '' });
       setTaxInputs(saved && saved.tax ? saved.tax : { entity: 'sole', rate: '', salary: '', paid: '' });
       setRestored(saved && !emptyProfile(saved) ? { name: saved.name, updatedAt: saved.updatedAt, corrections: Object.keys(saved.accountClass || {}).length, reviews: Object.keys(saved.reviewed || {}).length } : null);
@@ -231,11 +237,11 @@
     // Save as the bookkeeper works.
     useEffect(() => {
       if (!clientId) return;
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs };
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs };
       const saved = ClientStore.get(clientId);
       if (emptyProfile(profile) && !saved) return;
       ClientStore.put(clientId, profile);
-    }, [clientId, accountClass, reviewed, cashInputs.cushion, benchPrefs, loanInputs, taxInputs]);
+    }, [clientId, accountClass, reviewed, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     const setReview = useCallback((keys, status) => {
       setReviewed((prev) => {
         const next = { ...prev };
@@ -266,6 +272,8 @@
           // A chart of accounts has Account and Type columns and no dates.
           const coa = E.parseChartOfAccounts(text);
           if (coa) { resolve({ name: file.name, chart: coa }); return; }
+          const bud = E.parseBudget(text);
+          if (bud) { resolve({ name: file.name, budget: bud }); return; }
           // A Profit and Loss report has a Net Income line and no dates.
           const pl = E.parseProfitAndLoss(text);
           if (pl) { resolve({ name: file.name, pnl: pl }); return; }
@@ -289,16 +297,18 @@
       const lastOf = (key) => { const hits = results.filter((r) => r[key]); return hits.length ? { name: hits[hits.length - 1].name, parsed: hits[hits.length - 1][key] } : null; };
       const chartFile = lastOf('chart');
       const pnlFile = lastOf('pnl');
+      const budgetFile = lastOf('budget');
       const errors = bad.map((b) => `${b.name} ${b.error}`);
       const prev = sourceRef.current;
       if (!good.length) {
         // A chart or P&L on its own attaches to the transactions already loaded.
-        if ((chartFile || pnlFile) && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl });
-        else if (chartFile || pnlFile) errors.push(`${(chartFile || pnlFile).name} is a ${chartFile ? 'chart of accounts' : 'Profit and Loss report'}. Upload the client's Transaction Detail with it.`);
+        const extra = chartFile || pnlFile || budgetFile;
+        if (extra && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl, budget: budgetFile || prev.budget });
+        else if (extra) errors.push(`${extra.name} is a ${chartFile ? 'chart of accounts' : pnlFile ? 'Profit and Loss report' : 'budget'}. Upload the client's Transaction Detail with it.`);
       } else {
         const keepPrev = append && prev.kind === 'upload';
         const kept = keepPrev ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
-        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null) });
+        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null) });
       }
       setError(errors.join(' '));
     }, []);
@@ -349,6 +359,7 @@
           ${result && (result.chart
             ? html`<span class="pill good"><span class="dot"></span>Chart of accounts</span><span>${result.chart.matched} of ${result.chart.of} accounts typed from it</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the client's Chart of Accounts export (Account List report) for exact account types.</span>`)}
+          ${uploadedBudget && source.kind === 'upload' && html`<span class="pill good"><span class="dot"></span>Budget</span>`}
           ${result && (result.tieOut
             ? html`<span class=${`pill ${result.tieOut.ties ? 'good' : 'high'}`}><span class="dot"></span>${result.tieOut.ties ? 'Ties to QuickBooks P&L' : 'Does not tie to QuickBooks P&L'}</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}
@@ -363,6 +374,7 @@
           <button class="tab" role="tab" id="tab-cash" aria-selected=${tab === 'cash'} onClick=${() => setTab('cash')}>Cash forecast</button>
           <button class="tab" role="tab" id="tab-breakeven" aria-selected=${tab === 'breakeven'} onClick=${() => setTab('breakeven')}>Break-even</button>
           <button class="tab" role="tab" id="tab-trends" aria-selected=${tab === 'trends'} onClick=${() => setTab('trends')}>Trends</button>
+          <button class="tab" role="tab" id="tab-budget" aria-selected=${tab === 'budget'} onClick=${() => setTab('budget')}>Budget</button>
           <button class="tab" role="tab" id="tab-vendors" aria-selected=${tab === 'vendors'} onClick=${() => setTab('vendors')}>Vendors</button>
           <button class="tab" role="tab" id="tab-benchmarks" aria-selected=${tab === 'benchmarks'} onClick=${() => setTab('benchmarks')}>Benchmarks</button>
           <button class="tab" role="tab" id="tab-advisory" aria-selected=${tab === 'advisory'} onClick=${() => setTab('advisory')}>Tax & lending</button>
@@ -374,6 +386,7 @@
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
             : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`
             : tab === 'trends' ? html`<${TrendsTab} trend=${result.trend} />`
+            : tab === 'budget' ? html`<${BudgetTab} bva=${result.budget} uploaded=${uploadedBudget} prefs=${budgetPrefs} setPrefs=${setBudgetPrefs} />`
             : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
             : html`<${AdvisoryTab} result=${result} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
@@ -1520,6 +1533,87 @@
             <td class="num">${wholeMoney(p.revenue)}</td><td class="num">${wholeMoney(p.variable)}</td><td class="num">${wholeMoney(p.fixed)}</td>
             <td class=${`num ${p.netIncome < 0 ? 'neg' : ''}`}>${wholeMoney(p.netIncome)}</td><td class="num">${marginPill(p.netMargin)}</td>
             <td class="num">${p.customers}</td><td class="num">${p.dso != null ? p.dso : '-'}</td>${hasCash ? html`<td class="num">${p.cashEnd != null ? wholeMoney(p.cashEnd) : '-'}</td>` : ''}
+          </tr>`)}</tbody>
+        </table></div></div>
+      </section>
+    `;
+  }
+
+  // ------------------------------------------------------------ budget tab
+
+  function BudgetTab({ bva, uploaded, prefs, setPrefs }) {
+    const t = useTokens();
+    const set = (k) => (v) => setPrefs({ ...prefs, [k]: v });
+    const usingUpload = uploaded && prefs.mode !== 'history';
+    if (!bva) return html`<section class="panel"><div class="empty">A budget needs income and expense history in the export, or an uploaded QuickBooks budget.</div></section>`;
+    const T = bva.totals;
+    const pctOf = (a, b) => (b ? (a - b) / Math.abs(b) : null);
+    const tileDelta = (actual, budget, goodUp) => {
+      const p = pctOf(actual, budget);
+      if (p == null) return 'No budget for these months';
+      const good = goodUp ? actual >= budget : actual <= budget;
+      return html`<span class=${`delta ${good ? 'up' : 'down'}`}>${actual >= budget ? '▲' : '▼'} ${fmtPct(Math.abs(p))} ${actual >= budget ? 'over' : 'under'}</span> <span class="delta-label">budget of ${wholeMoney(budget)}</span>`;
+    };
+    const ytdData = bva.monthly.map((m) => ({ ...m, fullName: m.label }));
+    const chart = (title, actualKey, budgetKey, note) => html`<section class="panel">
+      <div class="panel-head"><h2>${title}</h2><p>${note}</p></div>
+      <div class="panel-body">
+        <div class="legend"><span><i style=${{ background: t.s1 }}></i>Actual</span><span><i style=${{ background: t.ink2, height: '3px' }}></i>Budget</span></div>
+        <div style=${{ height: 240 }}>
+          <${ResponsiveContainer} width="100%" height="100%">
+            <${ComposedChart} data=${ytdData} margin=${{ top: 8, right: 8, bottom: 0, left: 4 }} barCategoryGap="28%">
+              <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+              <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${10} />
+              <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+              <${ReferenceLine} y=${0} stroke=${t.axis} />
+              <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [
+                { label: 'Actual', value: d[actualKey] == null ? 'Not yet' : fmtMoney(d[actualKey]), color: t.s1 },
+                { label: 'Budget', value: fmtMoney(d[budgetKey]), color: t.ink2 },
+              ]} />`} />
+              <${Bar} dataKey=${actualKey} fill=${t.s1} radius=${[4, 4, 0, 0]} maxBarSize=${26} isAnimationActive=${false} />
+              <${Line} type="linear" dataKey=${budgetKey} stroke=${t.ink2} strokeWidth=${2} dot=${{ r: 2.5, fill: t.ink2, stroke: t.surface, strokeWidth: 1 }} isAnimationActive=${false} />
+            <//>
+          <//>
+        </div>
+      </div>
+    </section>`;
+    return html`
+      <section class="panel">
+        <div class="panel-head"><h2>Budget for ${bva.year}</h2>
+          <p>${usingUpload ? `Using the uploaded QuickBooks budget (${uploaded.name}).` : `Built from ${bva.basis}, with revenue ${prefs.revenueGrowth >= 0 ? 'up' : 'down'} ${Math.abs(+prefs.revenueGrowth || 0)}% and costs ${prefs.costGrowth >= 0 ? 'up' : 'down'} ${Math.abs(+prefs.costGrowth || 0)}%. Upload the client's QuickBooks Budget Overview export to use their own budget instead.`} Compared through ${bva.ytdLabel}.</p></div>
+        <div class="panel-body inputs-row">
+          ${uploaded && html`<div class="field"><span>Budget source</span><div class="seg" role="group" aria-label="Budget source">
+            <button aria-pressed=${usingUpload} onClick=${() => set('mode')('auto')}>Uploaded budget</button>
+            <button aria-pressed=${!usingUpload} onClick=${() => set('mode')('history')}>Build from last year</button></div></div>`}
+          ${!usingUpload && html`
+            <${NumberInput} id="bud-rev" label="Revenue growth" suffix="%" value=${prefs.revenueGrowth} onChange=${set('revenueGrowth')} />
+            <${NumberInput} id="bud-cost" label="Cost growth" suffix="%" value=${prefs.costGrowth} onChange=${set('costGrowth')} />`}
+        </div>
+      </section>
+
+      <section class="kpis" aria-label="Budget summary">
+        <div class="kpi"><span class="kpi-label">Revenue so far</span><span class="kpi-value">${wholeMoney(T.actualYtd.revenue)}</span><span class="kpi-sub">${tileDelta(T.actualYtd.revenue, T.budgetYtd.revenue, true)}</span></div>
+        <div class="kpi"><span class="kpi-label">Costs so far</span><span class="kpi-value">${wholeMoney(T.actualYtd.costs)}</span><span class="kpi-sub">${tileDelta(T.actualYtd.costs, T.budgetYtd.costs, false)}</span></div>
+        <div class=${`kpi ${T.actualYtd.netIncome < T.budgetYtd.netIncome ? 'alert' : 'okay'}`}><span class="kpi-label">Net income so far</span><span class="kpi-value">${wholeMoney(T.actualYtd.netIncome)}</span><span class="kpi-sub">budget ${wholeMoney(T.budgetYtd.netIncome)} for ${bva.ytdMonths} months</span></div>
+        <div class="kpi"><span class="kpi-label">Year on track for</span><span class="kpi-value">${wholeMoney(bva.outlook.netIncome)}</span><span class="kpi-sub">net income if the rest of the year goes to budget (budget ${wholeMoney(T.fullYear.netIncome)})</span></div>
+      </section>
+
+      <div class="grid-2">
+        ${chart('Revenue by month', 'actualRevenue', 'budgetRevenue', 'Bars are actual revenue; the line is the budget. Months still to come show the budget only.')}
+        ${chart('Net income by month', 'actualNet', 'budgetNet', 'Revenue less all costs, against what the budget expected each month.')}
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h2>By account, ${bva.ytdLabel}</h2><p>Largest differences first. Income above budget and costs below budget are favorable. Differences of $500 and 10% or more are flagged.</p></div>
+        <div class="panel-body flush"><div class="table-wrap"><table>
+          <thead><tr><th>Account</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Difference</th><th></th><th class="num">Full-year budget</th></tr></thead>
+          <tbody>${bva.rows.map((r) => html`<tr key=${r.name}>
+            <td>${r.name}<span class="sub">${r.cls === 'income' ? 'Income' : r.cls === 'cogs' ? 'Cost of goods sold' : 'Expense'}${r.unbudgeted ? ' · not in the budget' : ''}</span></td>
+            <td class="num"><${Money} v=${r.budgetYtd} /></td>
+            <td class="num"><${Money} v=${r.actualYtd} /></td>
+            <td class="num"><span class=${r.favorable ? '' : 'neg'}>${r.variance > 0 ? '+' : ''}${wholeMoney(r.variance)}${r.pct != null ? ` (${r.pct > 0 ? '+' : ''}${(r.pct * 100).toFixed(0)}%)` : ''}</span></td>
+            <td>${r.flag ? html`<span class=${`pill ${r.favorable ? 'good' : 'high'}`}>${r.favorable ? 'Favorable' : 'Over budget'}</span>` : ''}</td>
+            <td class="num">${r.fullYear ? wholeMoney(r.fullYear) : html`<span class="sub">-</span>`}</td>
           </tr>`)}</tbody>
         </table></div></div>
       </section>

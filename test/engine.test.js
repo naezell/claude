@@ -525,6 +525,7 @@ test('saved sample files match the generator', () => {
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-transaction-detail.csv'), 'utf8'), S.build());
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-chart-of-accounts.csv'), 'utf8'), S.chartOfAccounts());
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-profit-and-loss.csv'), 'utf8'), S.profitAndLoss());
+  assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-budget-2026.csv'), 'utf8'), S.budgetOverview());
 });
 
 test('formatted report: owner and full versions, charts, escaping', () => {
@@ -573,4 +574,33 @@ test('what-if scenarios change the forecast and leave the baseline alone', () =>
   assert.ok(Math.abs(sum(down) - sum(base.cash) / 2) < 1);
   // Malformed changes are ignored.
   assert.equal(E.analyze(p, { scenario: { levers: [{ type: 'monthly', amount: 'x' }, { type: 'nope' }] } }).cashScenario, null);
+});
+
+test('budget vs actual: uploaded QuickBooks budget and one built from history', () => {
+  const b = E.parseBudget(S.budgetOverview());
+  assert.equal(b.year, 2026);
+  assert.equal(b.months.length, 12);
+  assert.equal(E.parseProfitAndLoss(S.budgetOverview()), null, 'a budget is not a P&L');
+  assert.equal(E.parseBudget(S.profitAndLoss()), null, 'a P&L is not a budget');
+  const p = E.parseTransactions(S.build());
+  const v = E.analyze(p, { budget: b }).budget;
+  assert.equal(v.source, 'upload');
+  assert.equal(v.ytdMonths, 6);
+  // Actual year-to-date equals the P&L postings for January to June 2026.
+  const trend = E.analyze(p).trend;
+  const h1 = trend.months.filter((m) => m.key >= '2026-01' && m.key <= '2026-06');
+  assert.ok(Math.abs(v.totals.actualYtd.revenue - h1.reduce((t, m) => t + m.revenue, 0)) < 0.05);
+  assert.ok(Math.abs(v.totals.actualYtd.netIncome - h1.reduce((t, m) => t + m.netIncome, 0)) < 0.05);
+  const wages = v.rows.find((r) => r.name.includes('Wages'));
+  assert.equal(wages.favorable, false, 'costs over budget are unfavorable');
+  const income = v.rows.find((r) => r.name.includes('Design Services'));
+  assert.equal(income.favorable, true, 'income over budget is favorable');
+  assert.ok(v.rows.some((r) => r.unbudgeted && /Uncategorized/.test(r.name)));
+  assert.ok(Math.abs(v.outlook.netIncome - (v.totals.actualYtd.netIncome + (v.totals.fullYear.netIncome - v.totals.budgetYtd.netIncome))) < 0.05);
+  // Built from last year: same month a year earlier, grown by the rates given.
+  const hist = E.analyze(p, { budgetGrowth: { revenueGrowth: 10, costGrowth: 0 } }).budget;
+  assert.equal(hist.source, 'history');
+  const jan25 = trend.months.find((m) => m.key === '2025-01');
+  const janBudget = hist.monthly.find((m) => m.month === '2026-01');
+  assert.ok(Math.abs(janBudget.budgetRevenue - jan25.revenue * 1.1) < 0.1);
 });

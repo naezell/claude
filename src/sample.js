@@ -294,6 +294,37 @@
     return lines.join('\n');
   }
 
+  // A QuickBooks "Budget Overview" for 2026: last year's months with 8% more revenue and 4%
+  // more costs, rounded to the nearest $50 the way people type budgets.
+  function budgetOverview() {
+    const entries = buildEntries();
+    const types = new Map(chartRows().map((r) => [r[0], r[1]]));
+    const byAcct = new Map();
+    for (const e of entries) {
+      const type = types.get(e.pnl);
+      if (!type || !/income|cost of goods|expense/i.test(type) || /uncategorized|ask my/i.test(e.pnl)) continue;
+      const [m, , y] = e.date.split('/');
+      if (y !== '2025') continue;
+      if (!byAcct.has(e.pnl)) byAcct.set(e.pnl, new Array(12).fill(0));
+      byAcct.get(e.pnl)[+m - 1] += pnlSign(e) * e.amount;
+    }
+    const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const cols = MON.map((mm) => `${mm} 2026`);
+    const lines = ['Harbor & Pine Design Co.', 'Budget Overview: FY2026 Budget - FY26 P&L', '"January - December 2026"', '', ['', ...cols, 'Total'].join(',')];
+    const section = (title, test, growth) => {
+      lines.push(q(title));
+      for (const [a, vals] of [...byAcct.entries()].filter(([a]) => test(types.get(a))).sort((x, y2) => x[0].localeCompare(y2[0]))) {
+        const row = vals.map((v) => Math.round((v * growth) / 50) * 50);
+        lines.push([`   ${q(a)}`, ...row.map((v) => v.toFixed(2)), row.reduce((t, v) => t + v, 0).toFixed(2)].join(','));
+      }
+    };
+    section('Income', (t) => t === 'Income', 1.08);
+    section('Cost of Goods Sold', (t) => t === 'Cost of Goods Sold', 1.04);
+    section('Expenses', (t) => t === 'Expenses', 1.04);
+    section('Other Expenses', (t) => t === 'Other Expense', 1.04);
+    return lines.join('\n');
+  }
+
   // The matching QuickBooks Online "Account List" export for the sample company.
   function chartRows() {
     return [
@@ -328,5 +359,5 @@
       .concat(rows.map((r) => [...r, '', ''].map(q).join(','))).join('\n');
   }
 
-  return { build, chartOfAccounts, profitAndLoss };
+  return { build, chartOfAccounts, profitAndLoss, budgetOverview };
 });

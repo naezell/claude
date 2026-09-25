@@ -29,6 +29,10 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - A "What changed" list in plain language: the last 3 months against the same months a year earlier (or the 3 months before when there is less than a year of history), overhead changes with the accounts behind them, slowing collections, lost and new customers, and software creep.
 - The largest cost-account moves and customer changes, with partial months at the edges of the export faded and left out of comparisons.
 
+**Budget**
+- Upload the client's QuickBooks **Budget Overview** export (recognized automatically), or build a budget from last year's actuals month by month with growth rates for revenue and costs.
+- Year-to-date budget against actual for revenue, costs and net income, monthly revenue and net income charts, where the year lands if the rest goes to budget, and every account's difference with favorable and over-budget flags. Accounts with actuals but no budget are listed too.
+
 **Vendors**
 - Vendor spending over the last 12 months (payroll excluded), with each vendor's share, type (job cost or overhead), 3-month trend, how fast they get paid, open bills and payment method.
 - Bills coming due each forecast week against the projected cash balance, payables aging, and days to pay vendors (DPO) next to days to collect (DSO).
@@ -79,12 +83,12 @@ Open `index.html` in a browser, or serve the folder:
 npx serve .
 ```
 
-It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`, with its Chart of Accounts at `sample-data/harbor-pine-chart-of-accounts.csv` and Profit and Loss at `sample-data/harbor-pine-profit-and-loss.csv`.
+It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`, with its Chart of Accounts at `sample-data/harbor-pine-chart-of-accounts.csv` Profit and Loss at `sample-data/harbor-pine-profit-and-loss.csv`, and a 2026 budget at `sample-data/harbor-pine-budget-2026.csv`.
 
 ## Exporting from QuickBooks
 
 1. **Reports → Transaction Detail by Account** (or Transaction List by Date / Transaction Detail).
-2. For exact account types, also export **Reports → Account List** (the Chart of Accounts), and to check the numbers, the **Profit and Loss** for the same dates. Upload them together; each is recognized automatically.
+2. For exact account types, also export **Reports → Account List** (the Chart of Accounts), to check the numbers, the **Profit and Loss** for the same dates, and the **Budget Overview** if the client keeps a budget. Upload them together; each is recognized automatically.
 3. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work. Include the balance-sheet accounts (bank, A/R, A/P, credit cards) so the cash forecast can see open invoices, bills and bank balances.
 4. Set the date range, then **Export** to Excel or CSV. Both work; the Excel reader loads only when an Excel file is uploaded. Twelve months or more unlocks the year-over-year comparisons in Trends; if QuickBooks limits the range, export each year separately and upload them together.
 
