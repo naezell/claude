@@ -4,7 +4,7 @@
   const { useState, useMemo, useEffect, useRef, useCallback } = React;
   const html = htm.bind(React.createElement);
   const {
-    ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine,
+    ResponsiveContainer, BarChart, Bar, AreaChart, Area, LineChart, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine,
   } = Recharts;
   const E = window.LedgerEngine;
   const { fmtMoney, fmtPct, counterpartyOf, leafAccount } = E;
@@ -33,7 +33,7 @@
       const cs = getComputedStyle(document.documentElement);
       const g = (n) => cs.getPropertyValue(n).trim();
       return {
-        s1: g('--series-1'), s2: g('--series-2'), s3: g('--series-3'), pos: g('--pos'), neg: g('--neg'),
+        s1: g('--series-1'), s2: g('--series-2'), s3: g('--series-3'), s4: g('--series-4'), s5: g('--series-5'), pos: g('--pos'), neg: g('--neg'),
         neutral: g('--neutral-mark'), grid: g('--hair'), axis: g('--axis'), muted: g('--muted'), ink2: g('--ink-2'),
         surface: g('--surface'), surface2: g('--surface-2'), warnLine: g('--warn'),
       };
@@ -79,7 +79,7 @@
   // ------------------------------------------------------------ top-level app
 
   function App() {
-    const [source, setSource] = useState({ kind: 'sample', name: 'Harbor & Pine Design Co. (sample)', text: null });
+    const [source, setSource] = useState({ kind: 'sample' });
     const [error, setError] = useState('');
     const [tab, setTab] = useState(() => safeStore.get('ll.tab') || 'audit');
     const [groupBy, setGroupBy] = useState('customer');
@@ -90,11 +90,13 @@
     const [cashInputs, setCashInputs] = useState({ startingCash: '', cushion: '', includeDoubtful: false });
 
     const sampleText = useMemo(() => window.LedgerSample.build(), []);
-    const text = source.kind === 'sample' ? sampleText : source.text;
-
+    // One or more uploaded exports are parsed separately, then merged.
     const parsed = useMemo(() => {
-      try { return { ok: E.parseTransactions(text) }; } catch (e) { return { err: e.message }; }
-    }, [text]);
+      try {
+        if (source.kind === 'sample') return { ok: E.parseTransactions(sampleText) };
+        return { ok: E.mergeParsed(source.files.map((f) => f.parsed)) };
+      } catch (e) { return { err: e.message }; }
+    }, [source, sampleText]);
 
     const startingCash = cashInputs.startingCash === '' ? undefined : parseFloat(cashInputs.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
@@ -107,23 +109,36 @@
     useEffect(() => { safeStore.set('ll.tab', tab); }, [tab]);
     useEffect(() => { if (parsed.err) setError(parsed.err); }, [parsed]);
 
-    const loadFile = useCallback((file) => {
-      if (!file) return;
-      if (!/\.(csv|txt)$/i.test(file.name)) { setError(`"${file.name}" is not a CSV. In QuickBooks, open the report and choose Export → Export to CSV.`); return; }
+    const readFile = (file) => new Promise((resolve) => {
+      if (!/\.(csv|txt)$/i.test(file.name)) { resolve({ name: file.name, error: 'is not a CSV. In QuickBooks, open the report and choose Export → Export to CSV.' }); return; }
       const reader = new FileReader();
       reader.onload = () => {
-        const t = String(reader.result || '');
         try {
-          const p = E.parseTransactions(t);
-          if (!p.transactions.length) throw new Error('The file has a header row but no dated transactions.');
-          setError('');
-          setAccountClass({});
-          setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false });
-          setSource({ kind: 'upload', name: file.name, text: t });
-        } catch (e) { setError(`${file.name}: ${e.message}`); }
+          const p = E.parseTransactions(String(reader.result || ''));
+          if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
+          resolve({ name: file.name, parsed: p });
+        } catch (e) { resolve({ name: file.name, error: e.message }); }
       };
-      reader.onerror = () => setError(`Could not read ${file.name}.`);
+      reader.onerror = () => resolve({ name: file.name, error: 'could not be read.' });
       reader.readAsText(file);
+    });
+
+    // Loads one or more exports. With `append`, adds them to the files already loaded
+    // (a file with the same name replaces the earlier copy).
+    const loadFiles = useCallback(async (fileList, append) => {
+      const files = [...(fileList || [])];
+      if (!files.length) return;
+      const results = await Promise.all(files.map(readFile));
+      const bad = results.filter((r) => r.error);
+      const good = results.filter((r) => r.parsed);
+      setError(bad.map((b) => `${b.name} ${b.error}`).join(' '));
+      if (!good.length) return;
+      setAccountClass({});
+      setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false });
+      setSource((prev) => {
+        const kept = append && prev.kind === 'upload' ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
+        return { kind: 'upload', files: [...kept, ...good] };
+      });
     }, []);
 
     useEffect(() => {
@@ -131,14 +146,14 @@
       const enter = (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { depth++; setDragging(true); e.preventDefault(); } };
       const over = (e) => { if (dragging || depth) e.preventDefault(); };
       const leave = () => { depth = Math.max(0, depth - 1); if (!depth) setDragging(false); };
-      const drop = (e) => { e.preventDefault(); depth = 0; setDragging(false); loadFile(e.dataTransfer.files[0]); };
+      const drop = (e) => { e.preventDefault(); depth = 0; setDragging(false); loadFiles(e.dataTransfer.files, e.shiftKey); };
       window.addEventListener('dragenter', enter); window.addEventListener('dragover', over);
       window.addEventListener('dragleave', leave); window.addEventListener('drop', drop);
       return () => {
         window.removeEventListener('dragenter', enter); window.removeEventListener('dragover', over);
         window.removeEventListener('dragleave', leave); window.removeEventListener('drop', drop);
       };
-    }, [loadFile, dragging]);
+    }, [loadFiles, dragging]);
 
     const auditCount = result ? result.audit.uncategorized.length + result.audit.duplicates.length + result.audit.mismatches.length : 0;
 
@@ -153,8 +168,10 @@
           </div>
           <div class="actions">
             <label class="btn" for="csv-upload">${Icon.upload}Upload CSV</label>
-            <input id="csv-upload" class="file-input" type="file" accept=".csv,text/csv" onChange=${(e) => { loadFile(e.target.files[0]); e.target.value = ''; }} />
-            ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample', name: 'Harbor & Pine Design Co. (sample)' }); }}>${Icon.sample}Load sample</button>`}
+            <input id="csv-upload" class="file-input" type="file" multiple accept=".csv,text/csv" onChange=${(e) => { loadFiles(e.target.files, false); e.target.value = ''; }} />
+            ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
+              <input id="csv-add" class="file-input" type="file" multiple accept=".csv,text/csv" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
+            ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
             <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>
           </div>
         </div>
@@ -163,8 +180,8 @@
       <div class="wrap">
         <div class="source">
           ${source.kind === 'sample'
-            ? html`<span class="pill sample"><span class="dot"></span>Sample data</span><span>Showing a fictional design studio. Upload your QuickBooks <strong>Transaction Detail</strong> CSV, or drop it anywhere on this page.</span>`
-            : html`<span class="pill good"><span class="dot"></span>Your file</span><strong>${source.name}</strong>`}
+            ? html`<span class="pill sample"><span class="dot"></span>Sample data</span><span>Showing a fictional design studio. Upload your QuickBooks <strong>Transaction Detail</strong> CSV (or several, such as one per year), or drop them anywhere on this page.</span>`
+            : html`<span class="pill good"><span class="dot"></span>${source.files.length > 1 ? `${source.files.length} files combined` : 'Your file'}</span><strong>${source.files.map((f) => f.name).join(', ')}</strong>${parsed.ok && parsed.ok.meta.droppedOverlap ? html`<span>${parsed.ok.meta.droppedOverlap} overlapping rows skipped</span>` : ''}`}
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
         ${error && html`<div class="error" role="alert">${error}</div>`}
@@ -174,13 +191,15 @@
           <button class="tab" role="tab" id="tab-growth" aria-selected=${tab === 'growth'} onClick=${() => setTab('growth')}>Growth & profitability insights</button>
           <button class="tab" role="tab" id="tab-cash" aria-selected=${tab === 'cash'} onClick=${() => setTab('cash')}>Cash forecast</button>
           <button class="tab" role="tab" id="tab-breakeven" aria-selected=${tab === 'breakeven'} onClick=${() => setTab('breakeven')}>Break-even</button>
+          <button class="tab" role="tab" id="tab-trends" aria-selected=${tab === 'trends'} onClick=${() => setTab('trends')}>Trends</button>
         </div>
 
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
           ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
-            : html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`}
+            : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`
+            : html`<${TrendsTab} trend=${result.trend} />`}
         </main>`}
         <footer class="foot">Files are processed in your browser and never uploaded. Flags are leads for review, not confirmed errors.</footer>
       </div>
@@ -412,7 +431,8 @@
             <${RevenueCostChart} groups=${profit.groups} noun=${noun} />
             <${MarginChart} groups=${profit.groups} mode=${mode} noun=${noun} />
           </div>
-          <${ProfitTable} profit=${profit} noun=${noun} />`
+          <${ProfitTable} profit=${profit} noun=${noun} />
+          <${CustomerRiskSection} risk=${result.customers} />`
         : html`<section class="panel"><div class="empty">No ${noun} tags found on income. Add the ${groupBy === 'project' ? 'Customer (with sub-customers/projects) or Class' : 'Customer'} column to the QuickBooks report before exporting.</div></section>`}
 
       <div class="section-title"><h2>Recurring software & subscriptions</h2></div>
@@ -863,7 +883,7 @@
     return html`
       <section class="kpis" aria-label="Break-even summary">
         <div class="kpi"><span class="kpi-label">Break-even revenue</span><span class="kpi-value">${be.breakEvenRevenue != null ? wholeMoney(be.breakEvenRevenue) : 'n/a'}</span><span class="kpi-sub">per month</span></div>
-        <div class="kpi"><span class="kpi-label">Average revenue</span><span class="kpi-value">${wholeMoney(be.base.revenue)}</span><span class="kpi-sub">per month over ${be.months % 1 === 0 ? be.months : be.months.toFixed(1)} months</span></div>
+        <div class="kpi"><span class="kpi-label">Average revenue</span><span class="kpi-value">${wholeMoney(be.base.revenue)}</span><span class="kpi-sub">${be.trailing ? 'per month, last 12 months' : `per month over ${be.months % 1 === 0 ? be.months : be.months.toFixed(1)} months`}</span></div>
         <div class=${`kpi ${mos == null || mos < 0 ? 'alert' : mos >= 0.2 ? 'okay' : ''}`}><span class="kpi-label">Margin of safety</span><span class="kpi-value">${fmtPct(mos)}</span><span class="kpi-sub">${mos == null ? 'Break-even not reachable' : mos < 0 ? 'Revenue is below break-even' : `Revenue can fall ${fmtPct(mos)} before a loss`}</span></div>
         <div class="kpi"><span class="kpi-label">Contribution margin</span><span class="kpi-value">${fmtPct(be.cmRatio)}</span><span class="kpi-sub">${be.cmRatio != null ? `${Math.round(be.cmRatio * 100)}¢ of each $1 left after job costs` : ''}</span></div>
         <div class=${`kpi ${be.profit < 0 ? 'alert' : ''}`}><span class="kpi-label">Average profit</span><span class="kpi-value">${wholeMoney(be.profit)}</span><span class="kpi-sub">per month · ${fmtPct(be.profitMargin)} margin</span></div>
@@ -944,6 +964,281 @@
       <span class="slider-head"><span>${label}</span><b class="num">${fmt(value)}</b></span>
       <input id=${id} type="range" min=${min} max=${max} step=${step} value=${value} onInput=${(e) => onChange(parseFloat(e.target.value))} />
     </label>`;
+  }
+
+  // ------------------------------------------------------------ customer concentration
+
+  const FLAG_PILL = { high: 'high', medium: 'medium' };
+
+  function CustomerRiskSection({ risk }) {
+    const t = useTokens();
+    if (!risk || !risk.rows.length) return null;
+    const active = risk.rows.filter((r) => r.revenue > 0);
+    const slots = [t.s1, t.s2, t.s3, t.s4, t.s5];
+    const segs = active.slice(0, 5).map((r, i) => ({ label: r.name, share: r.share, color: slots[i] }));
+    const rest = active.slice(5).reduce((s, r) => s + r.share, 0);
+    if (rest > 0.0005) segs.push({ label: `Other (${active.length - 5})`, share: rest, color: t.neutral });
+    const top = risk.top;
+    const maxShare = Math.max(...risk.rows.map((r) => r.share), 0.01);
+    return html`
+      <div class="section-title"><h2>Customer concentration & risk</h2></div>
+      <section class="kpis" aria-label="Concentration summary">
+        <div class=${`kpi ${risk.top1Share >= 0.3 ? 'alert' : ''}`}><span class="kpi-label">Largest customer</span><span class="kpi-value">${fmtPct(risk.top1Share)}</span><span class="kpi-sub">${top.name}</span></div>
+        <div class="kpi"><span class="kpi-label">Top 3 customers</span><span class="kpi-value">${fmtPct(risk.top3Share)}</span><span class="kpi-sub">of revenue, ${risk.windowLabel}</span></div>
+        <div class="kpi"><span class="kpi-label">Concentration</span><span class="kpi-value"><span class=${`pill ${risk.level.tone}`} style=${{ fontSize: '13px', fontFamily: 'var(--sans)' }}><span class="dot"></span>${risk.level.label}</span></span><span class="kpi-sub">HHI ${risk.hhi.toLocaleString('en-US')} across ${risk.activeCount} customers</span></div>
+        ${top.profitIfLost != null && risk.baseProfit != null && html`<div class=${`kpi ${top.profitIfLost < 0 ? 'alert' : ''}`}><span class="kpi-label">If ${truncate(top.name, 22)} left</span><span class="kpi-value">${wholeMoney(top.profitIfLost)}</span><span class="kpi-sub">monthly profit, down from ${wholeMoney(risk.baseProfit)}</span></div>`}
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Share of revenue, ${risk.windowLabel}</h2><p>Above 25% from one customer, losing them becomes a business-level risk. HHI under 1,500 is diversified; over 2,500 is highly concentrated.</p></div>
+        <div class="panel-body" style=${{ display: 'grid', gap: '12px' }}>
+          <div class="split-bar" role="img" aria-label=${segs.map((x) => `${x.label} ${fmtPct(x.share)}`).join(', ')}>
+            ${segs.map((x) => html`<span key=${x.label} title=${`${x.label}: ${fmtPct(x.share)}`} style=${{ width: `${x.share * 100}%`, background: x.color }}></span>`)}
+          </div>
+          <div class="legend">${segs.map((x) => html`<span key=${x.label}><i style=${{ background: x.color }}></i>${x.label} <b class="num" style=${{ fontWeight: 500 }}>${fmtPct(x.share)}</b></span>`)}</div>
+        </div>
+        <div class="panel-body flush"><div class="table-wrap"><table>
+          <thead><tr><th>Customer</th><th>Share of revenue</th><th class="num">Last 3 mo.</th><th class="num">Gross margin</th><th class="num">Open A/R</th><th class="num">Pays in</th><th>Flags</th><th class="num">Monthly profit if lost</th></tr></thead>
+          <tbody>${risk.rows.map((r) => html`<tr key=${r.name}>
+            <td>${r.name}${r.status && r.status !== 'Steady' ? html`<span class="sub">${r.status}</span>` : ''}</td>
+            <td><div class="share-cell"><span class="share-bar"><span style=${{ width: `${(r.share / maxShare) * 100}%` }}></span></span><span class="num">${fmtPct(r.share)}</span></div></td>
+            <td class="num">${r.status === 'New' ? html`<span class="pill good">New</span>` : r.trendPct == null ? html`<span class="sub">-</span>` : html`<span class=${r.trendPct < -0.05 ? 'neg' : ''}>${r.trendPct > 0 ? '▲' : r.trendPct < 0 ? '▼' : ''} ${fmtPct(Math.abs(r.trendPct))}</span>`}</td>
+            <td class="num">${marginPill(r.margin)}</td>
+            <td class="num">${r.openAR ? html`<${Money} v=${r.openAR} />` : html`<span class="sub">-</span>`}</td>
+            <td class="num">${r.days != null ? `${r.days}d` : html`<span class="sub">-</span>`}</td>
+            <td><div class="chips">${r.flags.length ? r.flags.map((f) => html`<span key=${f.kind} class=${`pill ${FLAG_PILL[f.level]}`} title=${f.detail}>${f.kind}</span>`) : html`<span class="sub">None</span>`}</div></td>
+            <td class="num">${r.profitIfLost == null ? html`<span class="sub">-</span>` : html`<span class=${r.profitIfLost < 0 ? 'neg' : ''}>${wholeMoney(r.profitIfLost)}</span>`}</td>
+          </tr>`)}</tbody>
+        </table></div></div>
+        <div class="panel-body"><p class="chart-note">"Monthly profit if lost" takes today's average monthly profit (${risk.baseProfit != null ? wholeMoney(risk.baseProfit) : 'n/a'}, from the Break-even tab) and removes that customer's monthly revenue less their job costs. Overhead stays, which is why a big customer leaving hurts more than their share suggests.</p></div>
+      </section>
+    `;
+  }
+
+  // ------------------------------------------------------------ trends tab
+
+  function Spark({ values, color }) {
+    const pts = values.map((v, i) => [i, v]).filter(([, v]) => v != null && isFinite(v));
+    if (pts.length < 2) return null;
+    const ys = pts.map(([, v]) => v);
+    const lo = Math.min(...ys), hi = Math.max(...ys);
+    const span = hi - lo || 1;
+    const n = values.length - 1 || 1;
+    const xy = pts.map(([i, v]) => [(i / n) * 100, 28 - ((v - lo) / span) * 24]);
+    const last = xy[xy.length - 1];
+    return html`<svg class="spark" viewBox="0 0 100 32" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points=${xy.map((p) => p.join(',')).join(' ')} fill="none" stroke=${color} stroke-width="1.6" vector-effect="non-scaling-stroke" stroke-linejoin="round" />
+      <circle cx=${last[0]} cy=${last[1]} r="2.2" fill=${color} vector-effect="non-scaling-stroke" />
+    </svg>`;
+  }
+
+  const fmtMetric = (kind, v) => (v == null ? 'n/a' : kind === 'pct' ? fmtPct(v) : kind === 'days' ? `${Math.round(v)} days` : kind === 'count' ? String(Math.round(v)) : wholeMoney(v));
+
+  function Delta({ metric, cmp, label }) {
+    if (!cmp) return null;
+    const d = cmp.delta;
+    if (Math.abs(d) < (metric.kind === 'pct' ? 0.0005 : 0.5)) return html`<span class="delta">${label}: no change</span>`;
+    const good = metric.up ? d > 0 : d < 0;
+    // Percent change for money; points for percentages; plain units for days and counts.
+    const text = metric.kind === 'pct' ? `${(d * 100).toFixed(1)} pts`
+      : metric.kind === 'days' || metric.kind === 'count' ? fmtMetric(metric.kind, Math.abs(d))
+      : cmp.pct != null ? fmtPct(Math.abs(cmp.pct)) : fmtMetric(metric.kind, Math.abs(d));
+    const sign = metric.kind === 'money' && cmp.pct != null ? '' : d > 0 ? '+' : '-';
+    return html`<span class=${`delta ${good ? 'up' : 'down'}`}>${d > 0 ? '▲' : '▼'} ${sign}${text} <span class="delta-label">${label}</span></span>`;
+  }
+
+  function TrendsTab({ trend }) {
+    const t = useTokens();
+    const [grain, setGrain] = useState('month');
+    if (!trend || trend.months.length < 2) return html`<section class="panel"><div class="empty">Trends need at least two months of transactions. Upload a longer export, or several exports at once.</div></section>`;
+    const periods = grain === 'quarter' ? trend.quarters : trend.months;
+    const byKey = Object.fromEntries(trend.metrics.map((m) => [m.key, m]));
+    const tiles = ['revenue', 'netIncome', 'netMargin', 'fixed', 'dso', 'cashEnd'].map((k) => byKey[k]).filter(Boolean);
+    const cmpLabel = trend.hasYoY ? 'vs last year' : 'vs prior 3 mo.';
+    const data = periods.map((p) => ({ ...p, fullName: `${p.label}${p.partial ? ' (partial)' : ''}`, costs: p.variable + p.fixed, gm: p.grossMargin != null ? Math.round(p.grossMargin * 1000) / 10 : null, nmPct: p.netMargin != null ? Math.round(p.netMargin * 1000) / 10 : null }));
+    // Top cost categories across the whole export, the rest folded into Other.
+    const catTotals = new Map();
+    for (const p of periods) for (const [c, v] of Object.entries(p.categories)) catTotals.set(c, (catTotals.get(c) || 0) + v);
+    const topCats = [...catTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([c]) => c);
+    const catColors = [t.s1, t.s2, t.s3, t.s4, t.s5];
+    const mixData = periods.map((p) => {
+      const row = { label: p.label, fullName: p.label };
+      let other = 0;
+      for (const [c, v] of Object.entries(p.categories)) { if (topCats.includes(c)) row[c] = v; else other += v; }
+      row.Other = Math.round(other * 100) / 100;
+      return row;
+    });
+    const hasCash = periods.some((p) => p.cashEnd != null);
+    const tick = { fill: t.muted, fontSize: 11 };
+    const partialNote = periods.some((p) => p.partial) ? html`<p class="chart-note">Partial ${grain === 'quarter' ? 'quarters' : 'months'} at the edges of the export are shown faded and left out of comparisons.</p>` : '';
+
+    return html`
+      <div style=${{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px', alignItems: 'center' }}>
+        <div class="seg" role="group" aria-label="Period">
+          <button aria-pressed=${grain === 'month'} onClick=${() => setGrain('month')}>Monthly</button>
+          <button aria-pressed=${grain === 'quarter'} onClick=${() => setGrain('quarter')}>Quarterly</button>
+        </div>
+        <span class="hint">Comparing ${trend.windows.last3.join(', ')} with ${trend.hasYoY ? `the same months a year earlier (${trend.windows.yearAgo.join(', ')})` : trend.windows.prior3.length ? `the 3 months before (${trend.windows.prior3.join(', ')})` : 'earlier months'}.</span>
+      </div>
+
+      ${trend.insights.length > 0 && html`<section class="panel">
+        <div class="panel-head"><h2>What changed</h2><p>The movements worth a conversation with the client, largest first.</p></div>
+        <div class="panel-body"><ul class="insight-list">${trend.insights.map((i) => html`<li key=${i.text}><span class=${`pill ${i.tone === 'good' ? 'good' : 'high'}`}><span class="dot"></span>${i.tone === 'good' ? 'Better' : 'Watch'}</span><span>${i.text}</span></li>`)}</ul></div>
+      </section>`}
+
+      <section class="kpis trend-kpis" aria-label="Trend summary">
+        ${tiles.map((m) => {
+          const cmp = trend.hasYoY ? m.yoy : m.recent;
+          const value = cmp ? cmp.to : m.latest;
+          return html`<div class="kpi" key=${m.key}>
+            <span class="kpi-label">${m.label}</span>
+            <span class="kpi-value">${fmtMetric(m.kind, value)}</span>
+            <span class="kpi-sub">${m.balance ? `At end of ${m.latestLabel}` : m.kind === 'pct' ? 'Last 3 months' : 'Per month, last 3 months'}</span>
+            <${Spark} values=${m.series} color=${t.s1} />
+            <${Delta} metric=${m} cmp=${cmp} label=${cmpLabel} />
+          </div>`;
+        })}
+      </section>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head"><h2>Revenue vs. costs</h2><p>The gap between the revenue line and the bars is profit. Bars above the line are losing ${grain === 'quarter' ? 'quarters' : 'months'}.</p></div>
+          <div class="panel-body">
+            <div class="legend"><span><i style=${{ background: t.s1, height: '3px' }}></i>Revenue</span><span><i style=${{ background: t.s2 }}></i>Job costs</span><span><i style=${{ background: t.neutral }}></i>Overhead</span></div>
+            <div style=${{ height: 260 }}>
+              <${ResponsiveContainer} width="100%" height="100%">
+                <${ComposedChart} data=${data} margin=${{ top: 8, right: 8, bottom: 0, left: 4 }} barCategoryGap="22%">
+                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${tick} interval="preserveStartEnd" minTickGap=${10} />
+                  <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                  <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [
+                    { label: 'Revenue', value: fmtMoney(d.revenue), color: t.s1 },
+                    { label: 'Job costs', value: fmtMoney(d.variable), color: t.s2 },
+                    { label: 'Overhead', value: fmtMoney(d.fixed), color: t.neutral },
+                    { label: 'Net income', value: fmtMoney(d.netIncome) },
+                  ]} />`} />
+                  <${Bar} dataKey="variable" stackId="c" fill=${t.s2} isAnimationActive=${false} stroke=${t.surface} strokeWidth=${1}>
+                    ${data.map((d) => html`<${Cell} key=${d.key} fillOpacity=${d.partial ? 0.4 : 1} />`)}
+                  <//>
+                  <${Bar} dataKey="fixed" stackId="c" fill=${t.neutral} radius=${[4, 4, 0, 0]} isAnimationActive=${false} stroke=${t.surface} strokeWidth=${1}>
+                    ${data.map((d) => html`<${Cell} key=${d.key} fillOpacity=${d.partial ? 0.4 : 1} />`)}
+                  <//>
+                  <${Line} type="linear" dataKey="revenue" stroke=${t.s1} strokeWidth=${2.5} dot=${{ r: 3, fill: t.s1, stroke: t.surface, strokeWidth: 2 }} isAnimationActive=${false} />
+                <//>
+              <//>
+            </div>
+            ${partialNote}
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Margins</h2><p>Gross margin tracks pricing and job costs. Net margin adds overhead, so a gap that widens means overhead is growing faster than gross profit.</p></div>
+          <div class="panel-body">
+            <div class="legend"><span><i style=${{ background: t.s1, height: '3px' }}></i>Gross margin</span><span><i style=${{ background: t.s3, height: '3px' }}></i>Net margin</span></div>
+            <div style=${{ height: 260 }}>
+              <${ResponsiveContainer} width="100%" height="100%">
+                <${LineChart} data=${data} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${tick} interval="preserveStartEnd" minTickGap=${10} />
+                  <${YAxis} tickFormatter=${(v) => `${v}%`} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${44} />
+                  <${ReferenceLine} y=${0} stroke=${t.axis} />
+                  <${Tooltip} cursor=${{ stroke: t.axis }} content=${html`<${ChartTooltip} rows=${(d) => [
+                    { label: 'Gross margin', value: d.gm != null ? `${d.gm.toFixed(1)}%` : 'n/a', color: t.s1 },
+                    { label: 'Net margin', value: d.nmPct != null ? `${d.nmPct.toFixed(1)}%` : 'n/a', color: t.s3 },
+                  ]} />`} />
+                  <${Line} type="linear" dataKey="gm" stroke=${t.s1} strokeWidth=${2} dot=${{ r: 3, fill: t.s1, stroke: t.surface, strokeWidth: 2 }} isAnimationActive=${false} connectNulls=${true} />
+                  <${Line} type="linear" dataKey="nmPct" stroke=${t.s3} strokeWidth=${2} dot=${{ r: 3, fill: t.s3, stroke: t.surface, strokeWidth: 2 }} isAnimationActive=${false} connectNulls=${true} />
+                <//>
+              <//>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head"><h2>Where the money goes</h2><p>The five largest cost accounts over the export; everything else is folded into Other.</p></div>
+          <div class="panel-body">
+            <div class="legend">${topCats.map((c, i) => html`<span key=${c}><i style=${{ background: catColors[i] }}></i>${c}</span>`)}<span><i style=${{ background: t.neutral }}></i>Other</span></div>
+            <div style=${{ height: 260 }}>
+              <${ResponsiveContainer} width="100%" height="100%">
+                <${BarChart} data=${mixData} margin=${{ top: 8, right: 8, bottom: 0, left: 4 }} barCategoryGap="22%">
+                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${tick} interval="preserveStartEnd" minTickGap=${10} />
+                  <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                  <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [...topCats.map((c, i) => ({ label: c, value: fmtMoney(d[c] || 0), color: catColors[i] })), { label: 'Other', value: fmtMoney(d.Other), color: t.neutral }]} />`} />
+                  ${topCats.map((c, i) => html`<${Bar} key=${c} dataKey=${c} stackId="m" fill=${catColors[i]} stroke=${t.surface} strokeWidth=${1} isAnimationActive=${false} />`)}
+                  <${Bar} dataKey="Other" stackId="m" fill=${t.neutral} stroke=${t.surface} strokeWidth=${1} radius=${[4, 4, 0, 0]} isAnimationActive=${false} />
+                <//>
+              <//>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>${hasCash ? 'Cash and collections' : 'Collections'}</h2><p>Days to collect (DSO) is receivables divided by recent monthly revenue. Rising DSO ties up cash even when sales are growing.</p></div>
+          <div class="panel-body">
+            <div class="legend"><span><i style=${{ background: t.s2, height: '3px' }}></i>Days to collect</span></div>
+            <div style=${{ height: hasCash ? 120 : 260 }}>
+              <${ResponsiveContainer} width="100%" height="100%">
+                <${LineChart} data=${data} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                  <${XAxis} dataKey="label" hide=${hasCash} tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${tick} interval="preserveStartEnd" minTickGap=${10} />
+                  <${YAxis} tickFormatter=${(v) => `${v}d`} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                  <${Tooltip} cursor=${{ stroke: t.axis }} content=${html`<${ChartTooltip} rows=${(d) => [
+                    { label: 'Days to collect', value: d.dso != null ? `${d.dso}` : 'n/a', color: t.s2 },
+                    { label: 'Receivables', value: fmtMoney(d.arEnd) },
+                  ]} />`} />
+                  <${Line} type="linear" dataKey="dso" stroke=${t.s2} strokeWidth=${2} dot=${{ r: 3, fill: t.s2, stroke: t.surface, strokeWidth: 2 }} isAnimationActive=${false} connectNulls=${true} />
+                <//>
+              <//>
+            </div>
+            ${hasCash && html`
+              <div class="legend" style=${{ marginTop: '10px' }}><span><i style=${{ background: t.s1 }}></i>Cash at period end</span></div>
+              <div style=${{ height: 140 }}>
+                <${ResponsiveContainer} width="100%" height="100%">
+                  <${AreaChart} data=${data} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                    <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                    <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${tick} interval="preserveStartEnd" minTickGap=${10} />
+                    <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                    <${Tooltip} cursor=${{ stroke: t.axis }} content=${html`<${ChartTooltip} rows=${(d) => [{ label: 'Cash', value: fmtMoney(d.cashEnd), color: t.s1 }]} />`} />
+                    <${Area} type="linear" dataKey="cashEnd" stroke=${t.s1} strokeWidth=${2} fill=${t.s1} fillOpacity=${0.12} isAnimationActive=${false} />
+                  <//>
+                <//>
+              </div>`}
+          </div>
+        </section>
+      </div>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head"><h2>Biggest cost changes</h2><p>Average per month, last 3 months against the 3 before.</p></div>
+          <div class="panel-body flush">${trend.costMovers.length ? html`<div class="table-wrap"><table>
+            <thead><tr><th>Account</th><th>Type</th><th class="num">Before</th><th class="num">Now</th><th class="num">Change</th></tr></thead>
+            <tbody>${trend.costMovers.map((c) => html`<tr key=${c.name}><td>${c.name}</td><td class="sub" style=${{ display: 'table-cell' }}>${c.type}</td><td class="num">${wholeMoney(c.from)}</td><td class="num">${wholeMoney(c.to)}</td><td class=${`num ${c.delta > 0 ? 'neg' : ''}`}>${c.delta > 0 ? '+' : '-'}${wholeMoney(Math.abs(c.delta))}</td></tr>`)}</tbody>
+          </table></div>` : html`<div class="empty">No cost account moved by more than 15%.</div>`}</div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Customer changes</h2><p>New customers first billed in the last 6 months. Lost customers have no invoices in the last 3.</p></div>
+          <div class="panel-body flush">${trend.customerMovers.length ? html`<div class="table-wrap"><table>
+            <thead><tr><th>Customer</th><th>Status</th><th class="num">Before / mo</th><th class="num">Now / mo</th></tr></thead>
+            <tbody>${trend.customerMovers.map((c) => html`<tr key=${c.name}><td>${c.name}${c.status === 'Lost' ? html`<span class="sub">Last billed ${c.lastMonth}</span>` : ''}</td>
+              <td><span class=${`pill ${c.status === 'Lost' || c.status === 'Shrinking' ? 'high' : c.status === 'New' || c.status === 'Growing' ? 'good' : 'low'}`}>${c.status}</span></td>
+              <td class="num">${wholeMoney(c.prior)}</td><td class="num">${wholeMoney(c.recent)}</td></tr>`)}</tbody>
+          </table></div>` : html`<div class="empty">Needs at least 4 full months to compare customers.</div>`}</div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h2>${grain === 'quarter' ? 'Quarter' : 'Month'} by ${grain === 'quarter' ? 'quarter' : 'month'}</h2></div>
+        <div class="panel-body flush"><div class="table-wrap"><table>
+          <thead><tr><th>${grain === 'quarter' ? 'Quarter' : 'Month'}</th><th class="num">Revenue</th><th class="num">Job costs</th><th class="num">Overhead</th><th class="num">Net income</th><th class="num">Net margin</th><th class="num">Customers</th><th class="num">DSO</th>${hasCash ? html`<th class="num">Cash</th>` : ''}</tr></thead>
+          <tbody>${[...periods].reverse().map((p) => html`<tr key=${p.key} class=${p.partial ? 'partial' : ''}>
+            <td class="nowrap">${p.label}${p.partial ? html`<span class="sub">partial</span>` : ''}</td>
+            <td class="num">${wholeMoney(p.revenue)}</td><td class="num">${wholeMoney(p.variable)}</td><td class="num">${wholeMoney(p.fixed)}</td>
+            <td class=${`num ${p.netIncome < 0 ? 'neg' : ''}`}>${wholeMoney(p.netIncome)}</td><td class="num">${marginPill(p.netMargin)}</td>
+            <td class="num">${p.customers}</td><td class="num">${p.dso != null ? p.dso : '-'}</td>${hasCash ? html`<td class="num">${p.cashEnd != null ? wholeMoney(p.cashEnd) : '-'}</td>` : ''}
+          </tr>`)}</tbody>
+        </table></div></div>
+      </section>
+    `;
   }
 
   // ------------------------------------------------------------ report drawer

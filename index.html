@@ -20,6 +20,8 @@
     --series-1: #2a78d6;
     --series-2: #eb6834;
     --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
     --neutral-mark: #b9c0ba;
     --pos: #2a78d6;
     --neg: #e34948;
@@ -55,6 +57,8 @@
       --series-1: #3987e5;
       --series-2: #d95926;
       --series-3: #199e70;
+      --series-4: #c98500;
+      --series-5: #d55181;
       --neutral-mark: #4a544f;
       --pos: #3987e5;
       --neg: #e66767;
@@ -83,6 +87,8 @@
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
     --neutral-mark: #4a544f;
     --pos: #3987e5;
     --neg: #e66767;
@@ -291,6 +297,23 @@
   .whatif-out tr.strong td { font-weight: 600; }
   .insights p { margin: 0 0 8px; max-width: 70ch; color: var(--ink-2); }
   .insights strong { color: var(--ink); }
+
+  /* Concentration & trends */
+  .share-cell { display: flex; align-items: center; gap: 8px; min-width: 150px; }
+  .share-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; max-width: 120px; }
+  .share-bar span { display: block; height: 100%; background: var(--series-1); border-radius: 3px; }
+  .insight-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .insight-list li { display: flex; gap: 10px; align-items: baseline; max-width: 95ch; }
+  .insight-list li .pill { flex: none; }
+  .trend-kpis .kpi { gap: 3px; }
+  .kpi { min-width: 0; }
+  .kpi .pill { white-space: normal; }
+  .spark { width: 100%; height: 32px; margin: 4px 0 2px; overflow: visible; }
+  .delta { font-size: 12.5px; font-weight: 500; color: var(--ink-2); }
+  .delta.up { color: var(--good-ink); }
+  .delta.down { color: var(--critical-ink); }
+  .delta-label { font-weight: 400; color: var(--muted); }
+  tr.partial td { color: var(--muted); }
 
   /* Report drawer */
   .scrim { position: fixed; inset: 0; background: rgba(10, 16, 13, 0.45); z-index: 20; display: flex; justify-content: flex-end; }

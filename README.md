@@ -10,6 +10,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Growth & Profitability Insights**
 - Revenue, direct cost, gross margin and **net margin after overhead** per **customer** or **project** (sub-customer `Customer:Project`, a Project column, or Class).
+- **Customer concentration & risk**: each customer's share of the last 12 months' revenue, top-customer and top-3 share, and an HHI concentration rating. A per-customer risk table combines share, 3-month trend, gross margin, open receivables and days to pay, and flags concentration, slow payers, invoices over 90 days, shrinking or lost customers and low margins. It also shows what monthly profit would be if each customer left, since their job costs go away but overhead stays.
 - **Recurring SaaS & subscription detection**: finds steady weekly, monthly, quarterly and annual software charges, annualizes them, and flags overlapping tools (for example Asana + Monday.com), multiple charges per month (extra seats), price increases and consumer services on the business card. Estimates the annual savings.
 
 **Cash Forecast**
@@ -21,7 +22,14 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - Break-even revenue per month, margin of safety, contribution margin, and monthly revenue against the break-even line. COGS accounts and customer-tagged costs count as variable; everything else is fixed (adjustable through Account mapping).
 - A **what-if panel**: change prices, variable costs or fixed costs and see the new profit and break-even side by side with today. It also shows how much work you could lose at a higher price and still match today's profit, and the revenue needed to hit a target monthly profit.
 
-**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, and recommended next steps. Download it as `.txt` or copy it.
+**Trends**
+- Month-by-month or quarter-by-quarter revenue, job costs, overhead, net income, margins, cost mix, days to collect (DSO) and month-end cash.
+- A "What changed" list in plain language: the last 3 months against the same months a year earlier (or the 3 months before when there is less than a year of history), overhead changes with the accounts behind them, slowing collections, lost and new customers, and software creep.
+- The largest cost-account moves and customer changes, with partial months at the edges of the export faded and left out of comparisons.
+
+**Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
+
+**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, and recommended next steps. Download it as `.txt` or copy it.
 
 All processing happens in the browser. The file is never uploaded anywhere.
 
@@ -33,13 +41,13 @@ Open `index.html` in a browser, or serve the folder:
 npx serve .
 ```
 
-It opens with a sample data set (a fictional design studio with seeded issues) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`.
+It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`.
 
 ## Exporting from QuickBooks
 
 1. **Reports → Transaction Detail by Account** (or Transaction List by Date / Transaction Detail).
 2. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work. Include the balance-sheet accounts (bank, A/R, A/P, credit cards) so the cash forecast can see open invoices, bills and bank balances.
-3. Set the date range, then **Export → Export to CSV**.
+3. Set the date range, then **Export → Export to CSV**. Twelve months or more unlocks the year-over-year comparisons in Trends; if QuickBooks limits the range, export each year separately and upload them together.
 
 The parser skips the report title rows, section headers and "Total for…" lines. In the "by Account" layout each entry appears once per account it touches; Ledger Lens collapses these to one entry so nothing is counted twice.
 

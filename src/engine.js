@@ -69,6 +69,47 @@
   }
 
   const DAY = 86400000;
+
+  // Reads the report period from QuickBooks header lines such as
+  // "January 1 - June 30, 2026", "January - June, 2026", "January 2025 - June 2026".
+  const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  function parsePeriod(lines) {
+    const mon = (w) => { const i = MONTH_NAMES.findIndex((m) => m.startsWith(lower(w).slice(0, 3))); return i; };
+    const M = '(jan\\w*|feb\\w*|mar\\w*|apr\\w*|may|jun\\w*|jul\\w*|aug\\w*|sep\\w*|oct\\w*|nov\\w*|dec\\w*)';
+    const re = new RegExp(`^${M}\\.?\\s*(\\d{1,2})?,?\\s*(\\d{4})?\\s*[-–]\\s*${M}\\.?\\s*(\\d{1,2})?,?\\s*(\\d{4})$`, 'i');
+    const single = new RegExp(`^(?:as of\\s+)?${M}\\.?\\s*(\\d{1,2})?,?\\s*(\\d{4})$`, 'i');
+    for (const raw of lines || []) {
+      const line = norm(raw);
+      let m = line.match(re);
+      if (m) {
+        const y2 = +m[6];
+        const y1 = m[3] ? +m[3] : y2;
+        const m1 = mon(m[1]), m2 = mon(m[4]);
+        const start = new Date(Date.UTC(y1, m1, m[2] ? +m[2] : 1));
+        const end = m[5] ? new Date(Date.UTC(y2, m2, +m[5])) : new Date(Date.UTC(y2, m2 + 1, 0));
+        if (end >= start) return { start, end };
+      }
+      m = line.match(single);
+      if (m) {
+        const y = +m[3], mm = mon(m[1]);
+        if (/^as of/i.test(line)) return { start: null, end: new Date(Date.UTC(y, mm, m[2] ? +m[2] : 1)) };
+        return { start: new Date(Date.UTC(y, mm, m[2] ? +m[2] : 1)), end: m[2] ? new Date(Date.UTC(y, mm, +m[2])) : new Date(Date.UTC(y, mm + 1, 0)) };
+      }
+    }
+    return null;
+  }
+
+  // Report date range: the header's period when it plausibly covers the data, else the data's own span.
+  function dateRange(txns, meta) {
+    const ds = txns.map((t) => t.date).sort((a, b) => a - b);
+    let first = ds[0], last = ds[ds.length - 1];
+    const p = meta && meta.periodRange;
+    if (p) {
+      if (p.start && p.start <= first && (first - p.start) / DAY <= 45) first = p.start;
+      if (p.end && p.end >= last && (p.end - last) / DAY <= 45) last = p.end;
+    }
+    return { first, last };
+  }
   const isoDate = (d) => (d ? d.toISOString().slice(0, 10) : '');
 
   // Header aliases seen across QuickBooks Online and Desktop exports.
@@ -220,6 +261,7 @@
         skippedTotals,
         grouped: map.account == null,
         openingBalances,
+        periodRange: parsePeriod(meta.slice(1, 4)),
       },
     };
   }
@@ -776,7 +818,7 @@
     const cls = (a) => accountClass[a] || classifyAccount(a);
     const entries = logicalRows(txns, accountClass);
     if (!entries.length) return null;
-    const asOf = entries.reduce((m, t) => (t.date > m ? t.date : m), entries[0].date);
+    const asOf = dateRange(txns, opts.meta).last;
     const start = addDays(asOf, 1);
     const horizonEnd = addDays(asOf, weeksN * 7);
     const weekOf = (d) => Math.max(0, Math.min(weeksN - 1, Math.floor((d - start) / DAY / 7)));
@@ -918,7 +960,7 @@
     const doubtful = openInvoices.filter((i) => i.doubtful);
 
     const assumptions = [
-      `Forecast starts ${isoDate(start)}, the day after the last transaction in the export.`,
+      `Forecast starts ${isoDate(start)}, the day after the export's end date (${isoDate(asOf)}).`,
       opts.startingCash != null ? 'Starting cash entered manually.' : cashAccts.size
         ? `Starting cash is the ${Object.keys(opening).some((a) => cashAccts.has(a)) ? 'opening balance plus ' : ''}activity in ${[...cashAccts.keys()].join(', ')}.`
         : 'No bank account found in the export: enter starting cash for an accurate balance.',
@@ -979,12 +1021,27 @@
     return Math.max(1, ((last - first) / DAY + 1) / 30.44);
   }
 
-  function breakEven(txns, accountClass) {
-    const postings = toPostings(txns, accountClass);
+  // The last 12 whole months of an export longer than a year, else null.
+  function trailingYear(first, last) {
+    if (monthsCovered(first, last) <= 12.5) return null;
+    const endOfMonth = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0));
+    const lastFull = last.getUTCDate() >= endOfMonth.getUTCDate() - 3 ? endOfMonth : new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), 0));
+    const start = new Date(Date.UTC(lastFull.getUTCFullYear(), lastFull.getUTCMonth() - 11, 1));
+    return { start, end: lastFull };
+  }
+
+  function breakEven(txns, accountClass, meta) {
+    let postings = toPostings(txns, accountClass);
     if (!postings.length) return null;
-    const all = txns.map((t) => t.date).sort((a, b) => a - b);
-    const dates = [all[0], all[all.length - 1]];
-    const months = monthsCovered(dates[0], dates[1]);
+    const range = dateRange(txns, meta);
+    let dates = [range.first, range.last];
+    // Long exports: use the trailing 12 months so the cost structure is current.
+    const ttm = trailingYear(dates[0], dates[1]);
+    if (ttm) {
+      postings = postings.filter((p) => p.t.date >= ttm.start && p.t.date <= ttm.end);
+      dates = [ttm.start, ttm.end];
+    }
+    const months = ttm ? 12 : monthsCovered(dates[0], dates[1]);
     const byMonth = new Map();
     const fixedByAcct = new Map();
     const varByAcct = new Map();
@@ -1012,6 +1069,7 @@
       variableAccounts: toList(varByAcct),
       firstDate: isoDate(dates[0]),
       lastDate: isoDate(dates[dates.length - 1]),
+      trailing: !!ttm,
     };
   }
 
@@ -1045,6 +1103,398 @@
     };
   }
 
+  // ---------------------------------------------------------------- trends
+
+  const monthLabel = (key) => {
+    const [y, m] = key.split('-');
+    return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+m - 1]} ${y.slice(2)}`;
+  };
+  const quarterOf = (key) => { const [y, m] = key.split('-'); return `${y}-Q${Math.ceil(+m / 3)}`; };
+  const pctChange = (a, b) => (a && Math.abs(a) > 0.009 ? (b - a) / Math.abs(a) : null);
+
+  const TREND_METRICS = [
+    { key: 'revenue', label: 'Revenue', kind: 'money', up: true, flow: true },
+    { key: 'grossProfit', label: 'Gross profit', kind: 'money', up: true, flow: true },
+    { key: 'grossMargin', label: 'Gross margin', kind: 'pct', up: true },
+    { key: 'netIncome', label: 'Net income', kind: 'money', up: true, flow: true },
+    { key: 'netMargin', label: 'Net margin', kind: 'pct', up: true },
+    { key: 'variable', label: 'Job costs', kind: 'money', up: false, flow: true },
+    { key: 'fixed', label: 'Overhead', kind: 'money', up: false, flow: true },
+    { key: 'software', label: 'Software', kind: 'money', up: false, flow: true },
+    { key: 'customers', label: 'Active customers', kind: 'count', up: true },
+    { key: 'arEnd', label: 'Receivables', kind: 'money', up: false, balance: true },
+    { key: 'dso', label: 'Days to collect (DSO)', kind: 'days', up: false, balance: true },
+    { key: 'cashEnd', label: 'Cash', kind: 'money', up: true, balance: true },
+  ];
+
+  function derive(p) {
+    p.grossProfit = round2(p.revenue - p.variable);
+    p.netIncome = round2(p.revenue - p.variable - p.fixed);
+    p.grossMargin = p.revenue > 0 ? p.grossProfit / p.revenue : null;
+    p.netMargin = p.revenue > 0 ? p.netIncome / p.revenue : null;
+    return p;
+  }
+
+  function trends(txns, accountClass, opts) {
+    opts = opts || {};
+    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const postings = toPostings(txns, accountClass);
+    if (!postings.length) return null;
+    const entries = logicalRows(txns, accountClass);
+    const { first, last } = dateRange(txns, opts.meta);
+
+    const keys = [];
+    for (let y = first.getUTCFullYear(), m = first.getUTCMonth(); y < last.getUTCFullYear() || (y === last.getUTCFullYear() && m <= last.getUTCMonth()); m++) {
+      if (m === 12) { m = 0; y++; }
+      keys.push(`${y}-${String(m + 1).padStart(2, '0')}`);
+    }
+    const lastEnd = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0)).getUTCDate();
+    const months = new Map(keys.map((k, i) => [k, {
+      key: k, label: monthLabel(k), revenue: 0, variable: 0, fixed: 0, software: 0,
+      partial: (i === 0 && first.getUTCDate() > 3) || (i === keys.length - 1 && last.getUTCDate() < lastEnd - 3),
+      byCategory: new Map(), byFixed: new Map(), byVariable: new Map(), byCustomer: new Map(),
+    }]));
+
+    for (const p of postings) {
+      const mo = months.get(p.t.dateStr.slice(0, 7));
+      if (!mo) continue;
+      if (p.cls === 'income') {
+        mo.revenue += p.value;
+        const c = customerOf(p.t, p.cls);
+        if (c) { const k = c.split(':')[0].trim(); mo.byCustomer.set(k, (mo.byCustomer.get(k) || 0) + p.value); }
+        continue;
+      }
+      const variable = p.cls === 'cogs' || !!customerOf(p.t, p.cls);
+      if (variable) mo.variable += p.value; else mo.fixed += p.value;
+      const cat = leafAccount(p.category) || 'Unassigned';
+      mo.byCategory.set(cat, (mo.byCategory.get(cat) || 0) + p.value);
+      const saasCat = saasCategory(`${vendorOf(p.t)} ${p.t.memo}`);
+      if (SAAS_ACCOUNT.test(p.category) || (saasCat && saasCat !== 'Payroll' && !NOT_SAAS_ACCOUNT.test(p.category))) mo.software += p.value;
+      (variable ? mo.byVariable : mo.byFixed).set(cat, ((variable ? mo.byVariable : mo.byFixed).get(cat) || 0) + p.value);
+    }
+
+    // Month-end receivables and cash.
+    const sorted = [...entries].sort((a, b) => a.date - b.date);
+    let ar = 0;
+    let idx = 0;
+    const opening = opts.openingBalances || {};
+    const isCash = (a) => cls(a) === 'balance' && CASH_ACCOUNT.test(a);
+    let cash = Object.entries(opening).filter(([a]) => isCash(a)).reduce((t, [, v]) => t + v, 0);
+    const cashRows = txns.filter((t) => isCash(t.account)).sort((a, b) => a.date - b.date);
+    const hasCash = cashRows.length > 0;
+    let cIdx = 0;
+    for (const k of keys) {
+      const mo = months.get(k);
+      while (idx < sorted.length && sorted[idx].dateStr.slice(0, 7) <= k) {
+        const t = sorted[idx++];
+        if (/invoice|statement charge/i.test(t.type)) ar += Math.abs(t.amount);
+        else if (/^payment$|receive payment|credit memo/i.test(t.type)) ar -= Math.abs(t.amount);
+      }
+      while (cIdx < cashRows.length && cashRows[cIdx].dateStr.slice(0, 7) <= k) cash += cashRows[cIdx++].amount;
+      mo.arEnd = round2(Math.max(0, ar));
+      mo.cashEnd = hasCash ? round2(cash) : null;
+    }
+
+    const finish = (list) => {
+      list.forEach((p, i) => {
+        derive(p);
+        p.revenue = round2(p.revenue); p.variable = round2(p.variable); p.fixed = round2(p.fixed); p.software = round2(p.software);
+        p.customers = p.byCustomer.size;
+        // DSO on trailing three periods' average monthly revenue.
+        const window = list.slice(Math.max(0, i - 2), i + 1);
+        const monthsIn = window.reduce((t, w) => t + (w.monthCount || 1), 0);
+        const rev = window.reduce((t, w) => t + w.revenue, 0) / monthsIn;
+        p.dso = rev > 0 ? Math.round((p.arEnd / rev) * 30.44) : null;
+      });
+      return list;
+    };
+    const monthList = finish(keys.map((k) => months.get(k)));
+
+    const quarterMap = new Map();
+    for (const mo of monthList) {
+      const q = quarterOf(mo.key);
+      if (!quarterMap.has(q)) quarterMap.set(q, { key: q, label: `Q${q.slice(-1)} ${q.slice(2, 4)}`, revenue: 0, variable: 0, fixed: 0, software: 0, monthCount: 0, partial: false, byCategory: new Map(), byFixed: new Map(), byVariable: new Map(), byCustomer: new Map() });
+      const qq = quarterMap.get(q);
+      qq.revenue += mo.revenue; qq.variable += mo.variable; qq.fixed += mo.fixed; qq.software += mo.software;
+      qq.monthCount++;
+      qq.partial = qq.partial || mo.partial;
+      qq.arEnd = mo.arEnd; qq.cashEnd = mo.cashEnd;
+      for (const [c, v] of mo.byCategory) qq.byCategory.set(c, (qq.byCategory.get(c) || 0) + v);
+      for (const [c, v] of mo.byFixed) qq.byFixed.set(c, (qq.byFixed.get(c) || 0) + v);
+      for (const [c, v] of mo.byVariable) qq.byVariable.set(c, (qq.byVariable.get(c) || 0) + v);
+      for (const [c, v] of mo.byCustomer) qq.byCustomer.set(c, (qq.byCustomer.get(c) || 0) + v);
+    }
+    const quarterList = finish([...quarterMap.values()].map((q) => ({ ...q, partial: q.partial || q.monthCount < 3 })));
+
+    const full = monthList.filter((m) => !m.partial);
+    const sum = (list, key) => list.reduce((t, m) => t + (m[key] || 0), 0);
+    const windowValue = (list, metric) => {
+      if (!list.length) return null;
+      if (metric.balance) return list[list.length - 1][metric.key];
+      if (metric.kind === 'pct') {
+        const r = sum(list, 'revenue');
+        if (!r) return null;
+        return metric.key === 'grossMargin' ? (r - sum(list, 'variable')) / r : (r - sum(list, 'variable') - sum(list, 'fixed')) / r;
+      }
+      if (metric.key === 'customers') return new Set(list.flatMap((m) => [...m.byCustomer.keys()])).size;
+      return sum(list, metric.key) / list.length;
+    };
+    const cmp = (a, b, metric) => {
+      if (a == null || b == null) return null;
+      return { from: a, to: b, delta: b - a, pct: metric.kind === 'pct' ? null : pctChange(a, b) };
+    };
+    const last3 = full.slice(-3);
+    const prior3 = full.slice(-6, -3);
+    const lastKey = full.length ? full[full.length - 1].key : null;
+    const yearAgoKeys = last3.map((m) => `${+m.key.slice(0, 4) - 1}${m.key.slice(4)}`);
+    const yearAgo = yearAgoKeys.map((k) => months.get(k)).filter((m) => m && !m.partial);
+    const hasYoY = yearAgo.length === last3.length && last3.length === 3;
+
+    const metrics = TREND_METRICS.map((metric) => {
+      if (metric.key === 'cashEnd' && !hasCash) return null;
+      const latest = full.length ? full[full.length - 1] : null;
+      const prev = full.length > 1 ? full[full.length - 2] : null;
+      return {
+        ...metric,
+        series: monthList.map((m) => m[metric.key]),
+        latest: latest ? latest[metric.key] : null,
+        latestLabel: latest ? latest.label : '',
+        mom: latest && prev ? cmp(prev[metric.key], latest[metric.key], metric) : null,
+        recent: prior3.length === 3 ? cmp(windowValue(prior3, metric), windowValue(last3, metric), metric) : null,
+        yoy: hasYoY ? cmp(windowValue(yearAgo, metric), windowValue(last3, metric), metric) : null,
+      };
+    }).filter(Boolean);
+    const byKey = Object.fromEntries(metrics.map((m) => [m.key, m]));
+
+    // Movers: cost categories and customers, last 3 full months vs the 3 before.
+    const catAvg = (list, field) => {
+      const m = new Map();
+      for (const mo of list) for (const [c, v] of mo[field || 'byCategory']) m.set(c, (m.get(c) || 0) + v / list.length);
+      return m;
+    };
+    const typeOf = (c) => (full.some((mo) => mo.byVariable.has(c)) ? (full.some((mo) => mo.byFixed.has(c)) ? 'Mixed' : 'Job cost') : 'Overhead');
+    const costMovers = [];
+    if (prior3.length === 3) {
+      const a = catAvg(prior3), b = catAvg(last3);
+      for (const c of new Set([...a.keys(), ...b.keys()])) {
+        const from = round2(a.get(c) || 0), to = round2(b.get(c) || 0);
+        const delta = round2(to - from);
+        if (Math.abs(delta) >= Math.max(100, 0.15 * from)) costMovers.push({ name: c, type: typeOf(c), from, to, delta, pct: pctChange(from, to) });
+      }
+      costMovers.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta));
+    }
+    const custTotals = (list) => {
+      const m = new Map();
+      for (const mo of list) for (const [c, v] of mo.byCustomer) m.set(c, (m.get(c) || 0) + v);
+      return m;
+    };
+    const customerMovers = [];
+    if (full.length >= 4) {
+      const recentT = custTotals(last3);
+      const priorT = custTotals(prior3);
+      const before = custTotals(full.slice(0, -6));
+      const everBefore = custTotals(full.slice(0, -3));
+      const lastSeen = new Map();
+      for (const mo of monthList) for (const c of mo.byCustomer.keys()) lastSeen.set(c, mo.key);
+      for (const c of new Set([...recentT.keys(), ...everBefore.keys()])) {
+        const r = recentT.get(c) || 0, p = priorT.get(c) || 0;
+        let status;
+        if (!before.has(c) && r > 0) status = 'New';
+        else if (r === 0 && everBefore.has(c)) status = 'Lost';
+        else if (r === 0) continue;
+        else if (p > 0 && r / p >= 1.2) status = 'Growing';
+        else if (p > 0 && r / p <= 0.8) status = 'Shrinking';
+        else status = 'Steady';
+        customerMovers.push({ name: c, recent: round2(r / Math.max(1, last3.length)), prior: round2(p / Math.max(1, prior3.length)), status, pct: p ? pctChange(p, r) : null, lastMonth: monthLabel(lastSeen.get(c)), lifetime: round2([...monthList].reduce((t, mo) => t + (mo.byCustomer.get(c) || 0), 0)) });
+      }
+      const order = { New: 0, Growing: 1, Shrinking: 2, Lost: 3, Steady: 4 };
+      customerMovers.sort((x, y) => order[x.status] - order[y.status] || y.recent - x.recent);
+    }
+
+    // Plain-language findings, most important first.
+    const insights = [];
+    const rev = byKey.revenue;
+    if (rev && rev.yoy) insights.push({ tone: rev.yoy.pct >= 0 ? 'good' : 'bad', text: `Revenue over the last 3 months averaged ${fmtWhole(rev.yoy.to)}/month, ${fmtPct(Math.abs(rev.yoy.pct))} ${rev.yoy.pct >= 0 ? 'above' : 'below'} the same months last year.` });
+    else if (rev && rev.recent) insights.push({ tone: rev.recent.pct >= 0 ? 'good' : 'bad', text: `Revenue over the last 3 months averaged ${fmtWhole(rev.recent.to)}/month, ${fmtPct(Math.abs(rev.recent.pct))} ${rev.recent.pct >= 0 ? 'up' : 'down'} on the 3 months before.` });
+    const nm = byKey.netMargin;
+    const nmCmp = nm && (nm.yoy || nm.recent);
+    if (nmCmp && Math.abs(nmCmp.delta) >= 0.02) insights.push({ tone: nmCmp.delta >= 0 ? 'good' : 'bad', text: `Net margin ${nmCmp.delta >= 0 ? 'improved' : 'slipped'} from ${fmtPct(nmCmp.from)} to ${fmtPct(nmCmp.to)} ${nm.yoy ? 'compared with a year ago' : 'over the last 3 months'}.` });
+    const fx = byKey.fixed;
+    const fxCmp = fx && (fx.yoy || fx.recent);
+    if (fxCmp && fxCmp.pct != null && Math.abs(fxCmp.pct) >= 0.08) {
+      // Name the categories behind the overhead change when a year of history exists.
+      let why = '';
+      if (hasYoY) {
+        const a = catAvg(yearAgo, 'byFixed'), b = catAvg(last3, 'byFixed');
+        const top = [...new Set([...a.keys(), ...b.keys()])].map((c) => ({ c, d: (b.get(c) || 0) - (a.get(c) || 0) }))
+          .filter((x) => Math.sign(x.d) === Math.sign(fxCmp.delta) && Math.abs(x.d) >= 100).sort((x, y) => Math.abs(y.d) - Math.abs(x.d)).slice(0, 2);
+        if (top.length) why = ` Biggest change${top.length > 1 ? 's' : ''}: ${top.map((x) => `${x.c} (${x.d > 0 ? '+' : '-'}${fmtWhole(Math.abs(x.d))}/month)`).join(', ')}.`;
+      }
+      insights.push({ tone: fxCmp.delta > 0 ? 'bad' : 'good', text: `Overhead is ${fmtWhole(fxCmp.to)}/month, ${fmtPct(Math.abs(fxCmp.pct))} ${fxCmp.delta > 0 ? 'higher' : 'lower'} than ${fx.yoy ? 'a year ago' : 'the 3 months before'}.${why}` });
+    }
+    const dso = byKey.dso;
+    const dsoCmp = dso && (dso.yoy || dso.recent);
+    if (dsoCmp && Math.abs(dsoCmp.delta) >= 5) insights.push({ tone: dsoCmp.delta > 0 ? 'bad' : 'good', text: `Customers are taking ${Math.round(dsoCmp.to)} days to pay on average, ${dsoCmp.delta > 0 ? 'up' : 'down'} from ${Math.round(dsoCmp.from)} days ${dso.yoy ? 'a year ago' : '3 months ago'}.` });
+    const lost = customerMovers.filter((c) => c.status === 'Lost');
+    const added = customerMovers.filter((c) => c.status === 'New');
+    if (lost.length) insights.push({ tone: 'bad', text: `${lost.length === 1 ? `${lost[0].name} has` : `${lost.length} customers have`} not been billed in the last 3 months${lost.length === 1 ? ` (last invoice ${lost[0].lastMonth}, ${fmtWhole(lost[0].lifetime)} lifetime)` : ''}.` });
+    if (added.length) insights.push({ tone: 'good', text: `New in the last 6 months: ${added.map((c) => `${c.name} (${fmtWhole(c.recent)}/month lately)`).join(', ')}.` });
+    const sw = byKey.software;
+    const swCmp = sw && (sw.yoy || sw.recent);
+    if (swCmp && swCmp.pct != null && swCmp.pct >= 0.15 && swCmp.delta >= 50) insights.push({ tone: 'bad', text: `Software spend is up ${fmtPct(swCmp.pct)} ${sw.yoy ? 'year over year' : 'on the prior 3 months'}, to ${fmtWhole(swCmp.to)}/month.` });
+
+    const strip = (list) => list.map(({ byCategory, byFixed, byVariable, byCustomer, ...rest }) => ({
+      ...rest,
+      categories: Object.fromEntries([...byCategory].map(([c, v]) => [c, round2(v)])),
+    }));
+    return {
+      months: strip(monthList),
+      quarters: strip(quarterList),
+      metrics,
+      lastFullMonth: lastKey,
+      hasYoY,
+      windows: {
+        last3: last3.map((m) => m.label),
+        prior3: prior3.map((m) => m.label),
+        yearAgo: hasYoY ? yearAgo.map((m) => m.label) : [],
+      },
+      costMovers: costMovers.slice(0, 8),
+      customerMovers,
+      insights,
+      customerRevenueByMonth: monthList.map((m) => ({ key: m.key, partial: m.partial, byCustomer: Object.fromEntries(m.byCustomer) })),
+    };
+  }
+
+  // ---------------------------------------------------------------- customer concentration & risk
+
+  function customerRisk(txns, accountClass, cash, trend, breakeven) {
+    const prof = profitability(txns, accountClass, 'customer');
+    if (!prof.groups.length) return null;
+    const margins = new Map(prof.groups.map((g) => [g.name, g]));
+    // Concentration uses the trailing 12 whole months when available, so long-gone
+    // customers don't dilute today's picture.
+    const monthsAll = trend ? trend.customerRevenueByMonth.filter((m) => !m.partial) : [];
+    const window = monthsAll.length >= 12 ? monthsAll.slice(-12) : monthsAll;
+    const recent = new Map();
+    for (const m of window) for (const [c, v] of Object.entries(m.byCustomer)) recent.set(c, (recent.get(c) || 0) + v);
+    const basis = recent.size ? recent : new Map(prof.groups.map((g) => [g.name, g.revenue]));
+    const windowMonths = recent.size ? window.length : Math.max(1, breakeven ? breakeven.months : 1);
+    const total = [...basis.values()].reduce((t, v) => t + Math.max(0, v), 0) || 1;
+
+    const arBy = new Map();
+    const over90By = new Map();
+    if (cash) {
+      for (const i of cash.ar.openInvoices) {
+        arBy.set(i.party, (arBy.get(i.party) || 0) + i.open);
+        if (i.age > 90) over90By.set(i.party, (over90By.get(i.party) || 0) + i.open);
+      }
+    }
+    const lagBy = new Map(cash ? cash.ar.customerLags.map((l) => [l.name, l.medianDays]) : []);
+    const moverBy = new Map(trend ? trend.customerMovers.map((c) => [c.name, c]) : []);
+    const arTotal = cash ? cash.ar.total : 0;
+    const baseProfit = breakeven ? breakeven.profit : null;
+
+    const names = new Set([...basis.keys(), ...prof.groups.map((g) => g.name)]);
+    const rows = [...names].map((name) => {
+      const g = margins.get(name);
+      const rev = Math.max(0, basis.get(name) || 0);
+      const share = rev / total;
+      const margin = g ? g.margin : null;
+      const mover = moverBy.get(name);
+      const openAR = round2(arBy.get(name) || 0);
+      const over90 = round2(over90By.get(name) || 0);
+      const days = lagBy.has(name) ? lagBy.get(name) : null;
+      const monthlyRevenue = round2(rev / windowMonths);
+      const monthlyContribution = margin != null ? round2(monthlyRevenue * margin) : null;
+      const flags = [];
+      if (mover && mover.status === 'Lost') flags.push({ kind: 'Lost', level: 'high', detail: `No invoices since ${mover.lastMonth}` });
+      if (share >= 0.25) flags.push({ kind: 'Concentration', level: 'high', detail: `${fmtPct(share)} of revenue` });
+      else if (share >= 0.15) flags.push({ kind: 'Large share', level: 'medium', detail: `${fmtPct(share)} of revenue` });
+      if (over90 > 0) flags.push({ kind: 'Over 90 days', level: 'high', detail: `${fmtMoney(over90)} unpaid over 90 days` });
+      if (days != null && days > 45) flags.push({ kind: 'Slow payer', level: 'medium', detail: `Pays in ${days} days on average` });
+      if (mover && mover.status === 'Shrinking') flags.push({ kind: 'Shrinking', level: 'medium', detail: `Revenue ${fmtPct(mover.pct)} vs prior 3 months` });
+      if (margin != null && margin < 0.2) flags.push({ kind: 'Low margin', level: 'medium', detail: `${fmtPct(margin)} gross margin` });
+      return {
+        name, revenue: round2(rev), lifetimeRevenue: g ? g.revenue : 0, share, margin, openAR, arShare: arTotal ? openAR / arTotal : 0, over90, days,
+        status: mover ? mover.status : null, trendPct: mover ? mover.pct : null, flags,
+        monthlyRevenue, monthlyContribution,
+        profitIfLost: baseProfit != null && monthlyContribution != null && !(mover && mover.status === 'Lost') ? round2(baseProfit - monthlyContribution) : null,
+      };
+    }).filter((r) => r.revenue > 0 || r.lifetimeRevenue > 0 || r.openAR > 0)
+      .sort((a, b) => b.revenue - a.revenue || b.lifetimeRevenue - a.lifetimeRevenue);
+
+    const active = rows.filter((r) => r.revenue > 0);
+    const hhi = Math.round(active.reduce((t, r) => t + (r.share * 100) ** 2, 0));
+    const level = hhi >= 2500 ? { label: 'Highly concentrated', tone: 'high' } : hhi >= 1500 ? { label: 'Moderately concentrated', tone: 'medium' } : { label: 'Diversified', tone: 'good' };
+    const top = active[0] || null;
+    return {
+      rows,
+      windowLabel: recent.size ? (window.length >= 12 ? 'last 12 months' : `last ${window.length} months`) : 'the full period',
+      top,
+      top1Share: top ? top.share : 0,
+      top3Share: active.slice(0, 3).reduce((t, r) => t + r.share, 0),
+      hhi,
+      level,
+      activeCount: active.length,
+      arTopShare: rows.reduce((m, r) => Math.max(m, r.arShare), 0),
+      baseProfit,
+    };
+  }
+
+  // ---------------------------------------------------------------- multiple exports
+
+  // Combines several parsed exports (for example two years exported separately).
+  // Rows repeated in a later file, as happens when date ranges overlap, are dropped.
+  function mergeParsed(list) {
+    if (list.length === 1) return list[0];
+    const ordered = [...list].sort((a, b) => {
+      const fa = a.transactions[0], fb = b.transactions[0];
+      const da = Math.min(...a.transactions.map((t) => t.date)), db = Math.min(...b.transactions.map((t) => t.date));
+      return (fa && fb ? da - db : 0);
+    });
+    const key = (t) => [t.dateStr, lower(t.type), t.num, lower(t.name), lower(t.customer), lower(t.memo), lower(t.account), lower(t.split), t.amount.toFixed(2)].join('|');
+    const seen = new Map();
+    const txns = [];
+    let dropped = 0;
+    ordered.forEach((p, fileIdx) => {
+      const counts = new Map();
+      for (const t of p.transactions) {
+        const k = key(t);
+        const inEarlier = seen.get(k) || 0;
+        const used = counts.get(k) || 0;
+        counts.set(k, used + 1);
+        if (used < inEarlier) { dropped++; continue; }
+        txns.push({ ...t, id: txns.length + 1, file: fileIdx });
+      }
+      for (const [k, n] of counts) seen.set(k, Math.max(seen.get(k) || 0, n));
+    });
+    // Opening balances come from the earliest export that has one for each account.
+    const openingBalances = {};
+    for (const p of ordered) for (const [a, v] of Object.entries(p.meta.openingBalances || {})) if (!(a in openingBalances)) openingBalances[a] = v;
+    const first = ordered[0].meta;
+    // The combined report period runs from the earliest start to the latest end.
+    const ranges = ordered.map((p) => p.meta.periodRange).filter(Boolean);
+    const starts = ranges.map((r) => r.start).filter(Boolean);
+    const ends = ranges.map((r) => r.end).filter(Boolean);
+    const periodRange = ranges.length ? {
+      start: starts.length ? new Date(Math.min(...starts)) : null,
+      end: ends.length ? new Date(Math.max(...ends)) : null,
+    } : null;
+    return {
+      transactions: txns,
+      meta: {
+        ...first,
+        reportLines: first.reportLines,
+        period: ordered.map((p) => p.meta.period).filter(Boolean).join(' + '),
+        rowCount: txns.length,
+        openingBalances,
+        periodRange,
+        files: ordered.length,
+        droppedOverlap: dropped,
+      },
+    };
+  }
+
   // ---------------------------------------------------------------- orchestration
 
   function listAccounts(txns) {
@@ -1064,31 +1514,33 @@
     const accountClass = opts.accountClass || {};
     const txns = parsed.transactions;
     const entries = logicalRows(txns, accountClass);
-    const dates = txns.map((t) => t.date).sort((a, b) => a - b);
     const uncategorized = findUncategorized(entries);
     const duplicates = findDuplicates(entries, opts.duplicateWindow);
     const mismatches = findMismatches(entries, accountClass, txns);
     const profit = profitability(txns, accountClass, opts.groupBy);
     const subs = subscriptions(txns, accountClass);
     const cash = cashForecast(txns, accountClass, {
+      meta: parsed.meta,
       openingBalances: parsed.meta.openingBalances,
       startingCash: opts.startingCash,
       includeDoubtful: opts.includeDoubtful,
     });
-    const breakeven = breakEven(txns, accountClass);
+    const breakeven = breakEven(txns, accountClass, parsed.meta);
     // Open bills that the audit flags as possible duplicates should not be paid blindly.
     if (cash) {
       const dupKeys = new Set(duplicates.flatMap((g) => g.rows.map((r) => `${lower(vendorOf(r))}|${r.num}|${r.dateStr}`)));
       for (const b of cash.ap.openBills) b.possibleDuplicate = dupKeys.has(`${lower(b.party)}|${b.num}|${b.dateStr}`);
       cash.ap.duplicateTotal = round2(cash.ap.openBills.filter((b) => b.possibleDuplicate).reduce((t, b) => t + b.open, 0));
     }
+    const trend = trends(txns, accountClass, { openingBalances: parsed.meta.openingBalances, meta: parsed.meta });
+    const customers = customerRisk(txns, accountClass, cash, trend, breakeven);
     const uncategorizedTotal = round2(uncategorized.reduce((s, t) => s + Math.abs(t.amount), 0));
     const duplicateExposure = round2(duplicates.reduce((s, g) => s + g.exposure, 0));
     const flaggedIds = new Set([...uncategorized.map((t) => t.id), ...duplicates.flatMap((g) => g.rows.map((r) => r.id)), ...mismatches.map((t) => t.id)]);
     const healthScore = entries.length ? Math.max(0, Math.round(100 - (flaggedIds.size / entries.length) * 100 * 1.5)) : 100;
     return {
       meta: parsed.meta,
-      period: { start: isoDate(dates[0]), end: isoDate(dates[dates.length - 1]) },
+      period: (() => { const r = dateRange(txns, parsed.meta); return { start: isoDate(r.first), end: isoDate(r.last) }; })(),
       count: txns.length,
       entryCount: entries.length,
       accounts: listAccounts(txns),
@@ -1097,6 +1549,8 @@
       subs,
       cash,
       breakeven,
+      trend,
+      customers,
     };
   }
 
@@ -1107,6 +1561,7 @@
     const s = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return (n < 0 ? '-$' : '$') + s;
   }
+  const fmtWhole = (n) => (n == null || isNaN(n) ? '-' : `${n < 0 ? '-' : ''}$${Math.round(Math.abs(n)).toLocaleString('en-US')}`);
   const fmtPct = (n) => (n == null || !isFinite(n) ? 'n/a' : `${(n * 100).toFixed(1)}%`);
   const pad = (s, n) => String(s).slice(0, n).padEnd(n);
   const padL = (s, n) => String(s).slice(0, n).padStart(n);
@@ -1252,6 +1707,40 @@
       L.push('');
     }
 
+    const cr = result.customers;
+    if (cr && cr.rows.length) {
+      L.push(`8. CUSTOMER CONCENTRATION (${cr.windowLabel})`);
+      L.push(thin);
+      L.push(`Largest customer:             ${cr.top.name} (${fmtPct(cr.top1Share)} of revenue)`);
+      L.push(`Top 3 customers:              ${fmtPct(cr.top3Share)} of revenue`);
+      L.push(`Concentration:                ${cr.level.label} (HHI ${cr.hhi.toLocaleString('en-US')})`);
+      if (cr.top.profitIfLost != null && cr.baseProfit != null) {
+        L.push(`If ${cr.top.name} left, average monthly profit would go from ${fmtMoney(cr.baseProfit)} to ${fmtMoney(cr.top.profitIfLost)}.`);
+      }
+      L.push('');
+      L.push(`  ${pad('Customer', 24)} ${padL('Share', 7)} ${padL('Margin', 7)} ${padL('Open A/R', 11)} ${padL('Pays in', 8)}  Flags`);
+      for (const r of cr.rows.slice(0, 12)) {
+        L.push(`  ${pad(r.name, 24)} ${padL(fmtPct(r.share), 7)} ${padL(fmtPct(r.margin), 7)} ${padL(fmtMoney(r.openAR), 11)} ${padL(r.days != null ? `${r.days}d` : '-', 8)}  ${r.flags.map((f) => f.kind).join('; ')}`);
+      }
+      L.push('');
+    }
+
+    const tr = result.trend;
+    if (tr && tr.months.length >= 3) {
+      L.push('9. TRENDS');
+      L.push(thin);
+      if (tr.insights.length) {
+        L.push('What changed:');
+        for (const i of tr.insights) L.push(`  - ${i.text}`);
+        L.push('');
+      }
+      L.push(`  ${pad('Month', 8)} ${padL('Revenue', 12)} ${padL('Net income', 12)} ${padL('Margin', 7)} ${padL('DSO', 5)} ${padL('Cash', 12)}`);
+      for (const m of tr.months.slice(-12)) {
+        L.push(`  ${pad(m.label, 8)} ${padL(fmtMoney(m.revenue), 12)} ${padL(fmtMoney(m.netIncome), 12)} ${padL(fmtPct(m.netMargin), 7)} ${padL(m.dso != null ? m.dso : '-', 5)} ${padL(m.cashEnd != null ? fmtMoney(m.cashEnd) : '-', 12)}${m.partial ? '  (partial)' : ''}`);
+      }
+      L.push('');
+    }
+
     L.push('RECOMMENDED NEXT STEPS');
     L.push(thin);
     const steps = [];
@@ -1263,6 +1752,12 @@
     else if (cash && opts.cushion && cash.lowest.ending < opts.cushion) steps.push(`Cash drops to ${fmtMoney(cash.lowest.ending)} in the week of ${cash.lowest.start}; speed up collections from slow payers before then.`);
     if (cash && cash.ar.doubtfulTotal) steps.push(`Follow up on ${fmtMoney(cash.ar.doubtfulTotal)} in invoices more than 90 days old.`);
     if (be && be.marginOfSafety != null && be.marginOfSafety < 0.15) steps.push(`Revenue is only ${fmtPct(be.marginOfSafety)} above break-even; review pricing and fixed costs together.`);
+    if (cr && cr.top1Share >= 0.3) steps.push(`${cr.top.name} brings in ${fmtPct(cr.top1Share)} of revenue. Protect the relationship and build a pipeline so no single client can sink the year.`);
+    const lostC = tr ? tr.customerMovers.filter((c) => c.status === 'Lost') : [];
+    if (lostC.length) steps.push(`Reach out to ${lostC.map((c) => c.name).join(', ')}, who ${lostC.length === 1 ? 'has' : 'have'} not been billed in 3+ months.`);
+    const dsoM = tr && tr.metrics.find((m) => m.key === 'dso');
+    const dsoC = dsoM && (dsoM.yoy || dsoM.recent);
+    if (dsoC && dsoC.delta >= 10) steps.push(`Collections are slowing (${Math.round(dsoC.from)} to ${Math.round(dsoC.to)} days). Send invoices sooner, add reminders, or require deposits.`);
     const weak = profit.groups.filter((g) => g.netMargin != null && g.netMargin < 0.1 && g.revenue > 0);
     if (weak.length) steps.push(`Discuss pricing on ${weak.length} low-margin ${opts.groupBy === 'project' ? 'project' : 'customer'}${weak.length > 1 ? 's' : ''}.`);
     if (!steps.length) steps.push('No action items. The books look clean for this period.');
@@ -1278,6 +1773,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, logicalRows, cashForecast, breakEven, whatIf, fmtMoney, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, parsePeriod, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

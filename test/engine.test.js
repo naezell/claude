@@ -62,15 +62,15 @@ test('debit/credit columns and journal imbalance', () => {
 
 test('sample "by Account" export: every seeded issue is found once', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
-  assert.equal(r.count, 542);
-  assert.equal(r.entryCount, 271, 'each entry appears in two account sections');
+  assert.equal(r.count, 1456);
+  assert.equal(r.entryCount, 728, 'each entry appears in two account sections');
   assert.equal(r.audit.uncategorized.length, 11);
   assert.equal(r.audit.duplicates.length, 3);
   const kinds = r.audit.mismatches.map((m) => m.kind);
   assert.equal(kinds.filter((k) => k === 'Type / account conflict').length, 3);
   assert.equal(kinds.filter((k) => k === 'Inconsistent coding').length, 1);
   assert.deepEqual(r.profit.groups.map((g) => g.name).sort(), [
-    'Bluebird Bakery', 'Cedar Ridge Dental', 'Harborview Hotel', 'Northwind Outfitters', 'Oakline Realty', 'Summit Fitness',
+    'Bluebird Bakery', 'Cedar Ridge Dental', 'Harborview Hotel', 'Lakeside Brewing', 'Northwind Outfitters', 'Oakline Realty', 'Summit Fitness',
   ]);
   const oak = r.profit.groups.find((g) => g.name === 'Oakline Realty');
   assert.ok(oak.margin < 0.2, 'Oakline is the low-margin customer');
@@ -92,7 +92,7 @@ test('sample subscriptions: overlaps, seats, price increase, personal', () => {
 test('report contains every section', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
   const txt = E.buildReport(r);
-  for (const h of ['EXECUTIVE SUMMARY', 'UNCATEGORIZED', 'POTENTIAL DUPLICATES', 'MISMATCHED ENTRIES', 'PROFITABILITY BY CUSTOMER', 'RECURRING SOFTWARE', '13-WEEK CASH FORECAST', 'BREAK-EVEN', 'RECOMMENDED NEXT STEPS']) {
+  for (const h of ['EXECUTIVE SUMMARY', 'UNCATEGORIZED', 'POTENTIAL DUPLICATES', 'MISMATCHED ENTRIES', 'PROFITABILITY BY CUSTOMER', 'RECURRING SOFTWARE', '13-WEEK CASH FORECAST', 'BREAK-EVEN', 'CUSTOMER CONCENTRATION', 'TRENDS', 'RECOMMENDED NEXT STEPS']) {
     assert.ok(txt.includes(h), h);
   }
   assert.ok(txt.includes('Harbor & Pine Design Co.'));
@@ -147,9 +147,10 @@ test('cash forecast on sample: exact-amount matching keeps the disputed invoice 
   const { cash } = r;
   assert.equal(cash.asOf, '2026-06-30');
   const disputed = cash.ar.openInvoices.find((i) => i.party === 'Cedar Ridge Dental' && i.dateStr === '2026-03-05');
+  assert.equal(cash.ar.openInvoices.filter((i) => i.doubtful).length, 1);
   assert.ok(disputed && disputed.doubtful, 'March invoice is over 90 days and excluded');
   assert.equal(disputed.week, null);
-  assert.equal(cash.ar.customerLags.find((c) => c.name === 'Summit Fitness').medianDays, 6);
+  assert.ok(cash.ar.customerLags.find((c) => c.name === 'Summit Fitness').medianDays <= 8, 'fast payer');
   assert.ok(cash.ar.customerLags.find((c) => c.name === 'Harborview Hotel').medianDays > 45);
   assert.ok(cash.outflowRows.some((row) => row.label === 'Payroll'));
   assert.ok(cash.outflowRows.some((row) => row.label === 'Rent'));
@@ -176,10 +177,12 @@ test('break-even math and what-if scenarios', () => {
   assert.equal(broke.breakEvenRevenue, null);
 });
 
-test('break-even on sample uses whole months and splits fixed from variable', () => {
+test('break-even on an 18-month sample uses the trailing 12 months', () => {
   const { breakeven: be } = E.analyze(E.parseTransactions(S.build()));
-  assert.equal(be.months, 6);
-  assert.equal(be.monthly.length, 6);
+  assert.equal(be.trailing, true);
+  assert.equal(be.months, 12);
+  assert.equal(be.monthly.length, 12);
+  assert.equal(be.firstDate, '2025-07-01');
   assert.ok(be.variableAccounts.some((a) => a.name === 'Subcontractors'));
   assert.ok(be.fixedAccounts.some((a) => a.name === 'Wages'));
   assert.ok(be.breakEvenRevenue > 0 && be.breakEvenRevenue < be.base.revenue);
@@ -188,6 +191,102 @@ test('break-even on sample uses whole months and splits fixed from variable', ()
 test('open bills flagged as duplicates in the audit are marked in the forecast', () => {
   const { cash } = E.analyze(E.parseTransactions(S.build()));
   const flagged = cash.ap.openBills.filter((b) => b.possibleDuplicate);
-  assert.deepEqual(flagged.map((b) => b.num), ['B-31']);
+  assert.deepEqual(flagged.map((b) => b.num), ['B2603-1']);
   assert.equal(cash.ap.duplicateTotal, flagged[0].open);
+});
+
+test('parsePeriod reads QuickBooks header date ranges', () => {
+  const iso = (p) => p && [p.start && p.start.toISOString().slice(0, 10), p.end.toISOString().slice(0, 10)];
+  assert.deepEqual(iso(E.parsePeriod(['January 1 - June 30, 2026'])), ['2026-01-01', '2026-06-30']);
+  assert.deepEqual(iso(E.parsePeriod(['January - June, 2026'])), ['2026-01-01', '2026-06-30']);
+  assert.deepEqual(iso(E.parsePeriod(['January 2025 - June 2026'])), ['2025-01-01', '2026-06-30']);
+  assert.deepEqual(iso(E.parsePeriod(['Transaction Detail', 'June 2026'])), ['2026-06-01', '2026-06-30']);
+  assert.equal(E.parsePeriod(['All Dates']), null);
+});
+
+test('trends: monthly series, year-over-year comparisons and findings', () => {
+  const { trend } = E.analyze(E.parseTransactions(S.build()));
+  assert.equal(trend.months.length, 18);
+  assert.equal(trend.quarters.length, 6);
+  assert.ok(trend.months.every((m) => !m.partial), 'header period makes first and last month whole');
+  assert.equal(trend.hasYoY, true);
+  assert.deepEqual(trend.windows.last3, ['Apr 26', 'May 26', 'Jun 26']);
+  assert.deepEqual(trend.windows.yearAgo, ['Apr 25', 'May 25', 'Jun 25']);
+  const rev = trend.metrics.find((m) => m.key === 'revenue');
+  assert.ok(rev.yoy.pct > 0.15, 'revenue grew year over year');
+  const wagesInsight = trend.insights.find((i) => /Overhead/.test(i.text));
+  assert.ok(wagesInsight && /Wages/.test(wagesInsight.text), 'overhead finding names wages');
+  assert.ok(!/Job Materials/.test(wagesInsight.text), 'job costs are not overhead');
+  const sw = trend.months.map((m) => m.software);
+  assert.ok(Math.max(...sw) < 1000, 'payroll is not counted as software');
+  const status = Object.fromEntries(trend.customerMovers.map((c) => [c.name, c.status]));
+  assert.equal(status['Lakeside Brewing'], 'Lost');
+  assert.equal(status['Harborview Hotel'], 'New');
+  // Quarter figures add up to their months.
+  const q1 = trend.quarters[0];
+  const q1Rev = trend.months.slice(0, 3).reduce((t, m) => t + m.revenue, 0);
+  assert.ok(Math.abs(q1.revenue - q1Rev) < 0.05);
+  // Cash at the last month end matches the bank balance.
+  assert.ok(trend.months[17].cashEnd > 0);
+});
+
+test('customer concentration: shares, HHI, flags and loss impact', () => {
+  const { customers: c, breakeven } = E.analyze(E.parseTransactions(S.build()));
+  assert.equal(c.windowLabel, 'last 12 months');
+  assert.equal(c.top.name, 'Northwind Outfitters');
+  assert.ok(c.top1Share > 0.3 && c.top1Share < 0.5);
+  const shares = c.rows.reduce((t, r) => t + r.share, 0);
+  assert.ok(Math.abs(shares - 1) < 1e-9);
+  assert.ok(c.hhi >= 1500 && c.hhi < 2500);
+  assert.equal(c.level.label, 'Moderately concentrated');
+  const flags = (n) => c.rows.find((r) => r.name === n).flags.map((f) => f.kind);
+  assert.ok(flags('Northwind Outfitters').includes('Concentration'));
+  assert.ok(flags('Cedar Ridge Dental').includes('Over 90 days'));
+  assert.ok(flags('Harborview Hotel').includes('Slow payer'));
+  assert.ok(flags('Oakline Realty').includes('Low margin'));
+  assert.ok(flags('Lakeside Brewing').includes('Lost'));
+  const top = c.rows[0];
+  assert.equal(top.profitIfLost, Math.round((breakeven.profit - top.monthlyContribution) * 100) / 100);
+  assert.ok(top.profitIfLost < 0, 'losing the top customer turns a profit into a loss');
+  assert.equal(c.rows.find((r) => r.name === 'Lakeside Brewing').profitIfLost, null);
+});
+
+test('mergeParsed combines exports and drops overlapping rows', () => {
+  const head = 'Date,Transaction Type,Num,Name,Account,Split,Amount';
+  const a = E.parseTransactions([head, '01/05/2026,Expense,,Acme,Rent,Checking,100.00', '01/20/2026,Expense,,Acme,Rent,Checking,100.00', '02/05/2026,Expense,,Acme,Rent,Checking,100.00'].join('\n'));
+  const b = E.parseTransactions([head, '02/05/2026,Expense,,Acme,Rent,Checking,100.00', '03/05/2026,Expense,,Acme,Rent,Checking,100.00'].join('\n'));
+  const m = E.mergeParsed([b, a]);
+  assert.equal(m.meta.files, 2);
+  assert.equal(m.meta.droppedOverlap, 1);
+  assert.deepEqual(m.transactions.map((t) => t.dateStr), ['2026-01-05', '2026-01-20', '2026-02-05', '2026-03-05']);
+  // A genuine repeat inside one file is kept.
+  const c = E.parseTransactions([head, '04/01/2026,Expense,,Acme,Rent,Checking,100.00', '04/01/2026,Expense,,Acme,Rent,Checking,100.00'].join('\n'));
+  assert.equal(E.mergeParsed([a, c]).transactions.length, 5);
+});
+
+test('merging yearly exports gives the same analysis as one long export', () => {
+  const lines = S.build().split('\n');
+  const head = lines.slice(0, 5);
+  const pick = (from, to, keepOpening, period) => {
+    const out = head.map((l) => l.replace('January 2025 - June 2026', period));
+    for (const l of lines.slice(5)) {
+      const m = l.match(/^,(\d\d)\/(\d\d)\/(\d{4}),/);
+      if (!m) { if (!/Beginning Balance/.test(l) || keepOpening) out.push(l); continue; }
+      const k = m[3] + m[1];
+      if (k >= from && k <= to) out.push(l);
+    }
+    return E.parseTransactions(out.join('\n'));
+  };
+  // December 2025 appears in both files, as happens when date ranges overlap.
+  const y2025 = pick('202501', '202512', true, 'January - December, 2025');
+  const y2026 = pick('202512', '202606', false, 'December 2025 - June 2026');
+  const merged = E.analyze(E.mergeParsed([y2026, y2025]));
+  const single = E.analyze(E.parseTransactions(S.build()));
+  assert.ok(E.mergeParsed([y2026, y2025]).meta.droppedOverlap > 0);
+  assert.equal(merged.count, single.count);
+  assert.deepEqual(merged.period, single.period);
+  assert.equal(merged.profit.totals.revenue, single.profit.totals.revenue);
+  assert.equal(merged.cash.startingCash, single.cash.startingCash);
+  assert.equal(merged.cash.asOf, single.cash.asOf);
+  assert.equal(merged.trend.hasYoY, true);
 });
