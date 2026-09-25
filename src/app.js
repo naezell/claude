@@ -84,6 +84,13 @@
 
   const slug = (s) => (s || 'client').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'client';
 
+  // Holds a value back until it has stopped changing for `ms`, so typing doesn't re-run the analysis per keystroke.
+  function useDebounced(value, ms) {
+    const [v, setV] = useState(value);
+    useEffect(() => { const id = setTimeout(() => setV(value), ms); return () => clearTimeout(id); }, [value, ms]);
+    return v;
+  }
+
   // Chart colors come from CSS tokens so both themes stay in sync.
   function useTokens() {
     const read = () => {
@@ -168,13 +175,16 @@
     const sampleChart = useMemo(() => E.parseChartOfAccounts(window.LedgerSample.chartOfAccounts()), []);
     const chart = source.kind === 'sample' ? sampleChart : source.chart ? source.chart.parsed : null;
 
-    const startingCash = cashInputs.startingCash === '' ? undefined : parseFloat(cashInputs.startingCash);
+    // Stable object: it only changes when one of the inputs does.
+    const typedNow = useMemo(() => ({ cash: cashInputs, loan: loanInputs, tax: taxInputs }), [cashInputs, loanInputs, taxInputs]);
+    const typed = useDebounced(typedNow, 300);
+    const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
       accountClass, groupBy, chart, reviewed,
-      cushion: cashInputs.cushion === '' ? undefined : parseFloat(cashInputs.cushion),
-      loan: { amount: parseFloat(loanInputs.amount) || 0, rate: parseFloat(loanInputs.rate) || 0, years: parseFloat(loanInputs.years) || 10, addBacks: parseFloat(loanInputs.addBacks) || 0 },
-      tax: { entity: taxInputs.entity, rate: taxInputs.rate === '' ? undefined : parseFloat(taxInputs.rate), salary: parseFloat(taxInputs.salary) || 0, paid: taxInputs.paid === '' ? undefined : parseFloat(taxInputs.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, reviewed, startingCash, cashInputs.includeDoubtful, cashInputs.cushion, loanInputs, taxInputs]);
+      cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
+      loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
+      tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
+    }) : null), [parsed, accountClass, groupBy, chart, reviewed, startingCash, cashInputs.includeDoubtful, typed]);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;

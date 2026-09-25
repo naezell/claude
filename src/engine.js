@@ -69,6 +69,7 @@
   }
 
   const DAY = 86400000;
+  const EMPTY = Object.freeze({});
 
   // Reads the report period from QuickBooks header lines such as
   // "January 1 - June 30, 2026", "January - June, 2026", "January 2025 - June 2026".
@@ -100,9 +101,17 @@
   }
 
   // Report date range: the header's period when it plausibly covers the data, else the data's own span.
+  const spanCache = typeof WeakMap === 'function' ? new WeakMap() : null;
   function dateRange(txns, meta) {
-    const ds = txns.map((t) => t.date).sort((a, b) => a - b);
-    let first = ds[0], last = ds[ds.length - 1];
+    // Only the earliest and latest dates matter: one pass, cached per file.
+    let span = spanCache && spanCache.get(txns);
+    if (!span) {
+      let lo = Infinity, hi = -Infinity;
+      for (const t of txns) { const v = t.date.getTime(); if (v < lo) lo = v; if (v > hi) hi = v; }
+      span = { lo, hi };
+      if (spanCache) spanCache.set(txns, span);
+    }
+    let first = new Date(span.lo), last = new Date(span.hi);
     const p = meta && meta.periodRange;
     if (p) {
       if (p.start && p.start <= first && (first - p.start) / DAY <= 45) first = p.start;
@@ -165,7 +174,18 @@
   const EXPENSE_TYPES = /expense|bill|check|purchase|credit card (charge|credit)|vendor credit|cash expense/i;
   const REVERSING_TYPES = /credit memo|refund|vendor credit|credit card credit/i;
 
+  // Account names repeat on every row, so the pattern matching is cached by name.
+  const classCache = new Map();
   function classifyAccount(name) {
+    const key = norm(name);
+    if (classCache.has(key)) return classCache.get(key);
+    const c = classifyAccountUncached(key);
+    if (classCache.size > 5000) classCache.clear();
+    classCache.set(key, c);
+    return c;
+  }
+
+  function classifyAccountUncached(name) {
     const s = norm(name);
     if (!s) return 'blank';
     if (RX.uncategorized.test(s)) {
@@ -188,7 +208,16 @@
   const ROLES = typeof Symbol === 'function' ? Symbol('accountRoles') : '__accountRoles';
   const BALANCE_ROLES = ['cash', 'card', 'ar', 'ap', 'loan', 'equity', 'salestax', 'payrolltax', 'otherbalance'];
 
+  const roleCache = new Map();
   function roleFromName(a) {
+    if (roleCache.has(a)) return roleCache.get(a);
+    const r = roleFromNameUncached(a);
+    if (roleCache.size > 5000) roleCache.clear();
+    roleCache.set(a, r);
+    return r;
+  }
+
+  function roleFromNameUncached(a) {
     if (CASH_ACCOUNT.test(a)) return 'cash';
     if (CARD_ACCOUNT.test(a)) return 'card';
     if (/receivable/i.test(a)) return 'ar';
@@ -382,7 +411,31 @@
   // "by Account" exports list every entry once per account it touches (bank side
   // and category side). Collapse to one row per entry, keeping true repeats: for
   // each entry key keep the rows of a single account, preferring a P&L account.
+  // Several analyses need the same derived tables; compute each once per file and account setup.
+  const memoStore = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function memo(name, txns, accountClass, compute) {
+    if (!memoStore || !txns || typeof txns !== 'object' || !accountClass || typeof accountClass !== 'object') return compute();
+    let byTxns = memoStore.get(txns);
+    if (!byTxns) { byTxns = new WeakMap(); memoStore.set(txns, byTxns); }
+    let byClass = byTxns.get(accountClass);
+    if (!byClass) { byClass = new Map(); byTxns.set(accountClass, byClass); }
+    if (!byClass.has(name)) byClass.set(name, compute());
+    return byClass.get(name);
+  }
+
+  const chartIds = typeof WeakMap === 'function' ? new WeakMap() : null;
+  let chartSeq = 0;
+  function chartId(chart) {
+    if (!chart || !chartIds) return '';
+    if (!chartIds.has(chart)) chartIds.set(chart, ++chartSeq);
+    return chartIds.get(chart);
+  }
+
   function logicalRows(txns, accountClass) {
+    return memo('logicalRows', txns, accountClass || EMPTY, () => logicalRowsUncached(txns, accountClass));
+  }
+
+  function logicalRowsUncached(txns, accountClass) {
     const cls = (a) => classOf(accountClass, a);
     const byKey = new Map();
     for (const t of txns) {
@@ -547,6 +600,10 @@
   // Turns raw rows into P&L postings: { t, category, cls, value } where value is
   // positive revenue for income and positive cost for expense/COGS.
   function toPostings(txns, accountClass) {
+    return memo('postings', txns, accountClass || EMPTY, () => toPostingsUncached(txns, accountClass));
+  }
+
+  function toPostingsUncached(txns, accountClass) {
     const cls = (a) => classOf(accountClass, a);
     const isPnl = (c) => c === 'income' || c === 'expense' || c === 'cogs';
     const direct = [];
@@ -1785,7 +1842,7 @@
       dso: latest ? latest.dso : null,
       apEnd: latest ? latest.apEnd : null,
       insights,
-      tax: tax1099(txns, accountClass, meta),
+      tax: memo('tax1099', txns, accountClass || EMPTY, () => tax1099(txns, accountClass, meta)),
     };
   }
 
@@ -2254,29 +2311,40 @@
   function analyze(parsed, opts) {
     opts = opts || {};
     const txns = parsed.transactions;
-    const counts = accountNames(txns);
-    const chartOnly = resolveAccounts(counts.keys(), {}, opts.chart);
-    const { accountClass } = resolveAccounts(counts.keys(), opts.accountClass, opts.chart);
+    // Same file, corrections and chart give the same account setup object, so every cached
+    // table stays valid when only forecast, loan or tax inputs change.
+    const setupKey = `${JSON.stringify(opts.accountClass || {})}|${chartId(opts.chart)}`;
+    const setup = memo(`setup:${setupKey}`, txns, EMPTY, () => {
+      const counts = accountNames(txns);
+      return { counts, chartOnly: resolveAccounts(counts.keys(), {}, opts.chart), resolved: resolveAccounts(counts.keys(), opts.accountClass, opts.chart) };
+    });
+    const counts = setup.counts;
+    const chartOnly = setup.chartOnly;
+    const { accountClass } = setup.resolved;
     const entries = logicalRows(txns, accountClass);
-    const uncategorized = findUncategorized(entries);
-    const duplicates = findDuplicates(entries, opts.duplicateWindow);
-    const mismatches = findMismatches(entries, accountClass, txns);
-    const profit = profitability(txns, accountClass, opts.groupBy);
-    const subs = subscriptions(txns, accountClass);
+    // Everything that does not depend on forecast, loan or tax inputs is computed once per setup.
+    const once = (name, fn) => memo(name, txns, accountClass, fn);
+    const { uncategorized, duplicates, mismatches } = once(`audit:${opts.duplicateWindow}`, () => ({
+      uncategorized: findUncategorized(entries),
+      duplicates: findDuplicates(entries, opts.duplicateWindow),
+      mismatches: findMismatches(entries, accountClass, txns),
+    }));
+    const profit = once(`profit:${opts.groupBy}`, () => profitability(txns, accountClass, opts.groupBy));
+    const subs = once('subs', () => subscriptions(txns, accountClass));
     const cash = cashForecast(txns, accountClass, {
       meta: parsed.meta,
       openingBalances: parsed.meta.openingBalances,
       startingCash: opts.startingCash,
       includeDoubtful: opts.includeDoubtful,
     });
-    const breakeven = breakEven(txns, accountClass, parsed.meta);
+    const breakeven = once('breakeven', () => breakEven(txns, accountClass, parsed.meta));
     // Open bills that the audit flags as possible duplicates should not be paid blindly.
     if (cash) {
       const dupKeys = new Set(duplicates.flatMap((g) => g.rows.map((r) => `${lower(vendorOf(r))}|${r.num}|${r.dateStr}`)));
       for (const b of cash.ap.openBills) b.possibleDuplicate = dupKeys.has(`${lower(b.party)}|${b.num}|${b.dateStr}`);
       cash.ap.duplicateTotal = round2(cash.ap.openBills.filter((b) => b.possibleDuplicate).reduce((t, b) => t + b.open, 0));
     }
-    const trend = trends(txns, accountClass, { openingBalances: parsed.meta.openingBalances, meta: parsed.meta });
+    const trend = once('trend', () => trends(txns, accountClass, { openingBalances: parsed.meta.openingBalances, meta: parsed.meta }));
     const customers = customerRisk(txns, accountClass, cash, trend, breakeven);
     const vendors = vendorAnalysis(txns, accountClass, cash, trend, parsed.meta);
     const uncategorizedTotal = round2(uncategorized.reduce((s, t) => s + Math.abs(t.amount), 0));
