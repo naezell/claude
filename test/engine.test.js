@@ -62,8 +62,8 @@ test('debit/credit columns and journal imbalance', () => {
 
 test('sample "by Account" export: every seeded issue is found once', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
-  assert.equal(r.count, 1456);
-  assert.equal(r.entryCount, 728, 'each entry appears in two account sections');
+  assert.equal(r.count, 1460);
+  assert.equal(r.entryCount, 730, 'each entry appears in two account sections');
   assert.equal(r.audit.uncategorized.length, 11);
   assert.equal(r.audit.duplicates.length, 3);
   const kinds = r.audit.mismatches.map((m) => m.kind);
@@ -92,7 +92,7 @@ test('sample subscriptions: overlaps, seats, price increase, personal', () => {
 test('report contains every section', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
   const txt = E.buildReport(r);
-  for (const h of ['EXECUTIVE SUMMARY', 'UNCATEGORIZED', 'POTENTIAL DUPLICATES', 'MISMATCHED ENTRIES', 'PROFITABILITY BY CUSTOMER', 'RECURRING SOFTWARE', '13-WEEK CASH FORECAST', 'BREAK-EVEN', 'CUSTOMER CONCENTRATION', 'TRENDS', 'RECOMMENDED NEXT STEPS']) {
+  for (const h of ['EXECUTIVE SUMMARY', 'UNCATEGORIZED', 'POTENTIAL DUPLICATES', 'MISMATCHED ENTRIES', 'PROFITABILITY BY CUSTOMER', 'RECURRING SOFTWARE', '13-WEEK CASH FORECAST', 'BREAK-EVEN', 'CUSTOMER CONCENTRATION', 'TRENDS', 'VENDORS & PAYABLES', 'RECOMMENDED NEXT STEPS']) {
     assert.ok(txt.includes(h), h);
   }
   assert.ok(txt.includes('Harbor & Pine Design Co.'));
@@ -289,4 +289,67 @@ test('merging yearly exports gives the same analysis as one long export', () => 
   assert.equal(merged.cash.startingCash, single.cash.startingCash);
   assert.equal(merged.cash.asOf, single.cash.asOf);
   assert.equal(merged.trend.hasYoY, true);
+});
+
+test('vendors: payroll excluded, concentration, payment speed and early-pay opportunity', () => {
+  const { vendors: v } = E.analyze(E.parseTransactions(S.build()));
+  assert.equal(v.windowLabel, 'last 12 months');
+  assert.ok(!v.rows.some((r) => r.name === 'Gusto'), 'payroll is not a vendor');
+  const shares = v.rows.reduce((t, r) => t + r.share, 0);
+  assert.ok(Math.abs(shares - 1) < 1e-9);
+  const pw = v.rows.find((r) => r.name === 'PrintWorks Co.');
+  assert.ok(pw.days <= 8 && pw.paidBy === 'Bills');
+  assert.deepEqual(v.earlyPay.map((e) => e.name), ['PrintWorks Co.']);
+  assert.ok(v.earlyPay[0].cashFreed > 0);
+  assert.equal(v.weekly.length, 13);
+  // The unpaid duplicate bill from March sits in the over-90 bucket.
+  assert.ok(v.buckets[3].amount > 0 && v.buckets[3].count === 1);
+  assert.ok(v.dpo > 0 && v.dso > 0);
+});
+
+test('1099 review: thresholds by year, card-only and corporations', () => {
+  const { vendors: v } = E.analyze(E.parseTransactions(S.build()));
+  const y25 = v.tax.find((y) => y.year === 2025);
+  const y26 = v.tax.find((y) => y.year === 2026);
+  assert.equal(y25.threshold, 600);
+  assert.equal(y26.threshold, 2000);
+  assert.equal(y25.full, true);
+  assert.equal(y26.full, false);
+  const st = (y, n) => (y.vendors.find((x) => x.vendor === n) || {}).status;
+  assert.equal(st(y25, 'Lena Ortiz Illustration'), 'Review');
+  assert.equal(y25.vendors.find((x) => x.vendor === 'Brightline Properties').form, '1099-MISC (rent)');
+  assert.equal(st(y25, 'Comcast Business'), 'Likely exempt');
+  assert.equal(st(y25, 'Adobe Creative Cloud'), 'Card only');
+  assert.equal(st(y26, 'R. Patel'), 'Below threshold');
+  assert.ok(!y25.vendors.some((x) => x.vendor === 'Gusto' || x.vendor === 'Jordan Pike'), 'payroll and owner draws are excluded');
+  const t = E.tax1099(E.parseTransactions(['Date,Transaction Type,Num,Name,Account,Split,Amount', '03/01/2025,Check,1,Acme Widgets Inc.,Supplies,Checking,900.00'].join('\n')).transactions, {}, {});
+  assert.equal(t[0].vendors[0].status, 'Likely exempt');
+});
+
+test('benchmarks: request arguments, payload reading and comparison', () => {
+  const r = E.analyze(E.parseTransactions(S.build()));
+  const inputs = E.benchmarkInputs(r);
+  assert.equal(inputs.annualized, false);
+  assert.ok(Math.abs(inputs.revenue - inputs.expenses - inputs.profit) < 0.02);
+  const ind = { code: '541430', name: 'Graphic Design Services' };
+  const req = E.benchmarkRequest(inputs, 'margin', ind, 'OR', 'Harbor & Pine Design Co.');
+  assert.deepEqual(req.naicsCode, ['541430']);
+  assert.equal(req.metricType, 'margin');
+  assert.equal(req.profitValue, inputs.profit);
+  assert.equal(req.companyName, 'Harbor and Pine Design Co.');
+  assert.equal(E.benchmarkRequest(inputs, 'revenue', ind, 'OR', 'X').metricValue, inputs.revenue);
+  // Shape observed from the connector (values here are made up for the test).
+  const m = E.readBenchmark({ status: 'success', metricType: 'margin', metricFormat: 'percent', metricValue: 8, regionalAverage: 16, nationalAverage: null, vsRegionalPercent: -50, benchmarkPeriodRange: 'Jan 2026 - Dec 2026', naicsCode: '541430', location: 'OR' }, 'margin');
+  assert.equal(m.company, 0.08);
+  assert.equal(m.regional, 0.16);
+  assert.equal(m.national, null);
+  assert.throws(() => E.readBenchmark({ status: 'error', message: 'nope' }, 'revenue'), /nope/);
+  const cmp = E.compareBenchmarks({ revenue: 120, profit: 10, expenses: 110, marginPct: 8.33 }, { revenue: 100, profit: 20, margin: 0.2, expenses: 80 });
+  const by = Object.fromEntries(cmp.map((c) => [c.metric, c]));
+  assert.equal(by.revenue.read, 'Ahead');
+  assert.equal(by.profit.read, 'Behind');
+  assert.equal(by.margin.read, 'Behind');
+  assert.equal(by.expenses.read, 'Higher');
+  assert.ok(E.INDUSTRIES.every((g) => g.industries.every((i) => /^\d{2,6}$/.test(i.code))));
+  assert.equal(E.STATES.length, 51);
 });

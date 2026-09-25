@@ -27,9 +27,20 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - A "What changed" list in plain language: the last 3 months against the same months a year earlier (or the 3 months before when there is less than a year of history), overhead changes with the accounts behind them, slowing collections, lost and new customers, and software creep.
 - The largest cost-account moves and customer changes, with partial months at the edges of the export faded and left out of comparisons.
 
+**Vendors**
+- Vendor spending over the last 12 months (payroll excluded), with each vendor's share, type (job cost or overhead), 3-month trend, how fast they get paid, open bills and payment method.
+- Bills coming due each forecast week against the projected cash balance, payables aging, and days to pay vendors (DPO) next to days to collect (DSO).
+- Flags vendors paid well before 30-day terms and estimates the cash that paying on day 30 would keep in the business.
+- **1099 contractor review**: vendors paid by check or bank transfer at or above the threshold for each calendar year ($600 for payments through 2025, $2,000 from 2026), with the likely form (1099-NEC, or 1099-MISC for rent). Card-only vendors and likely corporations are marked separately. It is a screening list; a W-9 settles each case.
+
+**Benchmarks**
+- Compares the client's last 12 months of revenue, profit, profit margin and expenses with regional peers in the same industry and state.
+- Live figures come from the Intuit QuickBooks benchmark service through the viewer's own claude.ai **Intuit QuickBooks** connector (`benchmarking_against_industry`). Around 30 common small-business industries are built in; any NAICS code can be entered.
+- Without the connector (for example when the file is opened locally), peer figures from any source, such as an RMA report or a trade survey, can be entered by hand. Either way the comparison flows into the client report.
+
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
 
-**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, and recommended next steps. Download it as `.txt` or copy it.
+**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, vendors and 1099 review, benchmarks, and recommended next steps. Download it as `.txt` or copy it.
 
 All processing happens in the browser. The file is never uploaded anywhere.
 

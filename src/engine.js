@@ -1001,7 +1001,12 @@
         defaultLag: defaultArLag,
         customerLags: lagRows,
       },
-      ap: { total: round2(openBills.reduce((s, b) => s + b.open, 0)), openBills },
+      ap: {
+        total: round2(openBills.reduce((s, b) => s + b.open, 0)),
+        openBills,
+        defaultLag: defaultApLag,
+        vendorLags: [...ap.lags.entries()].map(([name, l]) => ({ name, medianDays: l.median, paid: l.paid })).sort((a, b) => a.medianDays - b.medianDays),
+      },
       newBillings,
       recurring: recurringItems.map((i) => ({ ...i, dateStr: isoDate(i.date) })),
       assumptions,
@@ -1124,6 +1129,7 @@
     { key: 'customers', label: 'Active customers', kind: 'count', up: true },
     { key: 'arEnd', label: 'Receivables', kind: 'money', up: false, balance: true },
     { key: 'dso', label: 'Days to collect (DSO)', kind: 'days', up: false, balance: true },
+    { key: 'dpo', label: 'Days to pay vendors (DPO)', kind: 'days', up: true, balance: true },
     { key: 'cashEnd', label: 'Cash', kind: 'money', up: true, balance: true },
   ];
 
@@ -1150,7 +1156,7 @@
     }
     const lastEnd = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0)).getUTCDate();
     const months = new Map(keys.map((k, i) => [k, {
-      key: k, label: monthLabel(k), revenue: 0, variable: 0, fixed: 0, software: 0,
+      key: k, label: monthLabel(k), revenue: 0, variable: 0, fixed: 0, software: 0, bills: 0,
       partial: (i === 0 && first.getUTCDate() > 3) || (i === keys.length - 1 && last.getUTCDate() < lastEnd - 3),
       byCategory: new Map(), byFixed: new Map(), byVariable: new Map(), byCustomer: new Map(),
     }]));
@@ -1176,6 +1182,7 @@
     // Month-end receivables and cash.
     const sorted = [...entries].sort((a, b) => a.date - b.date);
     let ar = 0;
+    let apBal = 0;
     let idx = 0;
     const opening = opts.openingBalances || {};
     const isCash = (a) => cls(a) === 'balance' && CASH_ACCOUNT.test(a);
@@ -1189,9 +1196,13 @@
         const t = sorted[idx++];
         if (/invoice|statement charge/i.test(t.type)) ar += Math.abs(t.amount);
         else if (/^payment$|receive payment|credit memo/i.test(t.type)) ar -= Math.abs(t.amount);
+        else if (/^bill$/i.test(t.type)) { apBal += Math.abs(t.amount); mo.bills += Math.abs(t.amount); }
+        else if (/bill payment|vendor credit/i.test(t.type)) apBal -= Math.abs(t.amount);
       }
       while (cIdx < cashRows.length && cashRows[cIdx].dateStr.slice(0, 7) <= k) cash += cashRows[cIdx++].amount;
       mo.arEnd = round2(Math.max(0, ar));
+      mo.apEnd = round2(Math.max(0, apBal));
+      mo.bills = round2(mo.bills);
       mo.cashEnd = hasCash ? round2(cash) : null;
     }
 
@@ -1205,6 +1216,9 @@
         const monthsIn = window.reduce((t, w) => t + (w.monthCount || 1), 0);
         const rev = window.reduce((t, w) => t + w.revenue, 0) / monthsIn;
         p.dso = rev > 0 ? Math.round((p.arEnd / rev) * 30.44) : null;
+        // DPO on trailing three periods' average monthly vendor bills.
+        const billed = window.reduce((t, w) => t + (w.bills || 0), 0) / monthsIn;
+        p.dpo = billed > 0 ? Math.round((p.apEnd / billed) * 30.44) : null;
       });
       return list;
     };
@@ -1213,12 +1227,12 @@
     const quarterMap = new Map();
     for (const mo of monthList) {
       const q = quarterOf(mo.key);
-      if (!quarterMap.has(q)) quarterMap.set(q, { key: q, label: `Q${q.slice(-1)} ${q.slice(2, 4)}`, revenue: 0, variable: 0, fixed: 0, software: 0, monthCount: 0, partial: false, byCategory: new Map(), byFixed: new Map(), byVariable: new Map(), byCustomer: new Map() });
+      if (!quarterMap.has(q)) quarterMap.set(q, { key: q, label: `Q${q.slice(-1)} ${q.slice(2, 4)}`, revenue: 0, variable: 0, fixed: 0, software: 0, bills: 0, monthCount: 0, partial: false, byCategory: new Map(), byFixed: new Map(), byVariable: new Map(), byCustomer: new Map() });
       const qq = quarterMap.get(q);
-      qq.revenue += mo.revenue; qq.variable += mo.variable; qq.fixed += mo.fixed; qq.software += mo.software;
+      qq.revenue += mo.revenue; qq.variable += mo.variable; qq.fixed += mo.fixed; qq.software += mo.software; qq.bills += mo.bills;
       qq.monthCount++;
       qq.partial = qq.partial || mo.partial;
-      qq.arEnd = mo.arEnd; qq.cashEnd = mo.cashEnd;
+      qq.arEnd = mo.arEnd; qq.apEnd = mo.apEnd; qq.cashEnd = mo.cashEnd;
       for (const [c, v] of mo.byCategory) qq.byCategory.set(c, (qq.byCategory.get(c) || 0) + v);
       for (const [c, v] of mo.byFixed) qq.byFixed.set(c, (qq.byFixed.get(c) || 0) + v);
       for (const [c, v] of mo.byVariable) qq.byVariable.set(c, (qq.byVariable.get(c) || 0) + v);
@@ -1441,6 +1455,274 @@
     };
   }
 
+  // ---------------------------------------------------------------- vendors & payables
+
+  const LARGE_COMPANY = /comcast|xfinity|verizon|at&t|t-mobile|spectrum|cox comm|amazon|costco|home depot|lowe'?s|staples|office depot|walmart|target|best buy|uber|lyft|fedex|\bups\b|usps|delta air|united air|southwest|chase|bank of america|wells fargo|american express|paypal|stripe|square|gusto|adp\b|paychex|pg&e|con ed|duke energy|national grid/i;
+  const CORP_SUFFIX = /\b(inc|incorporated|corp|corporation)\b\.?/i;
+
+  const PAYROLL_ACCOUNT = /payroll|wages|salar/i;
+  const threshold1099 = (year) => (year <= 2025 ? 600 : 2000);
+
+  // Payments to each vendor by calendar year, split by bank and card, for 1099 review.
+  function tax1099(txns, accountClass, meta) {
+    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const entries = logicalRows(txns, accountClass);
+    const postings = toPostings(txns, accountClass);
+    const byYear = new Map();
+    const add = (year, vendor, method, amount, account) => {
+      if (!vendor || amount <= 0) return;
+      if (!byYear.has(year)) byYear.set(year, new Map());
+      const m = byYear.get(year);
+      if (!m.has(vendor)) m.set(vendor, { vendor, bank: 0, card: 0, count: 0, rent: 0, accounts: new Set() });
+      const v = m.get(vendor);
+      v[method] += amount;
+      v.count++;
+      if (account) { v.accounts.add(leafAccount(account)); if (/rent|lease/i.test(account)) v.rent += amount; }
+    };
+    // Bills are reported when paid, so count the bill payments.
+    const billAccount = new Map();
+    for (const p of postings) if (/^bill$/i.test(p.t.type)) billAccount.set(lower(vendorOf(p.t)), p.category);
+    for (const t of entries) {
+      if (!/bill payment/i.test(t.type)) continue;
+      const v = vendorOf(t);
+      add(t.date.getUTCFullYear(), v, /credit card/i.test(t.type) ? 'card' : 'bank', Math.abs(t.amount), billAccount.get(lower(v)));
+    }
+    // Direct payments: checks, expenses and card charges coded straight to a cost account.
+    for (const p of postings) {
+      if (p.cls === 'income' || p.value <= 0 || /^bill$/i.test(p.t.type)) continue;
+      if (PAYROLL_ACCOUNT.test(p.category)) continue;
+      const funding = isPnlClass(cls(p.t.account)) ? p.t.split : p.t.account;
+      const method = CARD_ACCOUNT.test(funding) ? 'card' : CASH_ACCOUNT.test(funding) || cls(funding) === 'balance' ? 'bank' : null;
+      if (!method) continue;
+      add(p.t.date.getUTCFullYear(), vendorOf(p.t), method, p.value, p.category);
+    }
+    const range = dateRange(txns, meta);
+    const years = [...byYear.keys()].sort();
+    const out = years.map((year) => {
+      const full = range.first <= new Date(Date.UTC(year, 0, 3)) && range.last >= new Date(Date.UTC(year, 11, 28));
+      const limit = threshold1099(year);
+      const vendors = [...byYear.get(year).values()].map((v) => {
+        let status, note;
+        const bank = round2(v.bank), card = round2(v.card);
+        if (bank < limit && card >= limit) { status = 'Card only'; note = 'Card payments are reported by the card processor on 1099-K.'; }
+        else if (bank < limit) { status = 'Below threshold'; note = `Under ${fmtWhole(limit)} paid by check or bank transfer.`; }
+        else if (saasCategory(v.vendor) || LARGE_COMPANY.test(v.vendor)) { status = 'Likely exempt'; note = 'Large company, usually a corporation. Keep a W-9 on file.'; }
+        else if (CORP_SUFFIX.test(v.vendor)) { status = 'Likely exempt'; note = 'Name suggests a corporation. Confirm on the W-9 (attorneys still get a 1099).'; }
+        else { status = 'Review'; note = 'Collect a W-9 to confirm whether a 1099 is needed.'; }
+        const form = bank > 0 && v.rent > bank / 2 ? '1099-MISC (rent)' : '1099-NEC';
+        return { vendor: v.vendor, bank, card, total: round2(bank + card), count: v.count, accounts: [...v.accounts].slice(0, 3), status, note, form };
+      // Keep vendors paid $600+ by check or transfer (to watch the new $2,000 line fill up) and large card-only vendors.
+      }).filter((v) => v.bank >= 600 || v.status === 'Card only')
+        .sort((a, b) => (a.status === 'Review' ? 0 : 1) - (b.status === 'Review' ? 0 : 1) || b.bank - a.bank);
+      return { year, full, threshold: limit, vendors, reviewCount: vendors.filter((v) => v.status === 'Review').length };
+    });
+    return out;
+  }
+
+  function vendorAnalysis(txns, accountClass, cash, trend, meta) {
+    const range = dateRange(txns, meta);
+    const ttm = trailingYear(range.first, range.last);
+    // Payroll is people, not a vendor relationship, so it stays out of vendor spend.
+    const all = toPostings(txns, accountClass).filter((p) => p.cls !== 'income' && p.value > 0 && !NON_CASH_ACCOUNT.test(p.category) && !PAYROLL_ACCOUNT.test(p.category));
+    const postings = ttm ? all.filter((p) => p.t.date >= ttm.start && p.t.date <= ttm.end) : all;
+    if (!postings.length) return null;
+    const months = ttm ? 12 : monthsCovered(range.first, range.last);
+    const full = trend ? trend.months.filter((m) => !m.partial) : [];
+    const last3 = new Set(full.slice(-3).map((m) => m.key));
+    const prior3 = new Set(full.slice(-6, -3).map((m) => m.key));
+
+    const vendors = new Map();
+    for (const p of all) {
+      const name = vendorOf(p.t) || 'No vendor recorded';
+      if (!vendors.has(name)) vendors.set(name, { name, spend: 0, variable: 0, fixed: 0, charges: 0, accounts: new Map(), recent: 0, prior: 0, card: 0, bank: 0, viaBills: false });
+      const v = vendors.get(name);
+      const k = p.t.dateStr.slice(0, 7);
+      if (last3.has(k)) v.recent += p.value;
+      if (prior3.has(k)) v.prior += p.value;
+      if (ttm && (p.t.date < ttm.start || p.t.date > ttm.end)) continue;
+      v.spend += p.value;
+      v.charges++;
+      const variable = p.cls === 'cogs' || !!customerOf(p.t, p.cls);
+      if (variable) v.variable += p.value; else v.fixed += p.value;
+      const acct = leafAccount(p.category);
+      v.accounts.set(acct, (v.accounts.get(acct) || 0) + p.value);
+      if (/^bill$/i.test(p.t.type)) v.viaBills = true;
+      else if (CARD_ACCOUNT.test(p.t.split) || CARD_ACCOUNT.test(p.t.account)) v.card += p.value;
+      else v.bank += p.value;
+    }
+    const total = [...vendors.values()].reduce((t, v) => t + v.spend, 0) || 1;
+    const lagBy = new Map(cash ? cash.ap.vendorLags.map((l) => [l.name, l.medianDays]) : []);
+    const openBy = new Map();
+    if (cash) for (const b of cash.ap.openBills) openBy.set(b.party, (openBy.get(b.party) || 0) + b.open);
+    const rows = [...vendors.values()].filter((v) => v.spend > 0).map((v) => {
+      const topAccount = [...v.accounts.entries()].sort((a, b) => b[1] - a[1])[0];
+      const days = lagBy.has(v.name) ? lagBy.get(v.name) : null;
+      return {
+        name: v.name,
+        spend: round2(v.spend),
+        monthly: round2(v.spend / months),
+        share: v.spend / total,
+        type: v.variable && v.fixed ? 'Mixed' : v.variable ? 'Job cost' : 'Overhead',
+        account: topAccount ? topAccount[0] : '',
+        charges: v.charges,
+        trendPct: prior3.size === 3 && v.prior > 0 ? pctChange(v.prior, v.recent) : null,
+        isNew: prior3.size === 3 && v.prior === 0 && v.recent > 0,
+        days,
+        openBills: round2(openBy.get(v.name) || 0),
+        paidBy: v.viaBills ? 'Bills' : v.card > v.bank ? 'Card' : 'Bank',
+      };
+    }).sort((a, b) => b.spend - a.spend);
+
+    // Paying faster than 30-day terms would require ties up cash for nothing.
+    const billedMonthly = new Map();
+    for (const p of postings) if (/^bill$/i.test(p.t.type)) {
+      const v = vendorOf(p.t);
+      billedMonthly.set(v, (billedMonthly.get(v) || 0) + p.value / months);
+    }
+    const earlyPay = rows.filter((r) => r.days != null && r.days <= 10 && (billedMonthly.get(r.name) || 0) >= 300).map((r) => {
+      const monthlyBills = round2(billedMonthly.get(r.name));
+      return { name: r.name, days: r.days, monthlyBills, cashFreed: round2(monthlyBills * (30 - r.days) / 30.44) };
+    });
+
+    // Payables aging by bill age.
+    const buckets = [
+      { label: 'Current (0-30)', max: 30, amount: 0, count: 0 },
+      { label: '31-60 days', max: 60, amount: 0, count: 0 },
+      { label: '61-90 days', max: 90, amount: 0, count: 0 },
+      { label: 'Over 90 days', max: Infinity, amount: 0, count: 0 },
+    ];
+    if (cash) for (const b of cash.ap.openBills) {
+      const bk = buckets.find((x) => b.age <= x.max);
+      bk.amount = round2(bk.amount + b.open);
+      bk.count++;
+    }
+
+    // Bills coming due each forecast week against the projected cash balance.
+    const weekly = cash ? cash.weeks.map((w, i) => {
+      const start = new Date(`${w.start}T00:00:00Z`), end = new Date(`${w.end}T00:00:00Z`);
+      const open = cash.ap.openBills.filter((b) => b.week === i).reduce((t, b) => t + b.open, 0);
+      const expected = cash.recurring.filter((r) => /bill/i.test(r.source) && r.date >= start && r.date <= end).reduce((t, r) => t + r.amount, 0);
+      return { week: w.week, start: w.start, open: round2(open), expected: round2(expected), ending: w.ending };
+    }) : [];
+
+    const latest = full.length ? full[full.length - 1] : null;
+    const yearAgo = latest ? trend.months.find((m) => m.key === `${+latest.key.slice(0, 4) - 1}${latest.key.slice(4)}`) : null;
+    const insights = [];
+    const top = rows.find((r) => r.name !== 'No vendor recorded');
+    if (top && top.share >= 0.2) insights.push({ tone: 'bad', text: `${top.name} is ${fmtPct(top.share)} of all spending (${fmtWhole(top.monthly)}/month). A price change or delay there moves the whole P&L.` });
+    if (latest && latest.dso != null && latest.dpo != null) {
+      const gap = latest.dpo - latest.dso;
+      const was = yearAgo && yearAgo.dso != null && yearAgo.dpo != null ? yearAgo.dpo - yearAgo.dso : null;
+      insights.push({
+        tone: gap >= 0 ? 'good' : 'bad',
+        text: `Customers pay in about ${latest.dso} days and vendors are paid in about ${latest.dpo}. ${gap >= 0 ? `That ${gap}-day gap works in the business's favor` : `Vendors are paid ${-gap} days before customers pay, so the gap is financed from cash`}${was != null && Math.abs(was - gap) >= 5 ? `; a year ago the gap was ${was} days` : ''}.`,
+      });
+    }
+    for (const e of earlyPay) insights.push({ tone: 'bad', text: `${e.name} is paid about ${e.days} days after billing. If they allow 30-day terms, paying on day 30 would keep roughly ${fmtWhole(e.cashFreed)} more cash on hand.` });
+    const risers = rows.filter((r) => r.trendPct != null && r.trendPct >= 0.25 && r.monthly >= 200).slice(0, 2);
+    for (const r of risers) insights.push({ tone: 'bad', text: `Spending with ${r.name} is up ${fmtPct(r.trendPct)} over the last 3 months.` });
+
+    return {
+      windowLabel: ttm ? 'last 12 months' : 'the full period',
+      total: round2(total),
+      monthlyTotal: round2(total / months),
+      rows,
+      vendorCount: rows.length,
+      top1Share: top ? top.share : 0,
+      top5Share: rows.slice(0, 5).reduce((t, r) => t + r.share, 0),
+      earlyPay,
+      buckets,
+      weekly,
+      dpo: latest ? latest.dpo : null,
+      dso: latest ? latest.dso : null,
+      apEnd: latest ? latest.apEnd : null,
+      insights,
+      tax: tax1099(txns, accountClass, meta),
+    };
+  }
+
+  // ---------------------------------------------------------------- industry benchmarks
+
+  // NAICS codes checked against the Intuit QuickBooks benchmark service.
+  const INDUSTRIES = [
+    ['Professional services', [['541430', 'Graphic Design Services'], ['541810', 'Advertising Agencies'], ['541611', 'Management Consulting Services'], ['541211', 'Offices of Certified Public Accountants'], ['541110', 'Offices of Lawyers'], ['541511', 'Custom Computer Programming Services'], ['541330', 'Engineering Services'], ['541310', 'Architectural Services'], ['541921', 'Photography Studios, Portrait'], ['541940', 'Veterinary Services'], ['54', 'Professional Services (all)']]],
+    ['Construction & trades', [['236118', 'Residential Remodelers'], ['238220', 'Plumbing, Heating and AC Contractors'], ['238210', 'Electrical Contractors'], ['23', 'Construction (all)']]],
+    ['Property & facility services', [['561730', 'Landscaping Services'], ['561720', 'Janitorial Services'], ['531210', 'Real Estate Agents and Brokers']]],
+    ['Food & hospitality', [['722511', 'Full-Service Restaurants'], ['722515', 'Coffee and Snack Shops'], ['311811', 'Retail Bakeries'], ['72', 'Food Services (all)']]],
+    ['Health, wellness & care', [['621210', 'Offices of Dentists'], ['621340', 'Physical Therapists'], ['812112', 'Beauty Salons'], ['713940', 'Fitness and Recreational Sports Centers'], ['624410', 'Child Day Care Services']]],
+    ['Retail, auto & transport', [['44', 'Retail Trade (all)'], ['811111', 'General Automotive Repair'], ['484110', 'Local Freight Trucking']]],
+  ].map(([group, list]) => ({ group, industries: list.map(([code, name]) => ({ code, name })) }));
+
+  const STATES = 'AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' ');
+
+  // The company's own yearly figures to compare: trailing 12 months when available,
+  // otherwise the export annualized.
+  function benchmarkInputs(result) {
+    const be = result.breakeven;
+    if (!be) return null;
+    const scale = 12;
+    const revenue = round2(be.base.revenue * scale);
+    const expenses = round2((be.base.variable + be.base.fixed) * scale);
+    const profit = round2(revenue - expenses);
+    return {
+      revenue, expenses, profit,
+      marginPct: revenue > 0 ? (profit / revenue) * 100 : null,
+      annualized: !be.trailing && be.months < 11.5,
+      months: be.months,
+      periodLabel: be.trailing ? `${be.firstDate} to ${be.lastDate}` : `${be.firstDate} to ${be.lastDate}${be.months < 11.5 ? ' (annualized)' : ''}`,
+    };
+  }
+
+  const BENCH_METRICS = [
+    { metric: 'revenue', label: 'Yearly revenue', kind: 'money', up: true },
+    { metric: 'profit', label: 'Yearly profit', kind: 'money', up: true },
+    { metric: 'margin', label: 'Profit margin', kind: 'pct', up: true },
+    { metric: 'expenses', label: 'Yearly expenses', kind: 'money', up: null },
+  ];
+
+  // Arguments for the connector's benchmarking_against_industry tool.
+  function benchmarkRequest(inputs, metric, industry, state, companyName) {
+    const req = {
+      industryType: [industry.name], naicsCode: [industry.code], location_state: state,
+      companyName: norm(companyName).replace(/&/g, 'and').replace(/[^\w .,'-]/g, '').replace(/\s+/g, ' ').trim() || 'Client', aggregationPeriod: 'yearly', metricType: metric,
+    };
+    if (metric === 'margin') { req.metricValue = 0; req.profitValue = inputs.profit; req.revenueValue = inputs.revenue; }
+    else req.metricValue = inputs[metric];
+    return req;
+  }
+
+  // Normalizes one tool payload. Margin values arrive in percent.
+  function readBenchmark(payload, metric) {
+    const p = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    if (!p || p.status !== 'success') throw new Error((p && (p.message || p.error)) || 'The benchmark service returned no data.');
+    const pct = metric === 'margin' || p.metricFormat === 'percent';
+    const num = (v) => (typeof v === 'number' && isFinite(v) ? v : null);
+    return {
+      metric,
+      company: num(p.metricValue) != null ? (pct ? p.metricValue / 100 : p.metricValue) : null,
+      regional: num(p.regionalAverage) != null && p.regionalAverage !== 0 ? (pct ? p.regionalAverage / 100 : p.regionalAverage) : null,
+      national: num(p.nationalAverage) != null && p.nationalAverage !== 0 ? (pct ? p.nationalAverage / 100 : p.nationalAverage) : null,
+      vsRegional: num(p.vsRegionalPercent) != null ? p.vsRegionalPercent / 100 : null,
+      periodRange: p.benchmarkPeriodRange || '',
+      location: p.location || '',
+      naicsCode: p.naicsCode || '',
+      label: p.metricLabel || '',
+    };
+  }
+
+  // Compares the company with peer values from any source (live or entered by hand).
+  function compareBenchmarks(inputs, peers) {
+    return BENCH_METRICS.map((m) => {
+      const company = m.metric === 'margin' ? (inputs.marginPct != null ? inputs.marginPct / 100 : null) : inputs[m.metric];
+      const peer = peers[m.metric];
+      if (company == null || peer == null || !isFinite(peer)) return { ...m, company, peer: null, diff: null, read: 'n/a' };
+      const diff = m.kind === 'pct' ? company - peer : peer !== 0 ? (company - peer) / Math.abs(peer) : null;
+      const near = m.kind === 'pct' ? Math.abs(diff) < 0.02 : diff != null && Math.abs(diff) < 0.1;
+      const read = near ? 'In line' : m.up == null ? (diff > 0 ? 'Higher' : 'Lower') : (diff > 0) === m.up ? 'Ahead' : 'Behind';
+      return { ...m, company, peer, diff, read };
+    });
+  }
+
   // ---------------------------------------------------------------- multiple exports
 
   // Combines several parsed exports (for example two years exported separately).
@@ -1534,6 +1816,7 @@
     }
     const trend = trends(txns, accountClass, { openingBalances: parsed.meta.openingBalances, meta: parsed.meta });
     const customers = customerRisk(txns, accountClass, cash, trend, breakeven);
+    const vendors = vendorAnalysis(txns, accountClass, cash, trend, parsed.meta);
     const uncategorizedTotal = round2(uncategorized.reduce((s, t) => s + Math.abs(t.amount), 0));
     const duplicateExposure = round2(duplicates.reduce((s, g) => s + g.exposure, 0));
     const flaggedIds = new Set([...uncategorized.map((t) => t.id), ...duplicates.flatMap((g) => g.rows.map((r) => r.id)), ...mismatches.map((t) => t.id)]);
@@ -1551,6 +1834,7 @@
       breakeven,
       trend,
       customers,
+      vendors,
     };
   }
 
@@ -1741,6 +2025,50 @@
       L.push('');
     }
 
+    const vd = result.vendors;
+    if (vd && vd.rows.length) {
+      L.push(`10. VENDORS & PAYABLES (${vd.windowLabel}, payroll excluded)`);
+      L.push(thin);
+      L.push(`Vendor spending:              ${fmtMoney(vd.monthlyTotal)} per month across ${vd.vendorCount} vendors`);
+      L.push(`Top 5 vendors:                ${fmtPct(vd.top5Share)} of spending`);
+      if (vd.dso != null && vd.dpo != null) L.push(`Days to collect / to pay:     ${vd.dso} / ${vd.dpo}`);
+      L.push('');
+      L.push(`  ${pad('Vendor', 26)} ${padL('Per month', 11)} ${padL('Share', 7)} ${padL('Pays in', 8)}  Type`);
+      for (const r of vd.rows.slice(0, 10)) L.push(`  ${pad(r.name, 26)} ${padL(fmtMoney(r.monthly), 11)} ${padL(fmtPct(r.share), 7)} ${padL(r.days != null ? `${r.days}d` : '-', 8)}  ${r.type}`);
+      if (vd.insights.length) {
+        L.push('');
+        for (const i of vd.insights) L.push(`  - ${i.text}`);
+      }
+      const yr = [...vd.tax].reverse().find((y) => y.full) || vd.tax[vd.tax.length - 1];
+      if (yr) {
+        const review = yr.vendors.filter((x) => x.status === 'Review');
+        L.push('');
+        L.push(`  1099 review for ${yr.year}${yr.full ? '' : ' (year to date)'} (threshold ${fmtWhole(yr.threshold)} paid by check or bank transfer):`);
+        if (!review.length) L.push('    No vendors need review.');
+        for (const x of review) L.push(`    ${pad(x.vendor, 28)} ${padL(fmtMoney(x.bank), 12)}  ${x.form}`);
+        L.push('    Confirm each with a W-9. Card payments are reported by the card processor instead.');
+      }
+      L.push('');
+    }
+
+    const bm = opts.benchmarks;
+    if (bm && bm.rows && bm.rows.some((r) => r.peer != null)) {
+      L.push('11. INDUSTRY BENCHMARKS');
+      L.push(thin);
+      L.push(`Industry:                     ${bm.industry}${bm.code ? ` (NAICS ${bm.code})` : ''}`);
+      if (bm.state) L.push(`Region:                       ${bm.state}`);
+      L.push(`Peer data:                    ${bm.source}${bm.periodRange ? `, ${bm.periodRange}` : ''}`);
+      L.push(`Company figures:              ${bm.companyPeriod}`);
+      L.push('');
+      L.push(`  ${pad('Measure', 18)} ${padL('Company', 13)} ${padL('Peers', 13)} ${padL('Difference', 11)}  Read`);
+      for (const r of bm.rows) {
+        const f = (v) => (v == null ? '-' : r.kind === 'pct' ? fmtPct(v) : fmtMoney(v));
+        const d = r.diff == null ? '-' : r.kind === 'pct' ? `${r.diff > 0 ? '+' : ''}${(r.diff * 100).toFixed(1)} pts` : `${r.diff > 0 ? '+' : ''}${(r.diff * 100).toFixed(0)}%`;
+        L.push(`  ${pad(r.label, 18)} ${padL(f(r.company), 13)} ${padL(f(r.peer), 13)} ${padL(d, 11)}  ${r.read}`);
+      }
+      L.push('');
+    }
+
     L.push('RECOMMENDED NEXT STEPS');
     L.push(thin);
     const steps = [];
@@ -1758,6 +2086,11 @@
     const dsoM = tr && tr.metrics.find((m) => m.key === 'dso');
     const dsoC = dsoM && (dsoM.yoy || dsoM.recent);
     if (dsoC && dsoC.delta >= 10) steps.push(`Collections are slowing (${Math.round(dsoC.from)} to ${Math.round(dsoC.to)} days). Send invoices sooner, add reminders, or require deposits.`);
+    if (vd) {
+      for (const e of vd.earlyPay) steps.push(`Ask ${e.name} for 30-day terms; paying on day 30 instead of day ${e.days} keeps about ${fmtWhole(e.cashFreed)} more cash on hand.`);
+      const yr = [...vd.tax].reverse().find((y) => y.full);
+      if (yr && yr.reviewCount) steps.push(`Collect W-9s and prepare 1099s for ${yr.reviewCount} vendor${yr.reviewCount === 1 ? '' : 's'} paid ${fmtWhole(yr.threshold)} or more in ${yr.year}.`);
+    }
     const weak = profit.groups.filter((g) => g.netMargin != null && g.netMargin < 0.1 && g.revenue > 0);
     if (weak.length) steps.push(`Discuss pricing on ${weak.length} low-margin ${opts.groupBy === 'project' ? 'project' : 'customer'}${weak.length > 1 ? 's' : ''}.`);
     if (!steps.length) steps.push('No action items. The books look clean for this period.');
@@ -1773,6 +2106,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, parsePeriod, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, parsePeriod, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

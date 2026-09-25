@@ -9,108 +9,108 @@ Checking
 ,01/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,23370.01
 ,01/13/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4179.86,27549.87
 ,01/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-9281.70,18268.17
-,01/28/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10035.94,28304.11
-,01/28/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),5063.41,33367.52
-,01/31/2025,Bill Payment (Check),1040,Lena Ortiz Illustration,,Pay B2501-0,Accounts Payable (A/P),-2871.33,30496.19
-,02/01/2025,Bill Payment (Check),1041,PrintWorks Co.,,Pay B2501-1,Accounts Payable (A/P),-708.99,29787.20
-,02/01/2025,Check,1049,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,26787.20
-,02/03/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2721.94,29509.14
-,02/03/2025,Bill Payment (Check),1042,PrintWorks Co.,,Pay B2501-3,Accounts Payable (A/P),-2443.14,27066.00
+,01/17/2025,Bill Payment (Check),1041,PrintWorks Co.,,Pay B2501-1,Accounts Payable (A/P),-708.99,17559.18
+,01/19/2025,Bill Payment (Check),1042,PrintWorks Co.,,Pay B2501-3,Accounts Payable (A/P),-2443.14,15116.04
+,01/28/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10035.94,25151.98
+,01/28/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),5063.41,30215.39
+,01/31/2025,Bill Payment (Check),1040,Lena Ortiz Illustration,,Pay B2501-0,Accounts Payable (A/P),-2871.33,27344.06
+,02/01/2025,Check,1049,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,24344.06
+,02/03/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2721.94,27066.00
 ,02/06/2025,Bill Payment (Check),1043,Lena Ortiz Illustration,,Pay B2501-6,Accounts Payable (A/P),-1502.08,25563.92
 ,02/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,25433.93
 ,02/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-8973.31,16460.62
-,02/18/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3891.98,20352.60
-,02/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-574.34,19778.26
-,02/27/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12051.23,31829.49
-,03/01/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4900.26,36729.75
-,03/01/2025,Check,1054,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,33729.75
-,03/03/2025,Bill Payment (Check),1045,Lena Ortiz Illustration,,Pay B2502-0,Accounts Payable (A/P),-3029.08,30700.67
-,03/04/2025,Bill Payment (Check),1046,PrintWorks Co.,,Pay B2502-1,Accounts Payable (A/P),-727.89,29972.78
-,03/06/2025,Bill Payment (Check),1047,PrintWorks Co.,,Pay B2502-3,Accounts Payable (A/P),-2607.75,27365.03
+,02/17/2025,Bill Payment (Check),1046,PrintWorks Co.,,Pay B2502-1,Accounts Payable (A/P),-727.89,15732.73
+,02/18/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3891.98,19624.71
+,02/19/2025,Bill Payment (Check),1047,PrintWorks Co.,,Pay B2502-3,Accounts Payable (A/P),-2607.75,17016.96
+,02/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-574.34,16442.62
+,02/27/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12051.23,28493.85
+,03/01/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4900.26,33394.11
+,03/01/2025,Check,1054,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,30394.11
+,03/03/2025,Bill Payment (Check),1045,Lena Ortiz Illustration,,Pay B2502-0,Accounts Payable (A/P),-3029.08,27365.03
 ,03/08/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3103.20,30468.23
 ,03/09/2025,Bill Payment (Check),1048,Lena Ortiz Illustration,,Pay B2502-6,Accounts Payable (A/P),-1444.98,29023.25
 ,03/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,28893.26
 ,03/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-8945.00,19948.26
-,03/19/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3914.72,23862.98
-,03/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-909.63,22953.35
-,03/28/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12359.31,35312.66
-,03/28/2025,Check,1145,Jordan Pike,,Owner draw,Owner's Draw,-5000.00,30312.66
-,03/29/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4349.84,34662.50
-,03/31/2025,Bill Payment (Check),1050,Lena Ortiz Illustration,,Pay B2503-0,Accounts Payable (A/P),-3253.57,31408.93
-,04/01/2025,Bill Payment (Check),1051,PrintWorks Co.,,Pay B2503-1,Accounts Payable (A/P),-705.58,30703.35
-,04/01/2025,Check,1059,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,27703.35
-,04/03/2025,Bill Payment (Check),1052,PrintWorks Co.,,Pay B2503-3,Accounts Payable (A/P),-2634.81,25068.54
+,03/17/2025,Bill Payment (Check),1051,PrintWorks Co.,,Pay B2503-1,Accounts Payable (A/P),-705.58,19242.68
+,03/19/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3914.72,23157.40
+,03/19/2025,Bill Payment (Check),1052,PrintWorks Co.,,Pay B2503-3,Accounts Payable (A/P),-2634.81,20522.59
+,03/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-909.63,19612.96
+,03/28/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12359.31,31972.27
+,03/28/2025,Check,1147,Jordan Pike,,Owner draw,Owner's Draw,-5000.00,26972.27
+,03/29/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4349.84,31322.11
+,03/31/2025,Bill Payment (Check),1050,Lena Ortiz Illustration,,Pay B2503-0,Accounts Payable (A/P),-3253.57,28068.54
+,04/01/2025,Check,1059,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,25068.54
 ,04/06/2025,Bill Payment (Check),1053,Lena Ortiz Illustration,,Pay B2503-6,Accounts Payable (A/P),-1289.48,23779.06
 ,04/07/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2741.36,26520.42
 ,04/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,26390.43
 ,04/15/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3307.15,29697.58
 ,04/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-9273.35,20424.23
-,04/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-673.94,19750.29
-,04/30/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10317.96,30068.25
-,05/01/2025,Bill Payment (Check),1055,Lena Ortiz Illustration,,Pay B2504-0,Accounts Payable (A/P),-2624.98,27443.27
-,05/01/2025,Check,1065,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,24443.27
-,05/02/2025,Bill Payment (Check),1056,PrintWorks Co.,,Pay B2504-1,Accounts Payable (A/P),-644.45,23798.82
-,05/02/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4720.50,28519.32
-,05/04/2025,Bill Payment (Check),1057,PrintWorks Co.,,Pay B2504-3,Accounts Payable (A/P),-3167.34,25351.98
+,04/17/2025,Bill Payment (Check),1056,PrintWorks Co.,,Pay B2504-1,Accounts Payable (A/P),-644.45,19779.78
+,04/19/2025,Bill Payment (Check),1057,PrintWorks Co.,,Pay B2504-3,Accounts Payable (A/P),-3167.34,16612.44
+,04/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-673.94,15938.50
+,04/30/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10317.96,26256.46
+,05/01/2025,Bill Payment (Check),1055,Lena Ortiz Illustration,,Pay B2504-0,Accounts Payable (A/P),-2624.98,23631.48
+,05/01/2025,Check,1065,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,20631.48
+,05/02/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4720.50,25351.98
 ,05/07/2025,Bill Payment (Check),1058,Lena Ortiz Illustration,,Pay B2504-6,Accounts Payable (A/P),-1238.81,24113.17
 ,05/09/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3340.63,27453.80
 ,05/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,27323.81
 ,05/13/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3223.52,30547.33
 ,05/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-9022.75,21524.58
-,05/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10980.96,32505.54
-,05/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-720.55,31784.99
-,05/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),6099.27,37884.26
-,05/30/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4726.32,42610.58
-,05/31/2025,Bill Payment (Check),1060,Lena Ortiz Illustration,,Pay B2505-0,Accounts Payable (A/P),-3414.40,39196.18
-,06/01/2025,Bill Payment (Check),1061,PrintWorks Co.,,Pay B2505-1,Accounts Payable (A/P),-495.56,38700.62
-,06/01/2025,Check,1071,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,35700.62
-,06/03/2025,Bill Payment (Check),1063,PrintWorks Co.,,Pay B2505-3,Accounts Payable (A/P),-2888.37,32812.25
+,05/17/2025,Bill Payment (Check),1061,PrintWorks Co.,,Pay B2505-1,Accounts Payable (A/P),-495.56,21029.02
+,05/19/2025,Bill Payment (Check),1063,PrintWorks Co.,,Pay B2505-3,Accounts Payable (A/P),-2888.37,18140.65
+,05/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10980.96,29121.61
+,05/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-720.55,28401.06
+,05/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),6099.27,34500.33
+,05/30/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4726.32,39226.65
+,05/31/2025,Bill Payment (Check),1060,Lena Ortiz Illustration,,Pay B2505-0,Accounts Payable (A/P),-3414.40,35812.25
+,06/01/2025,Check,1071,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,32812.25
 ,06/06/2025,Bill Payment (Check),1064,Lena Ortiz Illustration,,Pay B2505-6,Accounts Payable (A/P),-1438.42,31373.83
 ,06/07/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3348.87,34722.70
 ,06/11/2025,Bill Payment (Check),1062,Dev Studio Partners,,Pay B2505-2,Accounts Payable (A/P),-3016.89,31705.81
 ,06/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,31575.82
 ,06/15/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4054.31,35630.13
 ,06/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-9017.06,26613.07
-,06/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-636.94,25976.13
-,06/27/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11883.98,37860.11
-,06/28/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4719.05,42579.16
-,06/28/2025,Check,1146,Jordan Pike,,Owner draw,Owner's Draw,-6000.00,36579.16
-,06/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5694.40,42273.56
-,07/01/2025,Bill Payment (Check),1066,Lena Ortiz Illustration,,Pay B2506-0,Accounts Payable (A/P),-3740.88,38532.68
-,07/01/2025,Check,1078,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,35532.68
-,07/02/2025,Bill Payment (Check),1067,PrintWorks Co.,,Pay B2506-1,Accounts Payable (A/P),-750.62,34782.06
-,07/04/2025,Bill Payment (Check),1069,PrintWorks Co.,,Pay B2506-3,Accounts Payable (A/P),-2644.72,32137.34
+,06/17/2025,Bill Payment (Check),1067,PrintWorks Co.,,Pay B2506-1,Accounts Payable (A/P),-750.62,25862.45
+,06/19/2025,Bill Payment (Check),1069,PrintWorks Co.,,Pay B2506-3,Accounts Payable (A/P),-2644.72,23217.73
+,06/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-636.94,22580.79
+,06/27/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11883.98,34464.77
+,06/28/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4719.05,39183.82
+,06/28/2025,Check,1148,Jordan Pike,,Owner draw,Owner's Draw,-6000.00,33183.82
+,06/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5694.40,38878.22
+,07/01/2025,Bill Payment (Check),1066,Lena Ortiz Illustration,,Pay B2506-0,Accounts Payable (A/P),-3740.88,35137.34
+,07/01/2025,Check,1078,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,32137.34
 ,07/06/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3181.37,35318.71
 ,07/07/2025,Bill Payment (Check),1070,Lena Ortiz Illustration,,Pay B2506-6,Accounts Payable (A/P),-1495.21,33823.50
 ,07/11/2025,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,36223.50
 ,07/12/2025,Bill Payment (Check),1068,Dev Studio Partners,,Pay B2506-2,Accounts Payable (A/P),-2734.94,33488.56
 ,07/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,33358.57
 ,07/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-8935.48,24423.09
-,07/19/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4132.42,28555.51
-,07/24/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5757.63,34313.14
-,07/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11520.58,45833.72
-,07/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-597.02,45236.70
-,07/29/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4381.27,49617.97
-,07/31/2025,Bill Payment (Check),1072,Lena Ortiz Illustration,,Pay B2507-0,Accounts Payable (A/P),-3592.11,46025.86
-,08/01/2025,Bill Payment (Check),1073,PrintWorks Co.,,Pay B2507-1,Accounts Payable (A/P),-806.61,45219.25
-,08/01/2025,Check,1085,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,42219.25
-,08/02/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3123.44,45342.69
-,08/03/2025,Bill Payment (Check),1075,PrintWorks Co.,,Pay B2507-3,Accounts Payable (A/P),-2956.54,42386.15
+,07/17/2025,Bill Payment (Check),1073,PrintWorks Co.,,Pay B2507-1,Accounts Payable (A/P),-806.61,23616.48
+,07/19/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4132.42,27748.90
+,07/19/2025,Bill Payment (Check),1075,PrintWorks Co.,,Pay B2507-3,Accounts Payable (A/P),-2956.54,24792.36
+,07/24/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5757.63,30549.99
+,07/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11520.58,42070.57
+,07/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-597.02,41473.55
+,07/29/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4381.27,45854.82
+,07/31/2025,Bill Payment (Check),1072,Lena Ortiz Illustration,,Pay B2507-0,Accounts Payable (A/P),-3592.11,42262.71
+,08/01/2025,Check,1085,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,39262.71
+,08/02/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3123.44,42386.15
 ,08/04/2025,Bill Payment (Check),1076,Lena Ortiz Illustration,,Pay B2507-4,Accounts Payable (A/P),-254.16,42131.99
 ,08/06/2025,Bill Payment (Check),1077,Lena Ortiz Illustration,,Pay B2507-6,Accounts Payable (A/P),-1261.27,40870.72
 ,08/11/2025,Bill Payment (Check),1074,Dev Studio Partners,,Pay B2507-2,Accounts Payable (A/P),-2325.25,38545.47
 ,08/11/2025,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,40945.47
 ,08/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,40815.48
 ,08/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-8917.20,31898.28
-,08/18/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3997.47,35895.75
-,08/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-565.64,35330.11
-,08/26/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11398.14,46728.25
-,08/28/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5461.00,52189.25
-,08/28/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4244.08,56433.33
-,08/31/2025,Bill Payment (Check),1079,Lena Ortiz Illustration,,Pay B2508-0,Accounts Payable (A/P),-2979.61,53453.72
-,09/01/2025,Bill Payment (Check),1080,PrintWorks Co.,,Pay B2508-1,Accounts Payable (A/P),-753.86,52699.86
-,09/01/2025,Check,1092,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,49699.86
-,09/03/2025,Bill Payment (Check),1082,PrintWorks Co.,,Pay B2508-3,Accounts Payable (A/P),-2417.92,47281.94
+,08/17/2025,Bill Payment (Check),1080,PrintWorks Co.,,Pay B2508-1,Accounts Payable (A/P),-753.86,31144.42
+,08/18/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3997.47,35141.89
+,08/19/2025,Bill Payment (Check),1082,PrintWorks Co.,,Pay B2508-3,Accounts Payable (A/P),-2417.92,32723.97
+,08/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-565.64,32158.33
+,08/26/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11398.14,43556.47
+,08/28/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5461.00,49017.47
+,08/28/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4244.08,53261.55
+,08/31/2025,Bill Payment (Check),1079,Lena Ortiz Illustration,,Pay B2508-0,Accounts Payable (A/P),-2979.61,50281.94
+,09/01/2025,Check,1092,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,47281.94
 ,09/04/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2864.28,50146.22
 ,09/04/2025,Bill Payment (Check),1083,Lena Ortiz Illustration,,Pay B2508-4,Accounts Payable (A/P),-270.63,49875.59
 ,09/06/2025,Bill Payment (Check),1084,Lena Ortiz Illustration,,Pay B2508-6,Accounts Payable (A/P),-1181.95,48693.64
@@ -119,15 +119,15 @@ Checking
 ,09/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,48295.81
 ,09/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-11993.79,36302.02
 ,09/17/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3800.80,40102.82
-,09/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10852.95,50955.77
-,09/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-599.12,50356.65
-,09/26/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5286.19,55642.84
-,09/27/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4605.50,60248.34
-,09/28/2025,Check,1147,Jordan Pike,,Owner draw,Owner's Draw,-7000.00,53248.34
-,10/01/2025,Bill Payment (Check),1086,Lena Ortiz Illustration,,Pay B2509-0,Accounts Payable (A/P),-3349.39,49898.95
-,10/01/2025,Check,1098,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,46898.95
-,10/02/2025,Bill Payment (Check),1087,PrintWorks Co.,,Pay B2509-1,Accounts Payable (A/P),-754.54,46144.41
-,10/04/2025,Bill Payment (Check),1089,PrintWorks Co.,,Pay B2509-3,Accounts Payable (A/P),-3306.09,42838.32
+,09/17/2025,Bill Payment (Check),1087,PrintWorks Co.,,Pay B2509-1,Accounts Payable (A/P),-754.54,39348.28
+,09/19/2025,Bill Payment (Check),1089,PrintWorks Co.,,Pay B2509-3,Accounts Payable (A/P),-3306.09,36042.19
+,09/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10852.95,46895.14
+,09/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-599.12,46296.02
+,09/26/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5286.19,51582.21
+,09/27/2025,Payment,,Lakeside Brewing,Lakeside Brewing:Label Series,Payment received,Accounts Receivable (A/R),4605.50,56187.71
+,09/28/2025,Check,1149,Jordan Pike,,Owner draw,Owner's Draw,-7000.00,49187.71
+,10/01/2025,Bill Payment (Check),1086,Lena Ortiz Illustration,,Pay B2509-0,Accounts Payable (A/P),-3349.39,45838.32
+,10/01/2025,Check,1098,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,42838.32
 ,10/05/2025,Bill Payment (Check),1090,Lena Ortiz Illustration,,Pay B2509-4,Accounts Payable (A/P),-290.56,42547.76
 ,10/07/2025,Bill Payment (Check),1091,Lena Ortiz Illustration,,Pay B2509-6,Accounts Payable (A/P),-1299.07,41248.69
 ,10/08/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3201.21,44449.90
@@ -136,13 +136,13 @@ Checking
 ,10/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,44281.32
 ,10/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-11908.17,32373.15
 ,10/17/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3645.22,36018.37
-,10/24/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12089.92,48108.29
-,10/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-687.35,47420.94
-,10/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5946.98,53367.92
-,10/31/2025,Bill Payment (Check),1093,Lena Ortiz Illustration,,Pay B2510-0,Accounts Payable (A/P),-3620.41,49747.51
-,11/01/2025,Bill Payment (Check),1094,PrintWorks Co.,,Pay B2510-1,Accounts Payable (A/P),-619.72,49127.79
-,11/01/2025,Check,1104,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,46127.79
-,11/03/2025,Bill Payment (Check),1096,PrintWorks Co.,,Pay B2510-3,Accounts Payable (A/P),-2064.18,44063.61
+,10/17/2025,Bill Payment (Check),1094,PrintWorks Co.,,Pay B2510-1,Accounts Payable (A/P),-619.72,35398.65
+,10/19/2025,Bill Payment (Check),1096,PrintWorks Co.,,Pay B2510-3,Accounts Payable (A/P),-2064.18,33334.47
+,10/24/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12089.92,45424.39
+,10/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-687.35,44737.04
+,10/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5946.98,50684.02
+,10/31/2025,Bill Payment (Check),1093,Lena Ortiz Illustration,,Pay B2510-0,Accounts Payable (A/P),-3620.41,47063.61
+,11/01/2025,Check,1104,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,44063.61
 ,11/04/2025,Bill Payment (Check),1097,Lena Ortiz Illustration,,Pay B2510-4,Accounts Payable (A/P),-246.13,43817.48
 ,11/08/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2659.47,46476.95
 ,11/11/2025,Bill Payment (Check),1095,Dev Studio Partners,,Pay B2510-2,Accounts Payable (A/P),-3053.18,43423.77
@@ -150,13 +150,13 @@ Checking
 ,11/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,45693.78
 ,11/15/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3942.26,49636.04
 ,11/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12173.45,37462.59
-,11/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11918.92,49381.51
-,11/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-687.82,48693.69
-,11/26/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5466.74,54160.43
-,12/01/2025,Bill Payment (Check),1099,Lena Ortiz Illustration,,Pay B2511-0,Accounts Payable (A/P),-3210.52,50949.91
-,12/01/2025,Check,1110,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,47949.91
-,12/02/2025,Bill Payment (Check),1100,PrintWorks Co.,,Pay B2511-1,Accounts Payable (A/P),-804.39,47145.52
-,12/04/2025,Bill Payment (Check),1102,PrintWorks Co.,,Pay B2511-3,Accounts Payable (A/P),-2301.30,44844.22
+,11/17/2025,Bill Payment (Check),1100,PrintWorks Co.,,Pay B2511-1,Accounts Payable (A/P),-804.39,36658.20
+,11/19/2025,Bill Payment (Check),1102,PrintWorks Co.,,Pay B2511-3,Accounts Payable (A/P),-2301.30,34356.90
+,11/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11918.92,46275.82
+,11/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-687.82,45588.00
+,11/26/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5466.74,51054.74
+,12/01/2025,Bill Payment (Check),1099,Lena Ortiz Illustration,,Pay B2511-0,Accounts Payable (A/P),-3210.52,47844.22
+,12/01/2025,Check,1110,Brightline Properties,,Studio rent,Rent & Lease,-3000.00,44844.22
 ,12/05/2025,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3004.83,47849.05
 ,12/05/2025,Bill Payment (Check),1103,Lena Ortiz Illustration,,Pay B2511-4,Accounts Payable (A/P),-282.12,47566.93
 ,12/10/2025,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,49966.93
@@ -164,14 +164,14 @@ Checking
 ,12/12/2025,Expense,,Comcast Business,,Internet,Utilities,-129.99,47054.46
 ,12/15/2025,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12102.71,34951.75
 ,12/17/2025,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4011.82,38963.57
-,12/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10947.09,49910.66
-,12/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-632.82,49277.84
-,12/28/2025,Check,1148,Jordan Pike,,Owner draw,Owner's Draw,-11000.00,38277.84
-,12/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),6068.21,44346.05
-,12/31/2025,Bill Payment (Check),1105,Lena Ortiz Illustration,,Pay B2512-0,Accounts Payable (A/P),-3249.71,41096.34
-,01/01/2026,Bill Payment (Check),1106,PrintWorks Co.,,Pay B2512-1,Accounts Payable (A/P),-694.55,40401.79
-,01/01/2026,Check,1116,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,37201.79
-,01/03/2026,Bill Payment (Check),1108,PrintWorks Co.,,Pay B2512-3,Accounts Payable (A/P),-2990.76,34211.03
+,12/17/2025,Bill Payment (Check),1106,PrintWorks Co.,,Pay B2512-1,Accounts Payable (A/P),-694.55,38269.02
+,12/19/2025,Bill Payment (Check),1108,PrintWorks Co.,,Pay B2512-3,Accounts Payable (A/P),-2990.76,35278.26
+,12/25/2025,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10947.09,46225.35
+,12/25/2025,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-632.82,45592.53
+,12/28/2025,Check,1150,Jordan Pike,,Owner draw,Owner's Draw,-11000.00,34592.53
+,12/29/2025,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),6068.21,40660.74
+,12/31/2025,Bill Payment (Check),1105,Lena Ortiz Illustration,,Pay B2512-0,Accounts Payable (A/P),-3249.71,37411.03
+,01/01/2026,Check,1116,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,34211.03
 ,01/04/2026,Bill Payment (Check),1109,Lena Ortiz Illustration,,Pay B2512-4,Accounts Payable (A/P),-315.52,33895.51
 ,01/08/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3238.73,37134.24
 ,01/11/2026,Bill Payment (Check),1107,Dev Studio Partners,,Pay B2512-2,Accounts Payable (A/P),-2590.30,34543.94
@@ -179,12 +179,12 @@ Checking
 ,01/15/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3403.72,37817.67
 ,01/15/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,40217.67
 ,01/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-11842.79,28374.88
-,01/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-696.48,27678.40
-,01/30/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10768.57,38446.97
-,01/31/2026,Bill Payment (Check),1111,Lena Ortiz Illustration,,Pay B2601-0,Accounts Payable (A/P),-2932.90,35514.07
-,02/01/2026,Bill Payment (Check),1112,PrintWorks Co.,,Pay B2601-1,Accounts Payable (A/P),-579.20,34934.87
-,02/01/2026,Check,1122,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,31734.87
-,02/03/2026,Bill Payment (Check),1114,PrintWorks Co.,,Pay B2601-3,Accounts Payable (A/P),-2793.93,28940.94
+,01/17/2026,Bill Payment (Check),1112,PrintWorks Co.,,Pay B2601-1,Accounts Payable (A/P),-579.20,27795.68
+,01/19/2026,Bill Payment (Check),1114,PrintWorks Co.,,Pay B2601-3,Accounts Payable (A/P),-2793.93,25001.75
+,01/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-696.48,24305.27
+,01/30/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10768.57,35073.84
+,01/31/2026,Bill Payment (Check),1111,Lena Ortiz Illustration,,Pay B2601-0,Accounts Payable (A/P),-2932.90,32140.94
+,02/01/2026,Check,1122,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,28940.94
 ,02/04/2026,Bill Payment (Check),1115,Lena Ortiz Illustration,,Pay B2601-4,Accounts Payable (A/P),-330.42,28610.52
 ,02/07/2026,Expense,,,,POS DEBIT 4471 SQ *MAKERS,Uncategorized Expense,-212.00,28398.52
 ,02/09/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),6132.41,34530.93
@@ -193,14 +193,14 @@ Checking
 ,02/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,33618.85
 ,02/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12284.21,21334.64
 ,02/16/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),4016.90,25351.54
-,02/19/2026,Expense,,Venmo,,Venmo payment,Uncategorized Expense,-350.00,25001.54
-,02/23/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2850.46,27852.00
-,02/24/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11300.42,39152.42
-,02/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-805.68,38346.74
-,03/01/2026,Check,1129,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,35146.74
-,03/03/2026,Bill Payment (Check),1117,Lena Ortiz Illustration,,Pay B2602-0,Accounts Payable (A/P),-3532.41,31614.33
-,03/04/2026,Bill Payment (Check),1118,PrintWorks Co.,,Pay B2602-1,Accounts Payable (A/P),-791.01,30823.32
-,03/06/2026,Bill Payment (Check),1120,PrintWorks Co.,,Pay B2602-3,Accounts Payable (A/P),-2893.49,27929.83
+,02/17/2026,Bill Payment (Check),1118,PrintWorks Co.,,Pay B2602-1,Accounts Payable (A/P),-791.01,24560.53
+,02/19/2026,Bill Payment (Check),1120,PrintWorks Co.,,Pay B2602-3,Accounts Payable (A/P),-2893.49,21667.04
+,02/19/2026,Expense,,Venmo,,Venmo payment,Uncategorized Expense,-350.00,21317.04
+,02/23/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2850.46,24167.50
+,02/24/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11300.42,35467.92
+,02/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-805.68,34662.24
+,03/01/2026,Check,1129,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,31462.24
+,03/03/2026,Bill Payment (Check),1117,Lena Ortiz Illustration,,Pay B2602-0,Accounts Payable (A/P),-3532.41,27929.83
 ,03/07/2026,Bill Payment (Check),1121,Lena Ortiz Illustration,,Pay B2602-4,Accounts Payable (A/P),-288.31,27641.52
 ,03/12/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),6016.64,33658.16
 ,03/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,33528.17
@@ -208,34 +208,34 @@ Checking
 ,03/15/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3359.68,33970.37
 ,03/15/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,36370.37
 ,03/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-11881.86,24488.51
-,03/23/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2804.35,27292.86
-,03/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-1057.27,26235.59
-,03/27/2026,Deposit,,,,Mobile deposit,Uncategorized Income,1850.00,28085.59
-,03/28/2026,Check,1149,Jordan Pike,,Owner draw,Owner's Draw,-3000.00,25085.59
-,03/29/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11789.26,36874.85
-,03/30/2026,Transfer,,,,Transfer to savings,Bank Fees,-2500.00,34374.85
-,03/31/2026,Bill Payment (Check),1123,Lena Ortiz Illustration,,Pay B2603-0,Accounts Payable (A/P),-2991.83,31383.02
-,04/01/2026,Bill Payment (Check),1124,PrintWorks Co.,,Pay B2603-1,Accounts Payable (A/P),-581.08,30801.94
-,04/01/2026,Check,1136,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,27601.94
-,04/02/2026,Expense,,,,ACH DEBIT WEB PMT 88213,Uncategorized Expense,-1200.00,26401.94
-,04/02/2026,Expense,,Brightline Properties,,ONLINE PMT BRIGHTLINE PROP,Rent & Lease,-3200.00,23201.94
-,04/03/2026,Bill Payment (Check),1126,PrintWorks Co.,,Pay B2603-3,Accounts Payable (A/P),-2644.77,20557.17
+,03/17/2026,Bill Payment (Check),1124,PrintWorks Co.,,Pay B2603-1,Accounts Payable (A/P),-581.08,23907.43
+,03/19/2026,Bill Payment (Check),1126,PrintWorks Co.,,Pay B2603-3,Accounts Payable (A/P),-2644.77,21262.66
+,03/23/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2804.35,24067.01
+,03/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-1057.27,23009.74
+,03/27/2026,Deposit,,,,Mobile deposit,Uncategorized Income,1850.00,24859.74
+,03/28/2026,Check,1151,Jordan Pike,,Owner draw,Owner's Draw,-3000.00,21859.74
+,03/29/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11789.26,33649.00
+,03/30/2026,Transfer,,,,Transfer to savings,Bank Fees,-2500.00,31149.00
+,03/31/2026,Bill Payment (Check),1123,Lena Ortiz Illustration,,Pay B2603-0,Accounts Payable (A/P),-2991.83,28157.17
+,04/01/2026,Check,1136,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,24957.17
+,04/02/2026,Expense,,,,ACH DEBIT WEB PMT 88213,Uncategorized Expense,-1200.00,23757.17
+,04/02/2026,Expense,,Brightline Properties,,ONLINE PMT BRIGHTLINE PROP,Rent & Lease,-3200.00,20557.17
 ,04/04/2026,Bill Payment (Check),1127,Lena Ortiz Illustration,,Pay B2603-4,Accounts Payable (A/P),-255.49,20301.68
 ,04/05/2026,Bill Payment (Check),1128,Metro Sign Fabricators,,Pay B2603-5,Accounts Payable (A/P),-4510.53,15791.15
 ,04/11/2026,Bill Payment (Check),1125,Dev Studio Partners,,Pay B2603-2,Accounts Payable (A/P),-2831.75,12959.40
 ,04/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,12829.41
 ,04/15/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,15229.41
 ,04/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12177.81,3051.60
-,04/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3289.30,6340.90
-,04/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2871.83,9212.73
-,04/24/2026,Expense,,Costco,,COSTCO WHSE #0412,Uncategorized Expense,-318.27,8894.46
-,04/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-905.43,7989.03
-,04/30/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12083.01,20072.04
-,05/01/2026,Bill Payment (Check),1130,Lena Ortiz Illustration,,Pay B2604-0,Accounts Payable (A/P),-3067.91,17004.13
-,05/01/2026,Check,1143,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,13804.13
-,05/02/2026,Bill Payment (Check),1131,PrintWorks Co.,,Pay B2604-1,Accounts Payable (A/P),-579.12,13225.01
-,05/03/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),7312.09,20537.10
-,05/04/2026,Bill Payment (Check),1133,PrintWorks Co.,,Pay B2604-3,Accounts Payable (A/P),-2603.97,17933.13
+,04/17/2026,Bill Payment (Check),1131,PrintWorks Co.,,Pay B2604-1,Accounts Payable (A/P),-579.12,2472.48
+,04/19/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3289.30,5761.78
+,04/19/2026,Bill Payment (Check),1133,PrintWorks Co.,,Pay B2604-3,Accounts Payable (A/P),-2603.97,3157.81
+,04/21/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2871.83,6029.64
+,04/24/2026,Expense,,Costco,,COSTCO WHSE #0412,Uncategorized Expense,-318.27,5711.37
+,04/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-905.43,4805.94
+,04/30/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),12083.01,16888.95
+,05/01/2026,Bill Payment (Check),1130,Lena Ortiz Illustration,,Pay B2604-0,Accounts Payable (A/P),-3067.91,13821.04
+,05/01/2026,Check,1143,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,10621.04
+,05/03/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),7312.09,17933.13
 ,05/05/2026,Bill Payment (Check),1134,Lena Ortiz Illustration,,Pay B2604-4,Accounts Payable (A/P),-279.26,17653.87
 ,05/06/2026,Bill Payment (Check),1135,Metro Sign Fabricators,,Pay B2604-5,Accounts Payable (A/P),-4936.82,12717.05
 ,05/06/2026,Sales Receipt,1009,Walk-in client,,Logo consult,Advertising & Marketing,450.00,13167.05
@@ -246,28 +246,30 @@ Checking
 ,05/13/2026,Expense,,Uber,,UBER *TRIP,Uncategorized Expense,-64.18,18717.27
 ,05/14/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3637.85,22355.12
 ,05/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-12120.88,10234.24
-,05/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-980.94,9253.30
-,05/26/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2603.98,11857.28
-,05/26/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10607.34,22464.62
-,05/29/2026,Deposit,,Stripe,,STRIPE TRANSFER,Uncategorized Income,642.30,23106.92
-,05/31/2026,Bill Payment (Check),1137,Lena Ortiz Illustration,,Pay B2605-0,Accounts Payable (A/P),-2869.76,20237.16
-,06/01/2026,Bill Payment (Check),1138,PrintWorks Co.,,Pay B2605-1,Accounts Payable (A/P),-692.88,19544.28
-,06/01/2026,Check,1144,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,16344.28
-,06/02/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),8285.03,24629.31
-,06/03/2026,Bill Payment (Check),1140,PrintWorks Co.,,Pay B2605-3,Accounts Payable (A/P),-2406.40,22222.91
+,05/17/2026,Bill Payment (Check),1138,PrintWorks Co.,,Pay B2605-1,Accounts Payable (A/P),-692.88,9541.36
+,05/19/2026,Bill Payment (Check),1140,PrintWorks Co.,,Pay B2605-3,Accounts Payable (A/P),-2406.40,7134.96
+,05/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-980.94,6154.02
+,05/26/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),2603.98,8758.00
+,05/26/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),10607.34,19365.34
+,05/29/2026,Deposit,,Stripe,,STRIPE TRANSFER,Uncategorized Income,642.30,20007.64
+,05/31/2026,Bill Payment (Check),1137,Lena Ortiz Illustration,,Pay B2605-0,Accounts Payable (A/P),-2869.76,17137.88
+,06/01/2026,Check,1146,Brightline Properties,,Studio rent,Rent & Lease,-3200.00,13937.88
+,06/02/2026,Payment,,Harborview Hotel,Harborview Hotel:Signage,Payment received,Accounts Receivable (A/R),8285.03,22222.91
 ,06/04/2026,Bill Payment (Check),1141,Lena Ortiz Illustration,,Pay B2605-4,Accounts Payable (A/P),-248.72,21974.19
 ,06/05/2026,Payment,,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Payment received,Accounts Receivable (A/R),5340.75,27314.94
 ,06/05/2026,Bill Payment (Check),1142,Metro Sign Fabricators,,Pay B2605-5,Accounts Payable (A/P),-4006.28,23308.66
 ,06/11/2026,Bill Payment (Check),1139,Dev Studio Partners,,Pay B2605-2,Accounts Payable (A/P),-2581.16,20727.50
-,06/11/2026,Check,1150,R. Patel,,Check - no memo,Ask My Accountant,-750.00,19977.50
+,06/11/2026,Check,1152,R. Patel,,Check - no memo,Ask My Accountant,-750.00,19977.50
 ,06/12/2026,Expense,,Comcast Business,,Internet,Utilities,-129.99,19847.51
 ,06/13/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Accounts Receivable (A/R),2400.00,22247.51
 ,06/14/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Accounts Receivable (A/R),3278.99,25526.50
 ,06/15/2026,Expense,,Gusto,,Payroll,Payroll Expenses:Wages,-11974.95,13551.55
-,06/20/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3058.12,16609.67
-,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-935.90,15673.77
-,06/27/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11712.69,27386.46
-Total for Checking,,,,,,,,"$27,386.46",
+,06/17/2026,Bill Payment (Check),1144,PrintWorks Co.,,Pay B2606-1,Accounts Payable (A/P),-610.46,12941.09
+,06/19/2026,Bill Payment (Check),1145,PrintWorks Co.,,Pay B2606-3,Accounts Payable (A/P),-2583.41,10357.68
+,06/20/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3058.12,13415.80
+,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-935.90,12479.90
+,06/27/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11712.69,24192.59
+Total for Checking,,,,,,,,"$24,192.59",
 Accounts Receivable (A/R)
 ,01/03/2025,Invoice,2001,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jan services,Design Services Income,10035.94,10035.94
 ,01/04/2025,Invoice,2002,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jan services,Design Services Income,4179.86,14215.80
@@ -754,42 +756,42 @@ Accounts Payable (A/P)
 ,01/11/2025,Bill,B2501-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,708.99,3580.32
 ,01/13/2025,Bill,B2501-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2443.14,6023.46
 ,01/16/2025,Bill,B2501-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1502.08,7525.54
-,01/31/2025,Bill Payment (Check),1040,Lena Ortiz Illustration,,Pay B2501-0,Checking,-2871.33,4654.21
-,02/01/2025,Bill Payment (Check),1041,PrintWorks Co.,,Pay B2501-1,Checking,-708.99,3945.22
-,02/03/2025,Bill Payment (Check),1042,PrintWorks Co.,,Pay B2501-3,Checking,-2443.14,1502.08
-,02/06/2025,Bill Payment (Check),1043,Lena Ortiz Illustration,,Pay B2501-6,Checking,-1502.08,-0.00
+,01/17/2025,Bill Payment (Check),1041,PrintWorks Co.,,Pay B2501-1,Checking,-708.99,6816.55
+,01/19/2025,Bill Payment (Check),1042,PrintWorks Co.,,Pay B2501-3,Checking,-2443.14,4373.41
+,01/31/2025,Bill Payment (Check),1040,Lena Ortiz Illustration,,Pay B2501-0,Checking,-2871.33,1502.08
+,02/06/2025,Bill Payment (Check),1043,Lena Ortiz Illustration,,Pay B2501-6,Checking,-1502.08,0.00
 ,02/10/2025,Bill,B2502-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3029.08,3029.08
 ,02/11/2025,Bill,B2502-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,727.89,3756.97
 ,02/13/2025,Bill,B2502-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2607.75,6364.72
 ,02/16/2025,Bill,B2502-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1444.98,7809.70
-,03/03/2025,Bill Payment (Check),1045,Lena Ortiz Illustration,,Pay B2502-0,Checking,-3029.08,4780.62
-,03/04/2025,Bill Payment (Check),1046,PrintWorks Co.,,Pay B2502-1,Checking,-727.89,4052.73
-,03/06/2025,Bill Payment (Check),1047,PrintWorks Co.,,Pay B2502-3,Checking,-2607.75,1444.98
+,02/17/2025,Bill Payment (Check),1046,PrintWorks Co.,,Pay B2502-1,Checking,-727.89,7081.81
+,02/19/2025,Bill Payment (Check),1047,PrintWorks Co.,,Pay B2502-3,Checking,-2607.75,4474.06
+,03/03/2025,Bill Payment (Check),1045,Lena Ortiz Illustration,,Pay B2502-0,Checking,-3029.08,1444.98
 ,03/09/2025,Bill Payment (Check),1048,Lena Ortiz Illustration,,Pay B2502-6,Checking,-1444.98,-0.00
 ,03/10/2025,Bill,B2503-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3253.57,3253.57
 ,03/11/2025,Bill,B2503-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,705.58,3959.15
 ,03/13/2025,Bill,B2503-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2634.81,6593.96
 ,03/16/2025,Bill,B2503-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1289.48,7883.44
-,03/31/2025,Bill Payment (Check),1050,Lena Ortiz Illustration,,Pay B2503-0,Checking,-3253.57,4629.87
-,04/01/2025,Bill Payment (Check),1051,PrintWorks Co.,,Pay B2503-1,Checking,-705.58,3924.29
-,04/03/2025,Bill Payment (Check),1052,PrintWorks Co.,,Pay B2503-3,Checking,-2634.81,1289.48
+,03/17/2025,Bill Payment (Check),1051,PrintWorks Co.,,Pay B2503-1,Checking,-705.58,7177.86
+,03/19/2025,Bill Payment (Check),1052,PrintWorks Co.,,Pay B2503-3,Checking,-2634.81,4543.05
+,03/31/2025,Bill Payment (Check),1050,Lena Ortiz Illustration,,Pay B2503-0,Checking,-3253.57,1289.48
 ,04/06/2025,Bill Payment (Check),1053,Lena Ortiz Illustration,,Pay B2503-6,Checking,-1289.48,-0.00
 ,04/10/2025,Bill,B2504-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2624.98,2624.98
 ,04/11/2025,Bill,B2504-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,644.45,3269.43
 ,04/13/2025,Bill,B2504-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,3167.34,6436.77
 ,04/16/2025,Bill,B2504-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1238.81,7675.58
-,05/01/2025,Bill Payment (Check),1055,Lena Ortiz Illustration,,Pay B2504-0,Checking,-2624.98,5050.60
-,05/02/2025,Bill Payment (Check),1056,PrintWorks Co.,,Pay B2504-1,Checking,-644.45,4406.15
-,05/04/2025,Bill Payment (Check),1057,PrintWorks Co.,,Pay B2504-3,Checking,-3167.34,1238.81
+,04/17/2025,Bill Payment (Check),1056,PrintWorks Co.,,Pay B2504-1,Checking,-644.45,7031.13
+,04/19/2025,Bill Payment (Check),1057,PrintWorks Co.,,Pay B2504-3,Checking,-3167.34,3863.79
+,05/01/2025,Bill Payment (Check),1055,Lena Ortiz Illustration,,Pay B2504-0,Checking,-2624.98,1238.81
 ,05/07/2025,Bill Payment (Check),1058,Lena Ortiz Illustration,,Pay B2504-6,Checking,-1238.81,0.00
 ,05/10/2025,Bill,B2505-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3414.40,3414.40
 ,05/11/2025,Bill,B2505-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,495.56,3909.96
 ,05/12/2025,Bill,B2505-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,3016.89,6926.85
 ,05/13/2025,Bill,B2505-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2888.37,9815.22
 ,05/16/2025,Bill,B2505-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1438.42,11253.64
-,05/31/2025,Bill Payment (Check),1060,Lena Ortiz Illustration,,Pay B2505-0,Checking,-3414.40,7839.24
-,06/01/2025,Bill Payment (Check),1061,PrintWorks Co.,,Pay B2505-1,Checking,-495.56,7343.68
-,06/03/2025,Bill Payment (Check),1063,PrintWorks Co.,,Pay B2505-3,Checking,-2888.37,4455.31
+,05/17/2025,Bill Payment (Check),1061,PrintWorks Co.,,Pay B2505-1,Checking,-495.56,10758.08
+,05/19/2025,Bill Payment (Check),1063,PrintWorks Co.,,Pay B2505-3,Checking,-2888.37,7869.71
+,05/31/2025,Bill Payment (Check),1060,Lena Ortiz Illustration,,Pay B2505-0,Checking,-3414.40,4455.31
 ,06/06/2025,Bill Payment (Check),1064,Lena Ortiz Illustration,,Pay B2505-6,Checking,-1438.42,3016.89
 ,06/10/2025,Bill,B2506-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3740.88,6757.77
 ,06/11/2025,Bill Payment (Check),1062,Dev Studio Partners,,Pay B2505-2,Checking,-3016.89,3740.88
@@ -797,9 +799,9 @@ Accounts Payable (A/P)
 ,06/12/2025,Bill,B2506-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2734.94,7226.44
 ,06/13/2025,Bill,B2506-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2644.72,9871.16
 ,06/16/2025,Bill,B2506-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1495.21,11366.37
-,07/01/2025,Bill Payment (Check),1066,Lena Ortiz Illustration,,Pay B2506-0,Checking,-3740.88,7625.49
-,07/02/2025,Bill Payment (Check),1067,PrintWorks Co.,,Pay B2506-1,Checking,-750.62,6874.87
-,07/04/2025,Bill Payment (Check),1069,PrintWorks Co.,,Pay B2506-3,Checking,-2644.72,4230.15
+,06/17/2025,Bill Payment (Check),1067,PrintWorks Co.,,Pay B2506-1,Checking,-750.62,10615.75
+,06/19/2025,Bill Payment (Check),1069,PrintWorks Co.,,Pay B2506-3,Checking,-2644.72,7971.03
+,07/01/2025,Bill Payment (Check),1066,Lena Ortiz Illustration,,Pay B2506-0,Checking,-3740.88,4230.15
 ,07/07/2025,Bill Payment (Check),1070,Lena Ortiz Illustration,,Pay B2506-6,Checking,-1495.21,2734.94
 ,07/10/2025,Bill,B2507-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3592.11,6327.05
 ,07/11/2025,Bill,B2507-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,806.61,7133.66
@@ -808,9 +810,9 @@ Accounts Payable (A/P)
 ,07/13/2025,Bill,B2507-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2956.54,9680.51
 ,07/14/2025,Bill,B2507-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,254.16,9934.67
 ,07/16/2025,Bill,B2507-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1261.27,11195.94
-,07/31/2025,Bill Payment (Check),1072,Lena Ortiz Illustration,,Pay B2507-0,Checking,-3592.11,7603.83
-,08/01/2025,Bill Payment (Check),1073,PrintWorks Co.,,Pay B2507-1,Checking,-806.61,6797.22
-,08/03/2025,Bill Payment (Check),1075,PrintWorks Co.,,Pay B2507-3,Checking,-2956.54,3840.68
+,07/17/2025,Bill Payment (Check),1073,PrintWorks Co.,,Pay B2507-1,Checking,-806.61,10389.33
+,07/19/2025,Bill Payment (Check),1075,PrintWorks Co.,,Pay B2507-3,Checking,-2956.54,7432.79
+,07/31/2025,Bill Payment (Check),1072,Lena Ortiz Illustration,,Pay B2507-0,Checking,-3592.11,3840.68
 ,08/04/2025,Bill Payment (Check),1076,Lena Ortiz Illustration,,Pay B2507-4,Checking,-254.16,3586.52
 ,08/06/2025,Bill Payment (Check),1077,Lena Ortiz Illustration,,Pay B2507-6,Checking,-1261.27,2325.25
 ,08/10/2025,Bill,B2508-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2979.61,5304.86
@@ -820,9 +822,9 @@ Accounts Payable (A/P)
 ,08/13/2025,Bill,B2508-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2417.92,8819.23
 ,08/14/2025,Bill,B2508-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,270.63,9089.86
 ,08/16/2025,Bill,B2508-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1181.95,10271.81
-,08/31/2025,Bill Payment (Check),1079,Lena Ortiz Illustration,,Pay B2508-0,Checking,-2979.61,7292.20
-,09/01/2025,Bill Payment (Check),1080,PrintWorks Co.,,Pay B2508-1,Checking,-753.86,6538.34
-,09/03/2025,Bill Payment (Check),1082,PrintWorks Co.,,Pay B2508-3,Checking,-2417.92,4120.42
+,08/17/2025,Bill Payment (Check),1080,PrintWorks Co.,,Pay B2508-1,Checking,-753.86,9517.95
+,08/19/2025,Bill Payment (Check),1082,PrintWorks Co.,,Pay B2508-3,Checking,-2417.92,7100.03
+,08/31/2025,Bill Payment (Check),1079,Lena Ortiz Illustration,,Pay B2508-0,Checking,-2979.61,4120.42
 ,09/04/2025,Bill Payment (Check),1083,Lena Ortiz Illustration,,Pay B2508-4,Checking,-270.63,3849.79
 ,09/06/2025,Bill Payment (Check),1084,Lena Ortiz Illustration,,Pay B2508-6,Checking,-1181.95,2667.84
 ,09/10/2025,Bill,B2509-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3349.39,6017.23
@@ -832,9 +834,9 @@ Accounts Payable (A/P)
 ,09/13/2025,Bill,B2509-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,3306.09,9848.61
 ,09/14/2025,Bill,B2509-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,290.56,10139.17
 ,09/16/2025,Bill,B2509-6,Lena Ortiz Illustration,Lakeside Brewing:Label Series,Label Series production,Subcontractors,1299.07,11438.24
-,10/01/2025,Bill Payment (Check),1086,Lena Ortiz Illustration,,Pay B2509-0,Checking,-3349.39,8088.85
-,10/02/2025,Bill Payment (Check),1087,PrintWorks Co.,,Pay B2509-1,Checking,-754.54,7334.31
-,10/04/2025,Bill Payment (Check),1089,PrintWorks Co.,,Pay B2509-3,Checking,-3306.09,4028.22
+,09/17/2025,Bill Payment (Check),1087,PrintWorks Co.,,Pay B2509-1,Checking,-754.54,10683.70
+,09/19/2025,Bill Payment (Check),1089,PrintWorks Co.,,Pay B2509-3,Checking,-3306.09,7377.61
+,10/01/2025,Bill Payment (Check),1086,Lena Ortiz Illustration,,Pay B2509-0,Checking,-3349.39,4028.22
 ,10/05/2025,Bill Payment (Check),1090,Lena Ortiz Illustration,,Pay B2509-4,Checking,-290.56,3737.66
 ,10/07/2025,Bill Payment (Check),1091,Lena Ortiz Illustration,,Pay B2509-6,Checking,-1299.07,2438.59
 ,10/10/2025,Bill,B2510-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3620.41,6059.00
@@ -843,9 +845,9 @@ Accounts Payable (A/P)
 ,10/12/2025,Bill,B2510-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,3053.18,7293.31
 ,10/13/2025,Bill,B2510-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2064.18,9357.49
 ,10/14/2025,Bill,B2510-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,246.13,9603.62
-,10/31/2025,Bill Payment (Check),1093,Lena Ortiz Illustration,,Pay B2510-0,Checking,-3620.41,5983.21
-,11/01/2025,Bill Payment (Check),1094,PrintWorks Co.,,Pay B2510-1,Checking,-619.72,5363.49
-,11/03/2025,Bill Payment (Check),1096,PrintWorks Co.,,Pay B2510-3,Checking,-2064.18,3299.31
+,10/17/2025,Bill Payment (Check),1094,PrintWorks Co.,,Pay B2510-1,Checking,-619.72,8983.90
+,10/19/2025,Bill Payment (Check),1096,PrintWorks Co.,,Pay B2510-3,Checking,-2064.18,6919.72
+,10/31/2025,Bill Payment (Check),1093,Lena Ortiz Illustration,,Pay B2510-0,Checking,-3620.41,3299.31
 ,11/04/2025,Bill Payment (Check),1097,Lena Ortiz Illustration,,Pay B2510-4,Checking,-246.13,3053.18
 ,11/10/2025,Bill,B2511-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3210.52,6263.70
 ,11/11/2025,Bill Payment (Check),1095,Dev Studio Partners,,Pay B2510-2,Checking,-3053.18,3210.52
@@ -853,9 +855,9 @@ Accounts Payable (A/P)
 ,11/12/2025,Bill,B2511-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2782.48,6797.39
 ,11/13/2025,Bill,B2511-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2301.30,9098.69
 ,11/14/2025,Bill,B2511-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,282.12,9380.81
-,12/01/2025,Bill Payment (Check),1099,Lena Ortiz Illustration,,Pay B2511-0,Checking,-3210.52,6170.29
-,12/02/2025,Bill Payment (Check),1100,PrintWorks Co.,,Pay B2511-1,Checking,-804.39,5365.90
-,12/04/2025,Bill Payment (Check),1102,PrintWorks Co.,,Pay B2511-3,Checking,-2301.30,3064.60
+,11/17/2025,Bill Payment (Check),1100,PrintWorks Co.,,Pay B2511-1,Checking,-804.39,8576.42
+,11/19/2025,Bill Payment (Check),1102,PrintWorks Co.,,Pay B2511-3,Checking,-2301.30,6275.12
+,12/01/2025,Bill Payment (Check),1099,Lena Ortiz Illustration,,Pay B2511-0,Checking,-3210.52,3064.60
 ,12/05/2025,Bill Payment (Check),1103,Lena Ortiz Illustration,,Pay B2511-4,Checking,-282.12,2782.48
 ,12/10/2025,Bill,B2512-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3249.71,6032.19
 ,12/11/2025,Bill,B2512-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,694.55,6726.74
@@ -863,9 +865,9 @@ Accounts Payable (A/P)
 ,12/12/2025,Bill,B2512-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2590.30,6534.56
 ,12/13/2025,Bill,B2512-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2990.76,9525.32
 ,12/14/2025,Bill,B2512-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,315.52,9840.84
-,12/31/2025,Bill Payment (Check),1105,Lena Ortiz Illustration,,Pay B2512-0,Checking,-3249.71,6591.13
-,01/01/2026,Bill Payment (Check),1106,PrintWorks Co.,,Pay B2512-1,Checking,-694.55,5896.58
-,01/03/2026,Bill Payment (Check),1108,PrintWorks Co.,,Pay B2512-3,Checking,-2990.76,2905.82
+,12/17/2025,Bill Payment (Check),1106,PrintWorks Co.,,Pay B2512-1,Checking,-694.55,9146.29
+,12/19/2025,Bill Payment (Check),1108,PrintWorks Co.,,Pay B2512-3,Checking,-2990.76,6155.53
+,12/31/2025,Bill Payment (Check),1105,Lena Ortiz Illustration,,Pay B2512-0,Checking,-3249.71,2905.82
 ,01/04/2026,Bill Payment (Check),1109,Lena Ortiz Illustration,,Pay B2512-4,Checking,-315.52,2590.30
 ,01/10/2026,Bill,B2601-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2932.90,5523.20
 ,01/11/2026,Bill Payment (Check),1107,Dev Studio Partners,,Pay B2512-2,Checking,-2590.30,2932.90
@@ -873,9 +875,9 @@ Accounts Payable (A/P)
 ,01/12/2026,Bill,B2601-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,3182.09,6694.19
 ,01/13/2026,Bill,B2601-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2793.93,9488.12
 ,01/14/2026,Bill,B2601-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,330.42,9818.54
-,01/31/2026,Bill Payment (Check),1111,Lena Ortiz Illustration,,Pay B2601-0,Checking,-2932.90,6885.64
-,02/01/2026,Bill Payment (Check),1112,PrintWorks Co.,,Pay B2601-1,Checking,-579.20,6306.44
-,02/03/2026,Bill Payment (Check),1114,PrintWorks Co.,,Pay B2601-3,Checking,-2793.93,3512.51
+,01/17/2026,Bill Payment (Check),1112,PrintWorks Co.,,Pay B2601-1,Checking,-579.20,9239.34
+,01/19/2026,Bill Payment (Check),1114,PrintWorks Co.,,Pay B2601-3,Checking,-2793.93,6445.41
+,01/31/2026,Bill Payment (Check),1111,Lena Ortiz Illustration,,Pay B2601-0,Checking,-2932.90,3512.51
 ,02/04/2026,Bill Payment (Check),1115,Lena Ortiz Illustration,,Pay B2601-4,Checking,-330.42,3182.09
 ,02/10/2026,Bill,B2602-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3532.41,6714.50
 ,02/11/2026,Bill Payment (Check),1113,Dev Studio Partners,,Pay B2601-2,Checking,-3182.09,3532.41
@@ -883,9 +885,9 @@ Accounts Payable (A/P)
 ,02/12/2026,Bill,B2602-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Subcontractors,2917.48,7240.90
 ,02/13/2026,Bill,B2602-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2893.49,10134.39
 ,02/14/2026,Bill,B2602-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,288.31,10422.70
-,03/03/2026,Bill Payment (Check),1117,Lena Ortiz Illustration,,Pay B2602-0,Checking,-3532.41,6890.29
-,03/04/2026,Bill Payment (Check),1118,PrintWorks Co.,,Pay B2602-1,Checking,-791.01,6099.28
-,03/06/2026,Bill Payment (Check),1120,PrintWorks Co.,,Pay B2602-3,Checking,-2893.49,3205.79
+,02/17/2026,Bill Payment (Check),1118,PrintWorks Co.,,Pay B2602-1,Checking,-791.01,9631.69
+,02/19/2026,Bill Payment (Check),1120,PrintWorks Co.,,Pay B2602-3,Checking,-2893.49,6738.20
+,03/03/2026,Bill Payment (Check),1117,Lena Ortiz Illustration,,Pay B2602-0,Checking,-3532.41,3205.79
 ,03/07/2026,Bill Payment (Check),1121,Lena Ortiz Illustration,,Pay B2602-4,Checking,-288.31,2917.48
 ,03/10/2026,Bill,B2603-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2991.83,5909.31
 ,03/11/2026,Bill,B2603-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,581.08,6490.39
@@ -895,9 +897,9 @@ Accounts Payable (A/P)
 ,03/14/2026,Bill Payment (Check),1119,Dev Studio Partners,,Pay B2602-2,Checking,-2917.48,9630.51
 ,03/14/2026,Bill,B2603-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,255.49,9886.00
 ,03/15/2026,Bill,B2603-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4510.53,14396.53
-,03/31/2026,Bill Payment (Check),1123,Lena Ortiz Illustration,,Pay B2603-0,Checking,-2991.83,11404.70
-,04/01/2026,Bill Payment (Check),1124,PrintWorks Co.,,Pay B2603-1,Checking,-581.08,10823.62
-,04/03/2026,Bill Payment (Check),1126,PrintWorks Co.,,Pay B2603-3,Checking,-2644.77,8178.85
+,03/17/2026,Bill Payment (Check),1124,PrintWorks Co.,,Pay B2603-1,Checking,-581.08,13815.45
+,03/19/2026,Bill Payment (Check),1126,PrintWorks Co.,,Pay B2603-3,Checking,-2644.77,11170.68
+,03/31/2026,Bill Payment (Check),1123,Lena Ortiz Illustration,,Pay B2603-0,Checking,-2991.83,8178.85
 ,04/04/2026,Bill Payment (Check),1127,Lena Ortiz Illustration,,Pay B2603-4,Checking,-255.49,7923.36
 ,04/05/2026,Bill Payment (Check),1128,Metro Sign Fabricators,,Pay B2603-5,Checking,-4510.53,3412.83
 ,04/10/2026,Bill,B2604-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3067.91,6480.74
@@ -907,9 +909,9 @@ Accounts Payable (A/P)
 ,04/13/2026,Bill,B2604-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2603.97,9202.60
 ,04/14/2026,Bill,B2604-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,279.26,9481.86
 ,04/15/2026,Bill,B2604-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4936.82,14418.68
-,05/01/2026,Bill Payment (Check),1130,Lena Ortiz Illustration,,Pay B2604-0,Checking,-3067.91,11350.77
-,05/02/2026,Bill Payment (Check),1131,PrintWorks Co.,,Pay B2604-1,Checking,-579.12,10771.65
-,05/04/2026,Bill Payment (Check),1133,PrintWorks Co.,,Pay B2604-3,Checking,-2603.97,8167.68
+,04/17/2026,Bill Payment (Check),1131,PrintWorks Co.,,Pay B2604-1,Checking,-579.12,13839.56
+,04/19/2026,Bill Payment (Check),1133,PrintWorks Co.,,Pay B2604-3,Checking,-2603.97,11235.59
+,05/01/2026,Bill Payment (Check),1130,Lena Ortiz Illustration,,Pay B2604-0,Checking,-3067.91,8167.68
 ,05/05/2026,Bill Payment (Check),1134,Lena Ortiz Illustration,,Pay B2604-4,Checking,-279.26,7888.42
 ,05/06/2026,Bill Payment (Check),1135,Metro Sign Fabricators,,Pay B2604-5,Checking,-4936.82,2951.60
 ,05/10/2026,Bill,B2605-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2869.76,5821.36
@@ -919,9 +921,9 @@ Accounts Payable (A/P)
 ,05/13/2026,Bill,B2605-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2406.40,9131.28
 ,05/14/2026,Bill,B2605-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,248.72,9380.00
 ,05/15/2026,Bill,B2605-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4006.28,13386.28
-,05/31/2026,Bill Payment (Check),1137,Lena Ortiz Illustration,,Pay B2605-0,Checking,-2869.76,10516.52
-,06/01/2026,Bill Payment (Check),1138,PrintWorks Co.,,Pay B2605-1,Checking,-692.88,9823.64
-,06/03/2026,Bill Payment (Check),1140,PrintWorks Co.,,Pay B2605-3,Checking,-2406.40,7417.24
+,05/17/2026,Bill Payment (Check),1138,PrintWorks Co.,,Pay B2605-1,Checking,-692.88,12693.40
+,05/19/2026,Bill Payment (Check),1140,PrintWorks Co.,,Pay B2605-3,Checking,-2406.40,10287.00
+,05/31/2026,Bill Payment (Check),1137,Lena Ortiz Illustration,,Pay B2605-0,Checking,-2869.76,7417.24
 ,06/04/2026,Bill Payment (Check),1141,Lena Ortiz Illustration,,Pay B2605-4,Checking,-248.72,7168.52
 ,06/05/2026,Bill Payment (Check),1142,Metro Sign Fabricators,,Pay B2605-5,Checking,-4006.28,3162.24
 ,06/10/2026,Bill,B2606-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,3231.46,6393.70
@@ -931,7 +933,9 @@ Accounts Payable (A/P)
 ,06/13/2026,Bill,B2606-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Job Materials & Printing,2583.41,9697.00
 ,06/14/2026,Bill,B2606-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,324.54,10021.54
 ,06/15/2026,Bill,B2606-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4235.52,14257.06
-Total for Accounts Payable (A/P),,,,,,,,"$14,257.06",
+,06/17/2026,Bill Payment (Check),1144,PrintWorks Co.,,Pay B2606-1,Checking,-610.46,13646.60
+,06/19/2026,Bill Payment (Check),1145,PrintWorks Co.,,Pay B2606-3,Checking,-2583.41,11063.19
+Total for Accounts Payable (A/P),,,,,,,,"$11,063.19",
 Design Services Income
 ,01/03/2025,Invoice,2001,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jan services,Accounts Receivable (A/R),10035.94,10035.94
 ,01/04/2025,Invoice,2002,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jan services,Accounts Receivable (A/R),4179.86,14215.80
@@ -1036,7 +1040,7 @@ Advertising & Marketing
 ,05/06/2026,Sales Receipt,1009,Walk-in client,,Logo consult,Checking,450.00,450.00
 Total for Advertising & Marketing,,,,,,,,"$450.00",
 Ask My Accountant
-,06/11/2026,Check,1150,R. Patel,,Check - no memo,Checking,750.00,750.00
+,06/11/2026,Check,1152,R. Patel,,Check - no memo,Checking,750.00,750.00
 Total for Ask My Accountant,,,,,,,,"$750.00",
 Bank Fees
 ,03/30/2026,Transfer,,,,Transfer to savings,Checking,2500.00,2500.00
@@ -1129,11 +1133,11 @@ Office Supplies
 ,06/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),104.97,1791.13
 Total for Office Supplies,,,,,,,,"$1,791.13",
 Owner's Draw
-,03/28/2025,Check,1145,Jordan Pike,,Owner draw,Checking,5000.00,5000.00
-,06/28/2025,Check,1146,Jordan Pike,,Owner draw,Checking,6000.00,11000.00
-,09/28/2025,Check,1147,Jordan Pike,,Owner draw,Checking,7000.00,18000.00
-,12/28/2025,Check,1148,Jordan Pike,,Owner draw,Checking,11000.00,29000.00
-,03/28/2026,Check,1149,Jordan Pike,,Owner draw,Checking,3000.00,32000.00
+,03/28/2025,Check,1147,Jordan Pike,,Owner draw,Checking,5000.00,5000.00
+,06/28/2025,Check,1148,Jordan Pike,,Owner draw,Checking,6000.00,11000.00
+,09/28/2025,Check,1149,Jordan Pike,,Owner draw,Checking,7000.00,18000.00
+,12/28/2025,Check,1150,Jordan Pike,,Owner draw,Checking,11000.00,29000.00
+,03/28/2026,Check,1151,Jordan Pike,,Owner draw,Checking,3000.00,32000.00
 Total for Owner's Draw,,,,,,,,"$32,000.00",
 Payroll Expenses:Wages
 ,01/15/2025,Expense,,Gusto,,Payroll,Checking,9281.70,9281.70
@@ -1174,7 +1178,7 @@ Rent & Lease
 ,04/01/2026,Check,1136,Brightline Properties,,Studio rent,Checking,3200.00,48800.00
 ,04/02/2026,Expense,,Brightline Properties,,ONLINE PMT BRIGHTLINE PROP,Checking,3200.00,52000.00
 ,05/01/2026,Check,1143,Brightline Properties,,Studio rent,Checking,3200.00,55200.00
-,06/01/2026,Check,1144,Brightline Properties,,Studio rent,Checking,3200.00,58400.00
+,06/01/2026,Check,1146,Brightline Properties,,Studio rent,Checking,3200.00,58400.00
 Total for Rent & Lease,,,,,,,,"$58,400.00",
 Software & Subscriptions
 ,01/02/2025,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),79.99,79.99

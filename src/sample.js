@@ -74,7 +74,8 @@
         const acct = c.vendor === 'PrintWorks Co.' || c.vendor === 'Metro Sign Fabricators' ? 'Job Materials & Printing' : 'Subcontractors';
         const billNo = `B${String(y).slice(2)}${String(m).padStart(2, '0')}-${i}`;
         add({ date: d(k, 10 + i), type: 'Bill', num: billNo, name: c.vendor, customer: cust, memo: `${c.project} production`, pnl: acct, bs: 'Accounts Payable (A/P)', amount: sub });
-        const billPaid = after(k, 10 + i, c.vendor === 'Dev Studio Partners' ? 30 : 21);
+        // PrintWorks gets paid the week its bill arrives; everyone else on 21 or 30 days.
+        const billPaid = after(k, 10 + i, c.vendor === 'Dev Studio Partners' ? 30 : c.vendor === 'PrintWorks Co.' ? 6 : 21);
         if (billPaid) add({ date: billPaid, type: 'Bill Payment (Check)', num: String(num++), name: c.vendor, customer: '', memo: `Pay ${billNo}`, pnl: null, bs: BANK, bs2: 'Accounts Payable (A/P)', amount: sub });
       });
 
