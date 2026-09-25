@@ -2591,6 +2591,209 @@
   const pad = (s, n) => String(s).slice(0, n).padEnd(n);
   const padL = (s, n) => String(s).slice(0, n).padStart(n);
 
+  // ---------------------------------------------------------------- formatted (HTML) report
+
+  const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const RC = { ink: '#15201b', ink2: '#4b5751', muted: '#7f8a84', hair: '#dde2dd', accent: '#17614a', s1: '#2a78d6', s2: '#eb6834', neg: '#d03b3b', warn: '#b07800', good: '#006300', neutral: '#b9c0ba' };
+
+  // Round axis steps: 1, 2, 2.5 or 5 times a power of ten.
+  function niceTicks(lo, hi, count) {
+    const span = Math.max(1e-9, hi - lo);
+    const raw = span / Math.max(1, count);
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((x) => x >= raw);
+    const start = Math.floor(lo / step) * step;
+    const ticks = [];
+    for (let v = start; v <= hi + step * 0.5; v += step) ticks.push(Math.round(v * 100) / 100);
+    return ticks;
+  }
+  const kMoney = (n) => {
+    const a = Math.abs(n);
+    return `${n < 0 ? '-' : ''}$${a >= 1e6 ? `${(a / 1e6).toFixed(1)}M` : a >= 1e3 ? `${(a / 1e3).toFixed(a >= 1e4 ? 0 : 1)}k` : a.toFixed(0)}`;
+  };
+
+  // Grouped monthly bars: revenue and total costs.
+  function svgMonthly(months) {
+    const W = 680, H = 230, L = 52, R = 8, T = 12, B = 34;
+    const max = Math.max(1, ...months.map((m) => Math.max(m.revenue, m.variable + m.fixed)));
+    const ticks = niceTicks(0, max, 4);
+    const top = ticks[ticks.length - 1];
+    const y = (v) => T + (H - T - B) * (1 - v / top);
+    const band = (W - L - R) / months.length;
+    const bw = Math.min(16, band * 0.32);
+    let out = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Monthly revenue and costs">`;
+    for (const t of ticks) out += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="${RC.hair}" stroke-width="1"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end" font-size="10" fill="${RC.muted}">${kMoney(t)}</text>`;
+    months.forEach((m, i) => {
+      const cx = L + band * i + band / 2;
+      const cost = m.variable + m.fixed;
+      out += `<rect x="${cx - bw - 1}" y="${y(m.revenue)}" width="${bw}" height="${Math.max(0, y(0) - y(m.revenue))}" rx="2" fill="${RC.s1}"><title>${esc(m.label)} revenue ${esc(fmtWhole(m.revenue))}</title></rect>`;
+      out += `<rect x="${cx + 1}" y="${y(cost)}" width="${bw}" height="${Math.max(0, y(0) - y(cost))}" rx="2" fill="${RC.s2}"><title>${esc(m.label)} costs ${esc(fmtWhole(cost))}</title></rect>`;
+      if (i % Math.ceil(months.length / 12) === 0) out += `<text x="${cx}" y="${H - B + 16}" text-anchor="middle" font-size="10" fill="${RC.muted}">${esc(m.label)}</text>`;
+    });
+    out += `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="${RC.muted}" stroke-width="1"/></svg>`;
+    return out;
+  }
+
+  // Projected weekly cash with the cushion as a reference line.
+  function svgCash(cash, cushion) {
+    const W = 680, H = 210, L = 52, R = 12, T = 12, B = 30;
+    const pts = [{ label: 'Now', v: cash.startingCash }, ...cash.weeks.map((w) => ({ label: niceDate(w.start).replace(/, \d{4}$/, ''), v: w.ending }))];
+    const lo = Math.min(0, ...pts.map((p) => p.v), cushion || 0);
+    const hi = Math.max(1, ...pts.map((p) => p.v), cushion || 0);
+    const ticks = niceTicks(lo, hi, 4);
+    const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+    const y = (v) => T + (H - T - B) * (1 - (v - y0) / (y1 - y0 || 1));
+    const x = (i) => L + ((W - L - R) * i) / (pts.length - 1);
+    let out = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Projected cash by week">`;
+    for (const t of ticks) out += `<line x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}" stroke="${RC.hair}"/><text x="${L - 6}" y="${y(t) + 4}" text-anchor="end" font-size="10" fill="${RC.muted}">${kMoney(t)}</text>`;
+    if (cushion) out += `<line x1="${L}" x2="${W - R}" y1="${y(cushion)}" y2="${y(cushion)}" stroke="${RC.warn}" stroke-width="1.5"/><text x="${W - R}" y="${y(cushion) - 4}" text-anchor="end" font-size="10" fill="${RC.warn}">Cushion ${esc(kMoney(cushion))}</text>`;
+    const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+    out += `<path d="${path} L${x(pts.length - 1)},${y(Math.max(y0, 0))} L${x(0)},${y(Math.max(y0, 0))} Z" fill="${RC.s1}" fill-opacity="0.10"/><path d="${path}" fill="none" stroke="${RC.s1}" stroke-width="2"/>`;
+    pts.forEach((p, i) => {
+      const below = cushion && p.v < cushion;
+      out += `<circle cx="${x(i)}" cy="${y(p.v)}" r="${below ? 4 : 3}" fill="${below ? RC.neg : RC.s1}" stroke="#fff" stroke-width="1.5"><title>${esc(p.label)}: ${esc(fmtWhole(p.v))}</title></circle>`;
+      if (i % 2 === 0) out += `<text x="${x(i)}" y="${H - B + 16}" text-anchor="middle" font-size="10" fill="${RC.muted}">${esc(p.label)}</text>`;
+    });
+    return `${out}</svg>`;
+  }
+
+  function table(headers, rows, numericFrom) {
+    const nf = numericFrom == null ? 1 : numericFrom;
+    return `<table><thead><tr>${headers.map((h, i) => `<th${i >= nf ? ' class="n"' : ''}>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${i >= nf ? ' class="n"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+  }
+
+  function buildHtmlReport(result, opts) {
+    opts = opts || {};
+    const full = opts.version === 'full';
+    const client = opts.clientName || result.meta.company || 'Client';
+    const { audit, profit } = result;
+    const cash = result.cash, be = result.breakeven, tr = result.trend, cr = result.customers, vd = result.vendors, tx = result.tax, ln = result.loan, tie = result.tieOut;
+    const cushion = opts.cushion != null ? +opts.cushion : be ? Math.round(be.base.fixed / 1000) * 1000 : 0;
+    const today = new Date().toISOString().slice(0, 10);
+    const months = tr ? tr.months.filter((m) => !m.partial).slice(-12) : [];
+    const rev12 = months.reduce((t, m) => t + m.revenue, 0);
+    const ni12 = months.reduce((t, m) => t + m.netIncome, 0);
+    const revMetric = tr && tr.metrics.find((m) => m.key === 'revenue');
+    const revCmp = revMetric && (revMetric.yoy || revMetric.recent);
+    const openFlags = audit.open.uncategorized + audit.open.duplicates + audit.open.mismatches;
+    const steps = nextSteps(result, opts);
+    const questions = clientQuestions(result, {});
+    const qItems = questions.sections.flatMap((sec) => sec.items);
+
+    const tile = (label, value, sub, tone) => `<div class="tile ${tone || ''}"><div class="tl">${esc(label)}</div><div class="tv">${esc(value)}</div><div class="ts">${esc(sub)}</div></div>`;
+    const h = [];
+    h.push(`<header><div class="brand">${esc(opts.preparer || 'Financial review')}</div><h1>${esc(client)}</h1><div class="meta">${full ? 'Full financial review' : 'Financial summary'} · ${esc(result.period.start)} to ${esc(result.period.end)} · prepared ${esc(today)}</div></header>`);
+    h.push('<section class="tiles">');
+    h.push(tile(months.length >= 12 ? 'Revenue, last 12 months' : 'Revenue', fmtWhole(months.length ? rev12 : profit.totals.revenue), revCmp && revCmp.pct != null ? `${revCmp.pct >= 0 ? 'Up' : 'Down'} ${fmtPct(Math.abs(revCmp.pct))} ${revMetric.yoy ? 'on last year' : 'on the prior 3 months'}` : ''));
+    h.push(tile('Net income', fmtWhole(months.length ? ni12 : profit.totals.netIncome), `${fmtPct(months.length ? (rev12 ? ni12 / rev12 : null) : profit.totals.netMargin)} of revenue`, (months.length ? ni12 : profit.totals.netIncome) < 0 ? 'bad' : ''));
+    if (cash) h.push(tile('Cash today', fmtWhole(cash.startingCash), `Lowest in 13 weeks: ${fmtWhole(cash.lowest.ending)} (${cash.lowest.start})`, cash.lowest.ending < cushion ? 'warn' : ''));
+    h.push(tile('Books', openFlags ? `${openFlags} to review` : 'Clean', tie ? (tie.ties ? 'Ties to the QuickBooks P&L' : 'Does not yet tie to the QuickBooks P&L') : `Health score ${audit.healthScore}/100`, openFlags ? 'warn' : 'good'));
+    h.push('</section>');
+
+    if (months.length >= 3) {
+      h.push(`<section><h2>How the business is doing</h2><div class="legend"><span><i style="background:${RC.s1}"></i>Revenue</span><span><i style="background:${RC.s2}"></i>Costs</span></div>${svgMonthly(months)}`);
+      if (tr.insights.length) h.push(`<ul class="points">${tr.insights.slice(0, full ? 8 : 4).map((i) => `<li class="${i.tone}">${esc(i.text)}</li>`).join('')}</ul>`);
+      h.push('</section>');
+    }
+    if (cash) {
+      const below = cash.weeks.filter((w) => w.ending < cushion).length;
+      const line = cash.firstNegative ? `Cash is projected to run out in the week of ${cash.firstNegative.start} without action.`
+        : below ? `Cash dips below the ${fmtWhole(cushion)} cushion in ${below} of the next 13 weeks, lowest at ${fmtWhole(cash.lowest.ending)} in the week of ${cash.lowest.start}.`
+          : `Cash stays above the ${fmtWhole(cushion)} cushion for the next 13 weeks.`;
+      h.push(`<section class="keep"><h2>Cash over the next 13 weeks</h2>${svgCash(cash, cushion)}<p>${esc(line)} Expected in: ${esc(fmtWhole(cash.totals.inflow))}. Expected out: ${esc(fmtWhole(cash.totals.outflow))}.</p></section>`);
+    }
+    h.push(`<section><h2>What we recommend</h2><ol class="steps">${steps.slice(0, full ? 20 : 6).map((s) => `<li>${esc(s)}</li>`).join('')}</ol></section>`);
+    if (qItems.length) {
+      const shown = qItems.slice(0, full ? qItems.length : 8);
+      h.push(`<section><h2>What we need from you</h2><p>${qItems.length} question${qItems.length === 1 ? '' : 's'} so we can finish the books.${shown.length < qItems.length ? ` The first ${shown.length} are below; we will send the rest separately.` : ''}</p><ol class="steps">${shown.map((q) => `<li>${esc(q)}</li>`).join('')}</ol></section>`);
+    }
+
+    if (full) {
+      h.push('<h2 class="part">Details</h2>');
+      if (tie) h.push(`<section class="keep"><h3>Ties to QuickBooks (${esc(tie.period)})</h3>${table(['Line', 'QuickBooks', 'This review', 'Difference'], tie.lines.map((l) => [l.label, fmtMoney(l.quickbooks), fmtMoney(l.ledgerLens), l.ties ? 'Ties' : fmtMoney(l.diff)]))}</section>`);
+      h.push(`<section><h3>Profitability by customer</h3>${table(['Customer', 'Revenue', 'Direct cost', 'Gross margin', 'Net margin'], profit.groups.slice(0, 20).map((g) => [g.name, fmtWhole(g.revenue), fmtWhole(g.directCost), fmtPct(g.margin), fmtPct(g.netMargin)]))}</section>`);
+      if (cr) h.push(`<section><h3>Customer concentration (${esc(cr.windowLabel)})</h3><p>${esc(cr.top.name)} is ${esc(fmtPct(cr.top1Share))} of revenue; the top 3 are ${esc(fmtPct(cr.top3Share))} (${esc(cr.level.label.toLowerCase())}).</p>${table(['Customer', 'Share', 'Gross margin', 'Open A/R', 'Pays in', 'Flags'], cr.rows.slice(0, 12).map((r) => [r.name, fmtPct(r.share), fmtPct(r.margin), fmtWhole(r.openAR), r.days != null ? `${r.days}d` : '-', r.flags.map((f) => f.kind).join(', ')]))}</section>`);
+      if (be) h.push(`<section class="keep"><h3>Break-even</h3>${table(['Measure', 'Per month'], [['Average revenue', fmtWhole(be.base.revenue)], ['Variable costs', fmtWhole(be.base.variable)], ['Fixed costs', fmtWhole(be.base.fixed)], ['Break-even revenue', be.breakEvenRevenue != null ? fmtWhole(be.breakEvenRevenue) : 'n/a'], ['Margin of safety', fmtPct(be.marginOfSafety)]])}</section>`);
+      if (vd) {
+        h.push(`<section><h3>Largest vendors (${esc(vd.windowLabel)})</h3>${table(['Vendor', 'Per month', 'Share', 'Pays in', 'Type'], vd.rows.slice(0, 10).map((r) => [r.name, fmtWhole(r.monthly), fmtPct(r.share), r.days != null ? `${r.days}d` : '-', r.type]))}</section>`);
+        const yr = [...vd.tax].reverse().find((y2) => y2.full) || vd.tax[vd.tax.length - 1];
+        if (yr) h.push(`<section class="keep"><h3>1099 review, ${yr.year}</h3>${table(['Vendor', 'Check / transfer', 'Form', 'Status'], yr.vendors.filter((x) => x.status !== 'Card only').map((x) => [x.vendor, fmtWhole(x.bank), x.form, x.status]))}<p class="small">A screening list; a W-9 settles each case.</p></section>`);
+      }
+      if (result.subs && result.subs.list.length) h.push(`<section><h3>Software and subscriptions</h3>${table(['Vendor', 'Cadence', 'Per year', 'Flags'], result.subs.list.map((x) => [x.vendor, x.cadence, fmtWhole(x.annualized), x.flags.map((f) => f.kind).join(', ')]))}</section>`);
+      if (ln) h.push(`<section class="keep"><h3>Loan readiness</h3><p>Debt service coverage: <strong>${ln.dscr != null ? ln.dscr.toFixed(2) : 'no existing debt'}</strong> (${esc(fmtWhole(ln.cashAvailable))} available for ${esc(fmtWhole(ln.debtService))} of yearly loan payments). Largest new loan at ${ln.target.toFixed(2)}: ${esc(fmtWhole(ln.maxLoan))}.</p>${table(['Check', 'Status', 'Detail'], ln.checks.map((c) => [c.label, c.status === 'pass' ? 'Ready' : c.status === 'warn' ? 'Watch' : 'Fix first', c.detail]), 99)}</section>`);
+      if (tx) h.push(`<section class="keep"><h3>Tax set-aside, ${tx.year}</h3><p>Projected profit ${esc(fmtWhole(tx.projectedProfit))}; set aside ${esc(fmtWhole(tx.setAside))} at ${esc(fmtPct(tx.rate))} (${esc(fmtWhole(tx.paid))} paid so far).</p>${table(['Quarter', 'Due', 'Suggested payment'], tx.schedule.filter((q) => q.status === 'Upcoming').map((q) => [q.label, q.due, fmtWhole(q.amount)]), 2)}</section>`);
+      const bm = opts.benchmarks;
+      if (bm && bm.rows) h.push(`<section class="keep"><h3>Industry benchmarks: ${esc(bm.industry)}${bm.state ? `, ${esc(bm.state)}` : ''}</h3>${table(['Measure', 'Client', 'Peers', 'Read'], bm.rows.map((r) => [r.label, r.company == null ? '-' : r.kind === 'pct' ? fmtPct(r.company) : fmtWhole(r.company), r.peer == null ? '-' : r.kind === 'pct' ? fmtPct(r.peer) : fmtWhole(r.peer), r.read]))}<p class="small">Peer data: ${esc(bm.source)}${bm.periodRange ? `, ${esc(bm.periodRange)}` : ''}.</p></section>`);
+    }
+    h.push(`<footer>Figures come from the client's QuickBooks exports. Flags are leads for review, not confirmed errors. Tax and loan figures are planning estimates, not tax, legal or lending advice.</footer>`);
+
+    const css = `
+      @page { margin: 16mm 14mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fff; color: ${RC.ink}; font: 13px/1.5 -apple-system, "Segoe UI", system-ui, Roboto, sans-serif; }
+      main { max-width: 760px; margin: 0 auto; padding: 28px 20px 40px; }
+      header { border-bottom: 3px solid ${RC.accent}; padding-bottom: 12px; margin-bottom: 18px; }
+      .brand { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: ${RC.accent}; font-weight: 600; }
+      h1 { margin: 4px 0 2px; font-size: 26px; line-height: 1.2; }
+      .meta { color: ${RC.ink2}; font-size: 12px; }
+      h2 { font-size: 16px; margin: 22px 0 8px; }
+      h2.part { margin-top: 30px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: ${RC.ink2}; }
+      h3 { font-size: 14px; margin: 18px 0 6px; }
+      .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      .tile { border: 1px solid ${RC.hair}; border-radius: 8px; padding: 10px 12px; }
+      .tile.bad { border-color: ${RC.neg}; } .tile.warn { border-color: ${RC.warn}; } .tile.good { border-color: ${RC.good}; }
+      .tl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: ${RC.muted}; }
+      .tv { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .ts { font-size: 11.5px; color: ${RC.ink2}; }
+      .legend { display: flex; gap: 14px; font-size: 11.5px; color: ${RC.ink2}; margin-bottom: 4px; }
+      .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+      ul.points { padding-left: 18px; margin: 8px 0 0; } ul.points li { margin: 3px 0; }
+      ul.points li.bad::marker { color: ${RC.neg}; } ul.points li.good::marker { color: ${RC.good}; }
+      ol.steps { padding-left: 20px; margin: 6px 0; } ol.steps li { margin: 4px 0; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 6px; }
+      th { text-align: left; font-weight: 600; color: ${RC.ink2}; border-bottom: 1.5px solid ${RC.ink2}; padding: 5px 6px; font-size: 11px; }
+      td { border-bottom: 1px solid ${RC.hair}; padding: 5px 6px; vertical-align: top; }
+      th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .small { font-size: 11px; color: ${RC.muted}; }
+      section.keep, svg, tr { break-inside: avoid; }
+      footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 11px; color: ${RC.muted}; }
+    `;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(client)}: ${full ? 'financial review' : 'financial summary'}</title><style>${css}</style></head><body><main>${h.join('\n')}</main></body></html>`;
+  }
+
+  // Action items shared by the text and formatted reports; open (not cleared) flags only.
+  function nextSteps(result, opts) {
+    opts = opts || {};
+    const { audit, subs, profit } = result;
+    const cash = result.cash, be = result.breakeven, cr = result.customers, tr = result.trend;
+    const vd = result.vendors, tx = result.tax, ln = result.loan;
+    const steps = [];
+    if (audit.open.uncategorized) steps.push(`Provide receipts or context for the ${audit.open.uncategorized} uncategorized items so they can be coded.`);
+    if (audit.open.duplicates) steps.push(`Review the ${audit.open.duplicates} possible duplicate groups; we will void confirmed duplicates or request vendor refunds.`);
+    if (audit.open.mismatches) steps.push(`We will correct ${audit.open.mismatches} miscoded entries and set bank rules to keep vendor coding consistent.`);
+    if (subs.potentialSavings > 0) steps.push(`Review flagged subscriptions; cancelling overlaps and unused seats could save about ${fmtMoney(subs.potentialSavings)} a year.`);
+    if (cash && cash.firstNegative) steps.push(`Plan for a cash shortfall in the week of ${cash.firstNegative.start}: chase open invoices, delay discretionary spend, or line up credit now.`);
+    else if (cash && opts.cushion && cash.lowest.ending < opts.cushion) steps.push(`Cash drops to ${fmtMoney(cash.lowest.ending)} in the week of ${cash.lowest.start}; speed up collections from slow payers before then.`);
+    if (cash && cash.ar.doubtfulTotal) steps.push(`Follow up on ${fmtMoney(cash.ar.doubtfulTotal)} in invoices more than 90 days old.`);
+    if (be && be.marginOfSafety != null && be.marginOfSafety < 0.15) steps.push(`Revenue is only ${fmtPct(be.marginOfSafety)} above break-even; review pricing and fixed costs together.`);
+    if (cr && cr.top1Share >= 0.3) steps.push(`${cr.top.name} brings in ${fmtPct(cr.top1Share)} of revenue. Protect the relationship and build a pipeline so no single client can sink the year.`);
+    const lostC = tr ? tr.customerMovers.filter((c) => c.status === 'Lost') : [];
+    if (lostC.length) steps.push(`Reach out to ${lostC.map((c) => c.name).join(', ')}, who ${lostC.length === 1 ? 'has' : 'have'} not been billed in 3+ months.`);
+    const dsoM = tr && tr.metrics.find((m) => m.key === 'dso');
+    const dsoC = dsoM && (dsoM.yoy || dsoM.recent);
+    if (dsoC && dsoC.delta >= 10) steps.push(`Collections are slowing (${Math.round(dsoC.from)} to ${Math.round(dsoC.to)} days). Send invoices sooner, add reminders, or require deposits.`);
+    if (vd) {
+      for (const e of vd.earlyPay) steps.push(`Ask ${e.name} for 30-day terms; paying on day 30 instead of day ${e.days} keeps about ${fmtWhole(e.cashFreed)} more cash on hand.`);
+      const yr = [...vd.tax].reverse().find((y) => y.full);
+      if (yr && yr.reviewCount) steps.push(`Collect W-9s and prepare 1099s for ${yr.reviewCount} vendor${yr.reviewCount === 1 ? '' : 's'} paid ${fmtWhole(yr.threshold)} or more in ${yr.year}.`);
+    }
+    if (tx && tx.next && tx.next.amount > 0) steps.push(`Set aside about ${fmtWhole(tx.next.amount)} for the ${tx.next.label} estimated tax payment due ${tx.next.due}.`);
+    if (ln && ln.checks.some((c) => c.status === 'fail')) steps.push(`Before applying for financing, fix: ${ln.checks.filter((c) => c.status === 'fail').map((c) => c.label.toLowerCase()).join('; ')}.`);
+    const weak = profit.groups.filter((g) => g.netMargin != null && g.netMargin < 0.1 && g.revenue > 0);
+    if (weak.length) steps.push(`Discuss pricing on ${weak.length} low-margin ${opts.groupBy === 'project' ? 'project' : 'customer'}${weak.length > 1 ? 's' : ''}.`);
+    return steps;
+  }
+
   function buildReport(result, opts) {
     opts = opts || {};
     const { audit, profit, subs } = result;
@@ -2851,30 +3054,7 @@
 
     L.push('RECOMMENDED NEXT STEPS');
     L.push(thin);
-    const steps = [];
-    if (audit.uncategorized.length) steps.push(`Provide receipts or context for the ${audit.uncategorized.length} uncategorized items so they can be coded.`);
-    if (audit.duplicates.length) steps.push(`Review the ${audit.duplicates.length} possible duplicate groups; we will void confirmed duplicates or request vendor refunds.`);
-    if (audit.mismatches.length) steps.push(`We will correct ${audit.mismatches.length} miscoded entries and set bank rules to keep vendor coding consistent.`);
-    if (subs.potentialSavings > 0) steps.push(`Review flagged subscriptions; cancelling overlaps and unused seats could save about ${fmtMoney(subs.potentialSavings)} a year.`);
-    if (cash && cash.firstNegative) steps.push(`Plan for a cash shortfall in the week of ${cash.firstNegative.start}: chase open invoices, delay discretionary spend, or line up credit now.`);
-    else if (cash && opts.cushion && cash.lowest.ending < opts.cushion) steps.push(`Cash drops to ${fmtMoney(cash.lowest.ending)} in the week of ${cash.lowest.start}; speed up collections from slow payers before then.`);
-    if (cash && cash.ar.doubtfulTotal) steps.push(`Follow up on ${fmtMoney(cash.ar.doubtfulTotal)} in invoices more than 90 days old.`);
-    if (be && be.marginOfSafety != null && be.marginOfSafety < 0.15) steps.push(`Revenue is only ${fmtPct(be.marginOfSafety)} above break-even; review pricing and fixed costs together.`);
-    if (cr && cr.top1Share >= 0.3) steps.push(`${cr.top.name} brings in ${fmtPct(cr.top1Share)} of revenue. Protect the relationship and build a pipeline so no single client can sink the year.`);
-    const lostC = tr ? tr.customerMovers.filter((c) => c.status === 'Lost') : [];
-    if (lostC.length) steps.push(`Reach out to ${lostC.map((c) => c.name).join(', ')}, who ${lostC.length === 1 ? 'has' : 'have'} not been billed in 3+ months.`);
-    const dsoM = tr && tr.metrics.find((m) => m.key === 'dso');
-    const dsoC = dsoM && (dsoM.yoy || dsoM.recent);
-    if (dsoC && dsoC.delta >= 10) steps.push(`Collections are slowing (${Math.round(dsoC.from)} to ${Math.round(dsoC.to)} days). Send invoices sooner, add reminders, or require deposits.`);
-    if (vd) {
-      for (const e of vd.earlyPay) steps.push(`Ask ${e.name} for 30-day terms; paying on day 30 instead of day ${e.days} keeps about ${fmtWhole(e.cashFreed)} more cash on hand.`);
-      const yr = [...vd.tax].reverse().find((y) => y.full);
-      if (yr && yr.reviewCount) steps.push(`Collect W-9s and prepare 1099s for ${yr.reviewCount} vendor${yr.reviewCount === 1 ? '' : 's'} paid ${fmtWhole(yr.threshold)} or more in ${yr.year}.`);
-    }
-    if (tx && tx.next && tx.next.amount > 0) steps.push(`Set aside about ${fmtWhole(tx.next.amount)} for the ${tx.next.label} estimated tax payment due ${tx.next.due}.`);
-    if (ln && ln.checks.some((c) => c.status === 'fail')) steps.push(`Before applying for financing, fix: ${ln.checks.filter((c) => c.status === 'fail').map((c) => c.label.toLowerCase()).join('; ')}.`);
-    const weak = profit.groups.filter((g) => g.netMargin != null && g.netMargin < 0.1 && g.revenue > 0);
-    if (weak.length) steps.push(`Discuss pricing on ${weak.length} low-margin ${opts.groupBy === 'project' ? 'project' : 'customer'}${weak.length > 1 ? 's' : ''}.`);
+    const steps = nextSteps(result, opts);
     if (!steps.length) steps.push('No action items. The books look clean for this period.');
     steps.forEach((s, i) => L.push(`  ${i + 1}. ${s}`));
     L.push('');
@@ -2888,6 +3068,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, buildHtmlReport, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

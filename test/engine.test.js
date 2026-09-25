@@ -526,3 +526,24 @@ test('saved sample files match the generator', () => {
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-chart-of-accounts.csv'), 'utf8'), S.chartOfAccounts());
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-profit-and-loss.csv'), 'utf8'), S.profitAndLoss());
 });
+
+test('formatted report: owner and full versions, charts, escaping', () => {
+  const p = E.parseTransactions(S.build());
+  const r = E.analyze(p, { pnl: E.parseProfitAndLoss(S.profitAndLoss()) });
+  const owner = E.buildHtmlReport(r, { preparer: 'Test Firm', version: 'owner' });
+  const full = E.buildHtmlReport(r, { preparer: 'Test Firm', version: 'full' });
+  assert.ok(owner.startsWith('<!doctype html>') && owner.includes('</html>'));
+  for (const s of ['How the business is doing', 'Cash over the next 13 weeks', 'What we recommend', 'What we need from you']) assert.ok(owner.includes(s), s);
+  assert.equal((owner.match(/<svg /g) || []).length, 2, 'two charts');
+  assert.ok(!owner.includes('Profitability by customer'), 'owner summary leaves out the details');
+  for (const s of ['Ties to QuickBooks', 'Profitability by customer', 'Customer concentration', 'Break-even', '1099 review', 'Loan readiness', 'Tax set-aside']) assert.ok(full.includes(s), s);
+  assert.ok(!/https?:\/\//.test(owner.replace(/https?:\/\/[^"']*w3\.org[^"']*/g, '')), 'self-contained: no external resources');
+  // Names from the file are escaped.
+  const evil = E.analyze(E.parseTransactions(S.build().replace(/Harbor & Pine Design Co\./, '<script>alert(1)</script>')));
+  const doc = E.buildHtmlReport(evil, { version: 'full', clientName: '<img src=x onerror=alert(1)>' });
+  assert.ok(!doc.includes('<script>alert') && !doc.includes('<img src=x'));
+  assert.ok(doc.includes('&lt;img src=x'));
+  // Action items count only open flags.
+  const cleared = E.analyze(p, { reviewed: Object.fromEntries(r.audit.uncategorized.map((u) => [u.key, { status: 'ok' }])) });
+  assert.ok(!E.nextSteps(cleared).some((s) => /uncategorized items/.test(s)));
+});

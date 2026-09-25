@@ -1999,32 +1999,58 @@
     </div>`;
   }
 
+  // Shows a formatted report inside the drawer without letting its styles touch the page.
+  function ShadowPreview({ html: doc }) {
+    const hostRef = useRef(null);
+    useEffect(() => {
+      const host = hostRef.current;
+      if (!host) return;
+      const root = host.shadowRoot || host.attachShadow({ mode: 'open' });
+      const body = doc.replace(/^[\s\S]*<style>/, '<style>').replace(/<\/head><body>/, '').replace(/<\/body><\/html>$/, '').replace(/<meta[^>]*>|<title>[\s\S]*?<\/title>|<!doctype html><html[^>]*><head>/gi, '');
+      root.innerHTML = body.replace(/\bbody \{/, ':host { display: block; background: #fff; } .x-body {');
+    }, [doc]);
+    return html`<div class="report-shadow" ref=${hostRef}></div>`;
+  }
+
+  const REPORT_FORMATS = [
+    ['owner', 'Owner summary'],
+    ['full', 'Full review'],
+    ['text', 'Plain text'],
+  ];
+
   function ReportDrawer({ result, groupBy, cushion, benchmarks, onClose }) {
     const [clientName, setClientName] = useState(() => result.meta.company || '');
     const [preparer, setPreparer] = useState(() => safeStore.get('ll.preparer') || '');
+    const [format, setFormat] = useState(() => safeStore.get('ll.reportFormat') || 'owner');
     const [status, setStatus] = useState('');
     const preRef = useRef(null);
-    const report = useMemo(() => E.buildReport(result, { clientName, preparer, groupBy, cushion, benchmarks }), [result, clientName, preparer, groupBy, cushion, benchmarks]);
-    const filename = `${slug(clientName)}-books-review-${result.period.end}.txt`;
+    const opts = { clientName, preparer, groupBy, cushion, benchmarks };
+    const text = useMemo(() => E.buildReport(result, opts), [result, clientName, preparer, groupBy, cushion, benchmarks]);
+    const doc = useMemo(() => (format === 'text' ? '' : E.buildHtmlReport(result, { ...opts, version: format })), [result, clientName, preparer, groupBy, cushion, benchmarks, format]);
+    const base = `${slug(clientName)}-${format === 'full' ? 'financial-review' : format === 'owner' ? 'financial-summary' : 'books-review'}-${result.period.end}`;
 
     useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
+    useEffect(() => { safeStore.set('ll.reportFormat', format); setStatus(''); }, [format]);
     useEscape(onClose);
 
-    const download = async () => setStatus(await saveTextFile(filename, report));
-    const copy = async () => setStatus(await copyText(report, preRef.current));
+    const download = async () => setStatus(format === 'text' ? await saveTextFile(`${base}.txt`, text) : await saveTextFile(`${base}.html`, doc));
+    const copy = async () => setStatus(await copyText(text, preRef.current));
 
     return html`<div class="scrim" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="report-title">
-        <div class="drawer-head"><h2 id="report-title">Client summary report</h2><button class="btn" onClick=${onClose}>Close</button></div>
+      <aside class="drawer wide" role="dialog" aria-modal="true" aria-labelledby="report-title">
+        <div class="drawer-head"><h2 id="report-title">Client report</h2><button class="btn" onClick=${onClose}>Close</button></div>
         <div class="drawer-fields">
           <label class="field" for="client-name">Client name<input id="client-name" value=${clientName} onInput=${(e) => setClientName(e.target.value)} placeholder="Client business name" /></label>
           <label class="field" for="preparer">Prepared by<input id="preparer" value=${preparer} onInput=${(e) => setPreparer(e.target.value)} placeholder="Your name or firm" /></label>
+          <div class="field" style=${{ gridColumn: '1 / -1' }}><span>Format</span>
+            <div class="seg" role="group" aria-label="Report format">${REPORT_FORMATS.map(([k, l]) => html`<button key=${k} aria-pressed=${format === k} onClick=${() => setFormat(k)}>${l}</button>`)}</div>
+          </div>
         </div>
-        <pre class="report-pre" ref=${preRef}>${report}</pre>
+        ${format === 'text' ? html`<pre class="report-pre" ref=${preRef}>${text}</pre>` : html`<div class="report-frame"><${ShadowPreview} html=${doc} /></div>`}
         <div class="drawer-foot">
-          <button class="btn primary" onClick=${download}>${Icon.download}Download .txt</button>
-          <button class="btn" onClick=${copy}>${Icon.copy}Copy text</button>
-          <span class="status" role="status">${status}</span>
+          <button class="btn primary" onClick=${download}>${Icon.download}Download ${format === 'text' ? '.txt' : '.html'}</button>
+          ${format === 'text' && html`<button class="btn" onClick=${copy}>${Icon.copy}Copy text</button>`}
+          <span class="status" role="status">${status || (format === 'text' ? '' : 'Open the downloaded file in any browser and print it to PDF to send.')}</span>
         </div>
       </aside>
     </div>`;

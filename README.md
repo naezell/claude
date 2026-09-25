@@ -59,7 +59,14 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
 
-**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, vendors and 1099 review, benchmarks, loan readiness, tax set-aside, and recommended next steps. Download it as `.txt` or copy it.
+**Client report** comes in three formats:
+- **Owner summary**: one or two printed pages with the key numbers, a revenue and cost chart, the 13-week cash chart, what changed, what we recommend and what we need from the client.
+- **Full review**: the summary plus detail tables (tie-out, customer profitability and concentration, break-even, vendors and 1099 review, subscriptions, loan readiness, tax set-aside, benchmarks).
+- **Plain text**, as before.
+
+The formatted versions download as a single self-contained HTML file with built-in charts; open it in any browser and print to PDF to send.
+
+**Plain-text report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, vendors and 1099 review, benchmarks, loan readiness, tax set-aside, and recommended next steps. Download it as `.txt` or copy it.
 
 All processing happens in the browser. The file is never uploaded anywhere.
 
