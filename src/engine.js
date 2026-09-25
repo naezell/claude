@@ -1925,6 +1925,198 @@
     };
   }
 
+  // ---------------------------------------------------------------- loan readiness
+
+  const INTEREST_ACCOUNT = /interest/i;
+  const pmt = (principal, annualRate, years) => {
+    const n = Math.round(years * 12);
+    if (!principal || !n) return 0;
+    const r = annualRate / 12;
+    return r ? (principal * r) / (1 - Math.pow(1 + r, -n)) : principal / n;
+  };
+  const principalFor = (payment, annualRate, years) => {
+    const n = Math.round(years * 12);
+    if (payment <= 0 || !n) return 0;
+    const r = annualRate / 12;
+    return r ? payment * (1 - Math.pow(1 + r, -n)) / r : payment * n;
+  };
+
+  // Debt service coverage: cash the business generates before interest and non-cash
+  // charges, divided by what it pays on loans in a year. Lenders commonly want 1.25.
+  function loanReadiness(txns, accountClass, result, opts) {
+    opts = opts || {};
+    const be = result.breakeven;
+    if (!be) return null;
+    const range = dateRange(txns, result.meta);
+    const ttm = trailingYear(range.first, range.last);
+    const inWindow = (d) => (ttm ? d >= ttm.start && d <= ttm.end : true);
+    const scale = ttm ? 1 : 12 / Math.max(1, be.months);
+    const postings = toPostings(txns, accountClass).filter((p) => inWindow(p.t.date));
+    const interest = round2(postings.filter((p) => p.cls !== 'income' && INTEREST_ACCOUNT.test(p.category)).reduce((t, p) => t + p.value, 0) * scale);
+    const nonCash = round2(postings.filter((p) => p.cls !== 'income' && NON_CASH_ACCOUNT.test(p.category)).reduce((t, p) => t + p.value, 0) * scale);
+    let principal = 0;
+    for (const t of txns) {
+      if (t.amount >= 0 || !inWindow(t.date) || roleOf(accountClass, t.account) !== 'cash') continue;
+      if (roleOf(accountClass, t.split) === 'loan') principal += -t.amount;
+    }
+    principal = round2(principal * scale);
+    const netIncome = round2(be.profit * 12);
+    const addBacks = +opts.addBacks || 0;
+    const cashAvailable = round2(netIncome + interest + nonCash + addBacks);
+    const debtService = round2(principal + interest);
+    const dscr = debtService > 0 ? cashAvailable / debtService : null;
+    const target = opts.target || 1.25;
+
+    const rate = opts.rate != null ? opts.rate / 100 : 0.105;
+    const years = opts.years || 10;
+    const amount = +opts.amount || 0;
+    const newPayment = round2(pmt(amount, rate, years));
+    const proForma = debtService + newPayment * 12 > 0 ? cashAvailable / (debtService + newPayment * 12) : null;
+    const room = cashAvailable / target - debtService;
+    const maxLoan = room > 0 ? round2(principalFor(room / 12, rate, years)) : 0;
+
+    // Readiness checklist from what the rest of the analysis already knows.
+    const checks = [];
+    const add = (label, status, detail) => checks.push({ label, status, detail });
+    const today = opts.today ? new Date(opts.today) : new Date();
+    const age = Math.round((today - range.last) / DAY);
+    add('Financials are current', age <= 60 ? 'pass' : age <= 90 ? 'warn' : 'fail', `The export ends ${isoDate(range.last)}, ${Math.max(0, age)} days ago. Lenders expect statements within 60 to 90 days of applying.`);
+    const openFlags = result.audit.open.uncategorized + result.audit.open.duplicates;
+    add('Books are clean', openFlags === 0 ? 'pass' : openFlags <= 5 ? 'warn' : 'fail', openFlags ? `${result.audit.open.uncategorized} uncategorized items and ${result.audit.open.duplicates} possible duplicates are still open. Clean books make the numbers match the bank statements lenders will compare them to.` : 'No uncategorized items or open duplicates.');
+    add('Profitable over the last 12 months', netIncome > 0 ? 'pass' : 'fail', `Net income ${fmtWhole(netIncome)} (${fmtPct(be.profitMargin)} margin).`);
+    if (dscr != null) add(`Debt coverage of at least ${target.toFixed(2)}`, dscr >= target ? 'pass' : dscr >= 1.15 ? 'warn' : 'fail', `Current coverage is ${dscr.toFixed(2)}: ${fmtWhole(cashAvailable)} available for ${fmtWhole(debtService)} of yearly loan payments.`);
+    else add('Debt coverage', cashAvailable > 0 ? 'pass' : 'fail', `No loan payments found. ${fmtWhole(cashAvailable)} a year is available to cover new debt.`);
+    const rev = result.trend && result.trend.metrics.find((m) => m.key === 'revenue');
+    const revCmp = rev && (rev.yoy || rev.recent);
+    if (revCmp && revCmp.pct != null) add('Revenue is steady or growing', revCmp.pct >= -0.05 ? 'pass' : revCmp.pct >= -0.15 ? 'warn' : 'fail', `Recent revenue is ${revCmp.pct >= 0 ? 'up' : 'down'} ${fmtPct(Math.abs(revCmp.pct))} ${rev.yoy ? 'on a year ago' : 'on the prior 3 months'}.`);
+    const cr = result.customers;
+    if (cr && cr.top) add('No single customer dominates', cr.top1Share < 0.25 ? 'pass' : cr.top1Share < 0.4 ? 'warn' : 'fail', `${cr.top.name} is ${fmtPct(cr.top1Share)} of revenue. Lenders discount revenue that depends on one client.`);
+    const cash = result.cash;
+    if (cash) {
+      const months = be.base.fixed > 0 ? cash.startingCash / be.base.fixed : null;
+      if (months != null) add('Cash cushion', months >= 2 ? 'pass' : months >= 1 ? 'warn' : 'fail', `${fmtWhole(cash.startingCash)} in the bank covers ${months.toFixed(1)} months of fixed costs.`);
+      if (cash.ar.doubtfulTotal) add('Receivables are collectible', 'warn', `${fmtWhole(cash.ar.doubtfulTotal)} of invoices are over 90 days old; lenders exclude these from borrowing bases.`);
+    }
+    const draws = txns.filter((t) => t.amount < 0 && inWindow(t.date) && roleOf(accountClass, t.account) === 'cash' && roleOf(accountClass, t.split) === 'equity').reduce((s, t) => s - t.amount, 0) * scale;
+    if (draws > 0) {
+      const fits = draws <= Math.max(0, netIncome);
+      add('Owner draws fit within profit', fits ? 'pass' : 'warn', `The owner took ${fmtWhole(draws)} against ${fmtWhole(netIncome)} of net income.${fits ? '' : ' Draws above profit drain the cash lenders count on.'}`);
+    }
+
+    return {
+      windowLabel: ttm ? `${isoDate(ttm.start)} to ${isoDate(ttm.end)}` : `${isoDate(range.first)} to ${isoDate(range.last)} (annualized)`,
+      netIncome, interest, nonCash, addBacks, cashAvailable, principal, debtService, dscr, target,
+      draws: round2(draws),
+      proposal: { amount, rate: rate * 100, years, payment: newPayment, proForma },
+      maxLoan,
+      checks,
+      score: checks.filter((c) => c.status === 'pass').length,
+    };
+  }
+
+  // ---------------------------------------------------------------- tax set-aside & owner pay
+
+  const ENTITY = {
+    sole: { label: 'Sole proprietor or single-member LLC', rate: 30, note: 'Income tax plus self-employment tax on the profit.' },
+    partnership: { label: 'Partnership or multi-member LLC', rate: 30, note: 'Each partner owes income and self-employment tax on their share.' },
+    scorp: { label: 'S corporation', rate: 25, note: 'Income tax on the profit passed through; payroll taxes are paid through the owner\'s salary.' },
+    ccorp: { label: 'C corporation', rate: 25, note: '21% federal corporate tax plus state tax, paid by the company.' },
+  };
+  const TAX_ACCOUNT = /estimated tax|federal tax|state tax|income tax|\birs\b|tax payment/i;
+
+  // Quarterly estimated-tax due dates for a tax year (weekend and holiday shifts not applied).
+  const taxDueDates = (year) => [
+    { label: `Q1 ${year}`, date: new Date(Date.UTC(year, 3, 15)) },
+    { label: `Q2 ${year}`, date: new Date(Date.UTC(year, 5, 15)) },
+    { label: `Q3 ${year}`, date: new Date(Date.UTC(year, 8, 15)) },
+    { label: `Q4 ${year}`, date: new Date(Date.UTC(year + 1, 0, 15)) },
+  ];
+
+  function taxPlan(txns, accountClass, result, opts) {
+    opts = opts || {};
+    const tr = result.trend;
+    const be = result.breakeven;
+    if (!tr || !be) return null;
+    const entity = ENTITY[opts.entity] ? opts.entity : 'sole';
+    const rate = (opts.rate != null && opts.rate !== '' ? +opts.rate : ENTITY[entity].rate) / 100;
+    const lastMonth = tr.months[tr.months.length - 1];
+    const year = +lastMonth.key.slice(0, 4);
+    const ytdMonths = tr.months.filter((m) => m.key.startsWith(`${year}-`));
+    const ytdProfit = round2(ytdMonths.reduce((t, m) => t + m.netIncome, 0));
+    const remaining = 12 - ytdMonths.length;
+    const monthlyRunRate = be.profit;
+    const projectedProfit = round2(ytdProfit + monthlyRunRate * remaining);
+    const setAside = round2(Math.max(0, projectedProfit) * rate);
+
+    // Estimated payments already made from the business accounts, if coded somewhere recognizable.
+    let paidAuto = 0;
+    for (const t of txns) {
+      if (t.amount >= 0 || t.date.getUTCFullYear() !== year || roleOf(accountClass, t.account) !== 'cash') continue;
+      if (TAX_ACCOUNT.test(t.split) || TAX_ACCOUNT.test(t.memo) || /\birs\b|us treasury|franchise tax|department of revenue/i.test(t.name)) paidAuto += -t.amount;
+    }
+    paidAuto = round2(paidAuto);
+    const paid = opts.paid != null && opts.paid !== '' ? +opts.paid : paidAuto;
+
+    const today = opts.today ? new Date(opts.today) : new Date();
+    const asOf = result.cash ? new Date(`${result.cash.asOf}T00:00:00Z`) : new Date(`${result.period.end}T00:00:00Z`);
+    const dues = taxDueDates(year);
+    const upcoming = dues.filter((d) => d.date > asOf);
+    const owed = Math.max(0, setAside - paid);
+    const perQuarter = upcoming.length ? round2(owed / upcoming.length) : 0;
+    const schedule = dues.map((d) => {
+      const future = d.date > asOf;
+      let cashCheck = null;
+      if (future && result.cash) {
+        const w = result.cash.weeks.find((wk) => d.date >= new Date(`${wk.start}T00:00:00Z`) && d.date <= new Date(`${wk.end}T00:00:00Z`));
+        if (w) cashCheck = { week: w.start, ending: w.ending, after: round2(w.ending - perQuarter) };
+      }
+      return { label: d.label, due: isoDate(d.date), status: future ? 'Upcoming' : 'Past', amount: future ? perQuarter : null, cashCheck };
+    });
+    const next = schedule.find((s) => s.status === 'Upcoming') || null;
+
+    // S corporation: salary versus distributions.
+    let scorp = null;
+    if (entity === 'scorp') {
+      const salary = +opts.salary || 0;
+      const range = dateRange(txns, result.meta);
+      const ttm = trailingYear(range.first, range.last);
+      const draws = txns.filter((t) => t.amount < 0 && roleOf(accountClass, t.account) === 'cash' && roleOf(accountClass, t.split) === 'equity' && (!ttm || (t.date >= ttm.start && t.date <= ttm.end))).reduce((s, t) => s - t.amount, 0);
+      const share = salary + draws > 0 ? salary / (salary + draws) : null;
+      scorp = {
+        salary, distributions: round2(draws), share,
+        status: share == null ? 'n/a' : share >= 0.4 ? 'pass' : 'warn',
+        detail: share == null ? 'Enter the owner\'s yearly W-2 salary to compare it with distributions.'
+          : `Salary is ${fmtPct(share)} of the owner's total pay (${fmtWhole(salary)} salary, ${fmtWhole(draws)} distributions over 12 months). ${share >= 0.4 ? 'That is within the range many advisors treat as reasonable.' : 'Many advisors look for at least 40% to 60% as salary; a low salary draws IRS attention.'}`,
+      };
+    }
+
+    // Safe owner pay: the most cash that can leave over the forecast without breaching the cushion,
+    // after the tax payments that fall inside it.
+    let ownerPay = null;
+    if (result.cash) {
+      const cushion = +opts.cushion || 0;
+      const endDate = new Date(`${result.cash.weeks[result.cash.weeks.length - 1].end}T00:00:00Z`);
+      const taxInWindow = schedule.filter((s) => s.status === 'Upcoming' && new Date(`${s.due}T00:00:00Z`) <= endDate).reduce((t, s) => t + (s.amount || 0), 0);
+      // Any money taken now lowers every later week, so the limit is the lowest week.
+      let minHeadroom = Infinity;
+      let taxSoFar = 0;
+      for (const w of result.cash.weeks) {
+        const wEnd = new Date(`${w.end}T00:00:00Z`);
+        taxSoFar = schedule.filter((s) => s.status === 'Upcoming' && new Date(`${s.due}T00:00:00Z`) <= wEnd).reduce((t, s) => t + (s.amount || 0), 0);
+        minHeadroom = Math.min(minHeadroom, w.ending - taxSoFar - cushion);
+      }
+      const planned = (result.cash.balanceOut || []).filter((b) => b.label === 'Owner draws').reduce((t, b) => t + b.amount * b.next.length, 0);
+      ownerPay = { available: round2(Math.max(0, minHeadroom)), shortfall: minHeadroom < 0 ? round2(-minHeadroom) : 0, taxInWindow: round2(taxInWindow), plannedDraws: round2(planned), cushion };
+    }
+
+    return {
+      year, entity, entityLabel: ENTITY[entity].label, entityNote: ENTITY[entity].note, rate,
+      ytdMonths: ytdMonths.length, ytdProfit, monthlyRunRate, projectedProfit, setAside, paid, paidAuto, owed: round2(owed),
+      perQuarter, schedule, next, scorp, ownerPay,
+      daysToNext: next ? Math.round((new Date(`${next.due}T00:00:00Z`) - today) / DAY) : null,
+    };
+  }
+
   // ---------------------------------------------------------------- review state & client questions
 
   // Keys that survive re-exporting: no line numbers or ids, only what the entry is.
@@ -2097,7 +2289,7 @@
     const openMis = mismatches.filter((t) => !isCleared(t.review));
     const flaggedIds = new Set([...openUnc.map((t) => t.id), ...openDup.flatMap((g) => g.rows.map((r) => r.id)), ...openMis.map((t) => t.id)]);
     const healthScore = entries.length ? Math.max(0, Math.round(100 - (flaggedIds.size / entries.length) * 100 * 1.5)) : 100;
-    return {
+    const out = {
       meta: parsed.meta,
       period: (() => { const r = dateRange(txns, parsed.meta); return { start: isoDate(r.first), end: isoDate(r.last) }; })(),
       count: txns.length,
@@ -2120,6 +2312,11 @@
       customers,
       vendors,
     };
+    // The advisory views read the finished analysis (audit, forecast, trends, customers).
+    out.loan = loanReadiness(txns, accountClass, out, opts.loan);
+    const cushion = opts.cushion != null && opts.cushion !== '' && !isNaN(+opts.cushion) ? +opts.cushion : breakeven ? Math.round(breakeven.base.fixed / 1000) * 1000 : 0;
+    out.tax = taxPlan(txns, accountClass, out, Object.assign({ cushion }, opts.tax));
+    return out;
   }
 
   // ---------------------------------------------------------------- report
@@ -2354,6 +2551,43 @@
       L.push('');
     }
 
+    const ln = result.loan;
+    if (ln) {
+      L.push(`12. LOAN READINESS (${ln.windowLabel})`);
+      L.push(thin);
+      L.push(`Net income:                   ${fmtMoney(ln.netIncome)}`);
+      L.push(`+ Interest & non-cash costs:  ${fmtMoney(ln.interest + ln.nonCash)}${ln.addBacks ? `\n+ Owner add-backs:            ${fmtMoney(ln.addBacks)}` : ''}`);
+      L.push(`= Cash available for debt:    ${fmtMoney(ln.cashAvailable)} per year`);
+      L.push(`Existing loan payments:       ${fmtMoney(ln.debtService)} per year`);
+      L.push(`Debt service coverage:        ${ln.dscr != null ? ln.dscr.toFixed(2) : 'no existing debt'} (lenders typically want ${ln.target.toFixed(2)} or more)`);
+      L.push(`${pad(`Largest new loan at ${ln.target.toFixed(2)}:`, 30)}${fmtMoney(ln.maxLoan)} (${ln.proposal.years} years at ${ln.proposal.rate.toFixed(2)}%)`);
+      if (ln.proposal.amount) L.push(`${pad(`Proposed ${fmtWhole(ln.proposal.amount)} loan:`, 30)}${fmtMoney(ln.proposal.payment)}/month, coverage after: ${ln.proposal.proForma != null ? ln.proposal.proForma.toFixed(2) : 'n/a'}`);
+      L.push('');
+      L.push('  Lender readiness checklist:');
+      for (const c of ln.checks) L.push(`   [${c.status === 'pass' ? 'OK' : c.status === 'warn' ? '!!' : 'NO'}] ${c.label}: ${c.detail}`);
+      L.push('');
+    }
+
+    const tx = result.tax;
+    if (tx) {
+      L.push(`13. TAX SET-ASIDE & OWNER PAY (${tx.year})`);
+      L.push(thin);
+      L.push(`Business type:                ${tx.entityLabel}`);
+      L.push(`${pad(`Profit so far (${tx.ytdMonths} months):`, 30)}${fmtMoney(tx.ytdProfit)}`);
+      L.push(`Projected full-year profit:   ${fmtMoney(tx.projectedProfit)}`);
+      L.push(`${pad(`Set aside at ${fmtPct(tx.rate)}:`, 30)}${fmtMoney(tx.setAside)} (${fmtMoney(tx.paid)} paid so far)`);
+      for (const q of tx.schedule.filter((x) => x.status === 'Upcoming')) L.push(`  ${q.label} due ${q.due}: ${fmtMoney(q.amount)}${q.cashCheck ? ` (cash that week ${fmtMoney(q.cashCheck.ending)} before paying)` : ''}`);
+      if (tx.scorp) L.push(`  S corp salary check: ${tx.scorp.detail}`);
+      if (tx.ownerPay) {
+        L.push('');
+        L.push(tx.ownerPay.available > 0
+          ? `  The owner could take up to ${fmtMoney(tx.ownerPay.available)} more over the next 13 weeks and stay above the ${fmtMoney(tx.ownerPay.cushion)} cushion after tax payments${tx.ownerPay.plannedDraws ? ` (on top of ${fmtMoney(tx.ownerPay.plannedDraws)} of draws already expected)` : ''}.`
+          : `  No room for extra owner pay: after tax payments${tx.ownerPay.plannedDraws ? ` and ${fmtMoney(tx.ownerPay.plannedDraws)} of expected draws` : ''}, cash is projected ${fmtMoney(tx.ownerPay.shortfall)} short of the ${fmtMoney(tx.ownerPay.cushion)} cushion.`);
+      }
+      L.push('  Estimates for planning only; confirm the rate and payments with the client\'s tax preparer.');
+      L.push('');
+    }
+
     L.push('RECOMMENDED NEXT STEPS');
     L.push(thin);
     const steps = [];
@@ -2376,6 +2610,8 @@
       const yr = [...vd.tax].reverse().find((y) => y.full);
       if (yr && yr.reviewCount) steps.push(`Collect W-9s and prepare 1099s for ${yr.reviewCount} vendor${yr.reviewCount === 1 ? '' : 's'} paid ${fmtWhole(yr.threshold)} or more in ${yr.year}.`);
     }
+    if (tx && tx.next && tx.next.amount > 0) steps.push(`Set aside about ${fmtWhole(tx.next.amount)} for the ${tx.next.label} estimated tax payment due ${tx.next.due}.`);
+    if (ln && ln.checks.some((c) => c.status === 'fail')) steps.push(`Before applying for financing, fix: ${ln.checks.filter((c) => c.status === 'fail').map((c) => c.label.toLowerCase()).join('; ')}.`);
     const weak = profit.groups.filter((g) => g.netMargin != null && g.netMargin < 0.1 && g.revenue > 0);
     if (weak.length) steps.push(`Discuss pricing on ${weak.length} low-margin ${opts.groupBy === 'project' ? 'project' : 'customer'}${weak.length > 1 ? 's' : ''}.`);
     if (!steps.length) steps.push('No action items. The books look clean for this period.');
@@ -2391,6 +2627,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

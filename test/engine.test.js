@@ -424,3 +424,47 @@ test('client questions: one per open item, no repeats, cleared items left out', 
   assert.equal(none.count, 0);
   assert.ok(/no questions this time/.test(none.text));
 });
+
+test('loan readiness: coverage ratio, capacity and proposed loan', () => {
+  assert.ok(Math.abs(E.pmt(100000, 0.06, 10) - 1110.21) < 0.01, 'standard amortizing payment');
+  const r = E.analyze(E.parseTransactions(S.build()), { chart: E.parseChartOfAccounts(S.chartOfAccounts()), loan: { amount: 60000, rate: 10.5, years: 7, today: '2026-07-20' } });
+  const l = r.loan;
+  // Twelve monthly payments of $1,150 on the sample's SBA loan.
+  assert.ok(Math.abs(l.debtService - 13800) < 0.05);
+  assert.ok(Math.abs(l.principal + l.interest - l.debtService) < 0.02);
+  assert.ok(Math.abs(l.cashAvailable - (l.netIncome + l.interest + l.nonCash)) < 0.02);
+  assert.ok(Math.abs(l.dscr - l.cashAvailable / l.debtService) < 1e-9);
+  // The largest loan leaves coverage exactly at the target.
+  const withMax = l.cashAvailable / (l.debtService + E.pmt(l.maxLoan, 0.105, 7) * 12);
+  assert.ok(Math.abs(withMax - 1.25) < 0.001);
+  assert.ok(l.proposal.proForma < 1.25, 'a $60k loan is too much for this cash flow');
+  const status = Object.fromEntries(l.checks.map((c) => [c.label, c.status]));
+  assert.equal(status['Books are clean'], 'fail');
+  assert.equal(status['Financials are current'], 'pass');
+  assert.equal(status['No single customer dominates'], 'warn');
+});
+
+test('tax set-aside: projection, schedule, S corp check and safe owner pay', () => {
+  const r = E.analyze(E.parseTransactions(S.build()), { tax: { today: '2026-07-20' } });
+  const t = r.tax;
+  assert.equal(t.year, 2026);
+  assert.equal(t.ytdMonths, 6);
+  assert.ok(Math.abs(t.projectedProfit - (t.ytdProfit + t.monthlyRunRate * 6)) < 0.02);
+  assert.ok(Math.abs(t.setAside - t.projectedProfit * 0.3) < 0.02);
+  assert.deepEqual(t.schedule.map((q) => q.due), ['2026-04-15', '2026-06-15', '2026-09-15', '2027-01-15']);
+  assert.deepEqual(t.schedule.map((q) => q.status), ['Past', 'Past', 'Upcoming', 'Upcoming']);
+  assert.ok(Math.abs(t.perQuarter * 2 - t.owed) < 0.02);
+  assert.ok(t.next.cashCheck && t.next.cashCheck.week <= '2026-09-15');
+  // Entering payments already made lowers what is left.
+  const paid = E.analyze(E.parseTransactions(S.build()), { tax: { paid: 1000 } }).tax;
+  assert.ok(Math.abs(paid.owed - (t.setAside - 1000)) < 0.02);
+  // S corp: a small salary against large distributions is flagged.
+  const sc = E.analyze(E.parseTransactions(S.build()), { tax: { entity: 'scorp', salary: 10000 } }).tax.scorp;
+  assert.equal(sc.status, 'warn');
+  assert.equal(sc.distributions, 21000);
+  // Safe owner pay respects the cushion.
+  const low = E.analyze(E.parseTransactions(S.build()), { cushion: 0 }).tax.ownerPay;
+  const high = E.analyze(E.parseTransactions(S.build()), { cushion: 100000 }).tax.ownerPay;
+  assert.ok(low.available > 0 && low.shortfall === 0);
+  assert.ok(high.available === 0 && high.shortfall > 0);
+});

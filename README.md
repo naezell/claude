@@ -41,14 +41,21 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Chart of Accounts**: upload the client's Account List (Chart of Accounts) export alongside the transactions, in the same batch or with **Add export**. Its account types (Bank, Credit Card, Long Term Liabilities, Equity, Cost of Goods Sold, and so on) replace the guesses made from account names everywhere, and Account mapping shows where each type came from. Manual corrections still win.
 
+**Tax & lending**
+- **Loan readiness**: cash available for debt service over the last 12 months (net income plus interest and non-cash costs, plus any owner add-backs) against existing loan payments found in the export, giving the debt service coverage ratio lenders use (most want 1.25 or more). A loan calculator shows the monthly payment and coverage after a proposed loan, and the largest loan that keeps coverage at 1.25.
+- A **lender readiness checklist** built from the rest of the analysis: how current the books are, open uncategorized items and duplicates, profitability, coverage, revenue trend, customer concentration, cash cushion, old receivables, and owner draws against profit.
+- **Tax set-aside**: profit so far this year, a projection for the full year, the amount to hold back at an editable rate (defaults by business type), estimated payments found in the export or entered by hand, and the remaining quarterly payments (Apr 15, Jun 15, Sep 15, Jan 15) checked against the cash forecast. S corporations get a salary-versus-distributions check.
+- **Safe owner pay**: how much more the owner can take over the next 13 weeks while every week stays above the cash cushion after tax payments and expected draws.
+- These are planning estimates, not tax, legal or lending advice, and the page says so.
+
 **Monthly review workflow**
 - Mark each audit flag as *Not an issue*, *Fixed in QuickBooks* or *Asked the client*. Cleared flags drop out of the counts and health score and stay cleared when next month's export is loaded (flags are matched on what the entry is, not on row numbers).
 - **Client questions**: turns open uncategorized items, possible double charges, entries needing context, invoices over 90 days old and W-9 requests into a friendly, numbered question list ready to email. One click marks the included flags as asked.
-- **Saved clients**: account type corrections, reviewed flags, the cash cushion and benchmark industry and state are saved per client (matched on the company name in the report header) and restored when their file is loaded again. They are kept in this browser only; export a JSON backup to move them to another computer or share them with a colleague.
+- **Saved clients**: account type corrections, reviewed flags, the cash cushion, benchmark industry and state, and loan and tax inputs are saved per client (matched on the company name in the report header) and restored when their file is loaded again. They are kept in this browser only; export a JSON backup to move them to another computer or share them with a colleague.
 
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
 
-**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, vendors and 1099 review, benchmarks, and recommended next steps. Download it as `.txt` or copy it.
+**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, customer concentration, trends, vendors and 1099 review, benchmarks, loan readiness, tax set-aside, and recommended next steps. Download it as `.txt` or copy it.
 
 All processing happens in the browser. The file is never uploaded anywhere.
 
