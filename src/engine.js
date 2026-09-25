@@ -2256,6 +2256,115 @@
     };
   }
 
+  // ---------------------------------------------------------------- tie-out to the QuickBooks P&L
+
+  // Reads a QuickBooks "Profit and Loss" export: section totals and account lines from the
+  // Total column (the last number on each row). Returns null for anything else.
+  function parseProfitAndLoss(text) {
+    const rows = parseCSV(text);
+    const firstCells = rows.map((r) => lower(r.find((c) => norm(c)) || ''));
+    if (!firstCells.includes('net income') || rows.slice(0, 12).some((r) => r.map(lower).includes('date'))) return null;
+    const lastNum = (r) => { for (let i = r.length - 1; i >= 1; i--) { const n = parseAmount(r[i]); if (n != null) return n; } return null; };
+    const SECTIONS = [
+      [/^income$/, 'income'], [/^other income$/, 'otherIncome'], [/^cost of (goods sold|sales)$/, 'cogs'],
+      [/^expenses?$/, 'expenses'], [/^other expenses?$/, 'otherExpenses'],
+    ];
+    const totals = {};
+    const accounts = [];
+    let section = null;
+    const meta = [];
+    for (const r of rows) {
+      const cells = r.map(norm);
+      const label = cells.find((c) => c) || '';
+      const l = lower(label);
+      const val = lastNum(r);
+      if (!label) continue;
+      if (val == null) {
+        const sec = SECTIONS.find(([rx]) => rx.test(l));
+        if (sec) { section = sec[1]; continue; }
+        if (!section) meta.push(label);
+        continue;
+      }
+      if (/^total /.test(l)) {
+        const name = l.replace(/^total /, '');
+        const sec = SECTIONS.find(([rx]) => rx.test(name));
+        if (sec) { totals[sec[1]] = val; section = null; }
+        continue;
+      }
+      if (l === 'gross profit') { totals.grossProfit = val; continue; }
+      if (l === 'net operating income') { totals.netOperatingIncome = val; continue; }
+      if (l === 'net other income') { totals.netOtherIncome = val; continue; }
+      if (l === 'net income') { totals.netIncome = val; continue; }
+      if (section) accounts.push({ name: label.replace(/^\s+/, ''), section, amount: val });
+    }
+    if (totals.netIncome == null) return null;
+    return { totals, accounts, company: meta[0] || '', period: parsePeriod(meta.slice(1, 4)), basis: /cash basis/i.test(text) ? 'cash' : /accrual basis/i.test(text) ? 'accrual' : null };
+  }
+
+  // Compares Ledger Lens figures with the client's own P&L for the same dates.
+  function tieOut(txns, accountClass, meta, pnl) {
+    if (!pnl) return null;
+    const range = dateRange(txns, meta);
+    const start = pnl.period && pnl.period.start ? pnl.period.start : range.first;
+    const end = pnl.period && pnl.period.end ? pnl.period.end : range.last;
+    const postings = toPostings(txns, accountClass).filter((p) => p.t.date >= start && p.t.date <= end);
+    const byAccount = new Map();
+    let revenue = 0, cogs = 0, expenses = 0;
+    for (const p of postings) {
+      if (p.cls === 'income') revenue += p.value; else if (p.cls === 'cogs') cogs += p.value; else expenses += p.value;
+      const k = lower(p.category);
+      byAccount.set(k, (byAccount.get(k) || 0) + p.value);
+    }
+    const t = pnl.totals;
+    const qb = {
+      revenue: (t.income || 0) + (t.otherIncome || 0),
+      cogs: t.cogs || 0,
+      expenses: (t.expenses || 0) + (t.otherExpenses || 0),
+      netIncome: t.netIncome,
+    };
+    const ours = { revenue: round2(revenue), cogs: round2(cogs), expenses: round2(expenses), netIncome: round2(revenue - cogs - expenses) };
+    const line = (label, a, b) => ({ label, quickbooks: round2(a), ledgerLens: round2(b), diff: round2(b - a), ties: Math.abs(b - a) < 1 });
+    const lines = [
+      line('Income (incl. other income)', qb.revenue, ours.revenue),
+      line('Cost of goods sold', qb.cogs, ours.cogs),
+      line('Expenses (incl. other expenses)', qb.expenses, ours.expenses),
+      line('Net income', qb.netIncome, ours.netIncome),
+    ];
+    // Account by account, so a difference points at where it comes from.
+    const inExport = new Map();
+    for (const t of txns) for (const a of [t.account, t.split]) if (a) { inExport.set(lower(a), a); inExport.set(lower(leafAccount(a)), a); }
+    const seen = new Set();
+    const accounts = [];
+    for (const a of pnl.accounts) {
+      const key = lower(a.name);
+      const leafKey = lower(leafAccount(a.name));
+      const match = byAccount.has(key) ? key : [...byAccount.keys()].find((k) => lower(leafAccount(k)) === leafKey);
+      const oursAmt = match ? byAccount.get(match) : 0;
+      if (match) seen.add(match);
+      const diff = round2(oursAmt - a.amount);
+      if (Math.abs(diff) >= 1) {
+        const exported = inExport.get(key) || inExport.get(leafKey);
+        const cls = exported ? classOf(accountClass, exported) : null;
+        accounts.push({
+          name: a.name, quickbooks: a.amount, ledgerLens: round2(oursAmt), diff,
+          hint: !exported ? 'Not in the Transaction Detail export. Check the report filters and date range.'
+            : cls === 'balance' ? 'Treated as balance sheet here. Set it to the right P&L type in Account mapping.'
+              : 'Amounts differ. Look for entries outside the date range or edited after export.',
+        });
+      }
+    }
+    for (const [k, v] of byAccount) {
+      if (seen.has(k) || Math.abs(v) < 1) continue;
+      accounts.push({ name: postings.find((p) => lower(p.category) === k).category, quickbooks: 0, ledgerLens: round2(v), diff: round2(v), hint: 'Counted as P&L here but not on the QuickBooks P&L. It may be a balance sheet account; check Account mapping.' });
+    }
+    const ties = lines.every((l) => l.ties) && accounts.length === 0;
+    return {
+      ties, lines, accounts: accounts.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff)),
+      period: `${isoDate(start)} to ${isoDate(end)}`, basis: pnl.basis,
+      companyMatches: !pnl.company || !meta.company || lower(pnl.company) === lower(meta.company),
+    };
+  }
+
   // ---------------------------------------------------------------- review state & client questions
 
   // Keys that survive re-exporting: no line numbers or ids, only what the entry is.
@@ -2462,6 +2571,7 @@
       customers,
       vendors,
     };
+    out.tieOut = tieOut(txns, accountClass, parsed.meta, opts.pnl);
     // The advisory views read the finished analysis (audit, forecast, trends, customers).
     out.loan = loanReadiness(txns, accountClass, out, opts.loan);
     const cushion = opts.cushion != null && opts.cushion !== '' && !isNaN(+opts.cushion) ? +opts.cushion : breakeven ? Math.round(breakeven.base.fixed / 1000) * 1000 : 0;
@@ -2499,6 +2609,7 @@
     L.push('');
     L.push('EXECUTIVE SUMMARY');
     L.push(thin);
+    if (result.tieOut) L.push(`Ties to QuickBooks P&L:      ${result.tieOut.ties ? `Yes (${result.tieOut.period})` : `No: ${result.tieOut.lines.filter((l) => !l.ties).map((l) => `${l.label} off by ${fmtMoney(l.diff)}`).concat(result.tieOut.accounts.length ? [`${result.tieOut.accounts.length} account difference(s)`] : []).join('; ')}`}`);
     L.push(`Books health score:          ${audit.healthScore}/100`);
     L.push(`Uncategorized transactions:  ${audit.open.uncategorized} (${fmtMoney(audit.uncategorizedOpenTotal)})`);
     L.push(`Potential duplicate groups:  ${audit.open.duplicates} (${fmtMoney(audit.duplicateOpenExposure)} at risk)`);
@@ -2777,6 +2888,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

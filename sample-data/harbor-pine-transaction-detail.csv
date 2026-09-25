@@ -1043,39 +1043,39 @@ Design Services Income
 ,02/05/2026,Invoice,2067,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Feb services,Accounts Receivable (A/R),6016.64,367767.61
 ,02/06/2026,Invoice,2068,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Feb services,Accounts Receivable (A/R),2804.35,370571.96
 ,02/07/2026,Invoice,2069,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Feb services,Accounts Receivable (A/R),2400.00,372971.96
-,02/14/2026,Expense,,Staples,,Printer toner,Chase Ink Card (4417),94.12,373066.08
-,03/03/2026,Invoice,2070,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Mar services,Accounts Receivable (A/R),11789.26,384855.34
-,03/04/2026,Invoice,2071,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Mar services,Accounts Receivable (A/R),3359.68,388215.02
-,03/05/2026,Invoice,2072,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Mar services,Accounts Receivable (A/R),5794.48,394009.50
-,03/06/2026,Invoice,2073,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Mar services,Accounts Receivable (A/R),2871.83,396881.33
-,03/07/2026,Invoice,2074,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Mar services,Accounts Receivable (A/R),2400.00,399281.33
-,03/08/2026,Invoice,2075,Harborview Hotel,Harborview Hotel:Signage,Signage - Mar services,Accounts Receivable (A/R),7312.09,406593.42
-,04/03/2026,Invoice,2076,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Apr services,Accounts Receivable (A/R),12083.01,418676.43
-,04/04/2026,Invoice,2077,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Apr services,Accounts Receivable (A/R),3289.30,421965.73
-,04/05/2026,Invoice,2078,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Apr services,Accounts Receivable (A/R),5714.91,427680.64
-,04/06/2026,Invoice,2079,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Apr services,Accounts Receivable (A/R),2603.98,430284.62
-,04/07/2026,Invoice,2080,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Apr services,Accounts Receivable (A/R),2400.00,432684.62
-,04/08/2026,Invoice,2081,Harborview Hotel,Harborview Hotel:Signage,Signage - Apr services,Accounts Receivable (A/R),8285.03,440969.65
-,05/03/2026,Invoice,2082,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - May services,Accounts Receivable (A/R),10607.34,451576.99
-,05/04/2026,Invoice,2083,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - May services,Accounts Receivable (A/R),3637.85,455214.84
-,05/05/2026,Invoice,2084,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - May services,Accounts Receivable (A/R),5340.75,460555.59
-,05/06/2026,Invoice,2085,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - May services,Accounts Receivable (A/R),3058.12,463613.71
-,05/07/2026,Invoice,2086,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - May services,Accounts Receivable (A/R),2400.00,466013.71
-,05/08/2026,Invoice,2087,Harborview Hotel,Harborview Hotel:Signage,Signage - May services,Accounts Receivable (A/R),8498.94,474512.65
-,06/03/2026,Invoice,2088,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jun services,Accounts Receivable (A/R),11712.69,486225.34
-,06/04/2026,Invoice,2089,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jun services,Accounts Receivable (A/R),3278.99,489504.33
-,06/05/2026,Invoice,2090,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Jun services,Accounts Receivable (A/R),5429.05,494933.38
-,06/06/2026,Invoice,2091,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Jun services,Accounts Receivable (A/R),2672.60,497605.98
-,06/07/2026,Invoice,2092,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Jun services,Accounts Receivable (A/R),2400.00,500005.98
-,06/08/2026,Invoice,2093,Harborview Hotel,Harborview Hotel:Signage,Signage - Jun services,Accounts Receivable (A/R),7317.75,507323.73
-Total for Design Services Income,,,,,,,,"$507,323.73",
+,02/14/2026,Expense,,Staples,,Printer toner,Chase Ink Card (4417),-94.12,372877.84
+,03/03/2026,Invoice,2070,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Mar services,Accounts Receivable (A/R),11789.26,384667.10
+,03/04/2026,Invoice,2071,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Mar services,Accounts Receivable (A/R),3359.68,388026.78
+,03/05/2026,Invoice,2072,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Mar services,Accounts Receivable (A/R),5794.48,393821.26
+,03/06/2026,Invoice,2073,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Mar services,Accounts Receivable (A/R),2871.83,396693.09
+,03/07/2026,Invoice,2074,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Mar services,Accounts Receivable (A/R),2400.00,399093.09
+,03/08/2026,Invoice,2075,Harborview Hotel,Harborview Hotel:Signage,Signage - Mar services,Accounts Receivable (A/R),7312.09,406405.18
+,04/03/2026,Invoice,2076,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Apr services,Accounts Receivable (A/R),12083.01,418488.19
+,04/04/2026,Invoice,2077,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Apr services,Accounts Receivable (A/R),3289.30,421777.49
+,04/05/2026,Invoice,2078,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Apr services,Accounts Receivable (A/R),5714.91,427492.40
+,04/06/2026,Invoice,2079,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Apr services,Accounts Receivable (A/R),2603.98,430096.38
+,04/07/2026,Invoice,2080,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Apr services,Accounts Receivable (A/R),2400.00,432496.38
+,04/08/2026,Invoice,2081,Harborview Hotel,Harborview Hotel:Signage,Signage - Apr services,Accounts Receivable (A/R),8285.03,440781.41
+,05/03/2026,Invoice,2082,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - May services,Accounts Receivable (A/R),10607.34,451388.75
+,05/04/2026,Invoice,2083,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - May services,Accounts Receivable (A/R),3637.85,455026.60
+,05/05/2026,Invoice,2084,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - May services,Accounts Receivable (A/R),5340.75,460367.35
+,05/06/2026,Invoice,2085,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - May services,Accounts Receivable (A/R),3058.12,463425.47
+,05/07/2026,Invoice,2086,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - May services,Accounts Receivable (A/R),2400.00,465825.47
+,05/08/2026,Invoice,2087,Harborview Hotel,Harborview Hotel:Signage,Signage - May services,Accounts Receivable (A/R),8498.94,474324.41
+,06/03/2026,Invoice,2088,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jun services,Accounts Receivable (A/R),11712.69,486037.10
+,06/04/2026,Invoice,2089,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jun services,Accounts Receivable (A/R),3278.99,489316.09
+,06/05/2026,Invoice,2090,Cedar Ridge Dental,Cedar Ridge Dental:Website Build,Website Build - Jun services,Accounts Receivable (A/R),5429.05,494745.14
+,06/06/2026,Invoice,2091,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Jun services,Accounts Receivable (A/R),2672.60,497417.74
+,06/07/2026,Invoice,2092,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Jun services,Accounts Receivable (A/R),2400.00,499817.74
+,06/08/2026,Invoice,2093,Harborview Hotel,Harborview Hotel:Signage,Signage - Jun services,Accounts Receivable (A/R),7317.75,507135.49
+Total for Design Services Income,,,,,,,,"$507,135.49",
 Uncategorized Income
 ,03/27/2026,Deposit,,,,Mobile deposit,Checking,1850.00,1850.00
 ,05/29/2026,Deposit,,Stripe,,STRIPE TRANSFER,Checking,642.30,2492.30
 Total for Uncategorized Income,,,,,,,,"$2,492.30",
 Advertising & Marketing
-,05/06/2026,Sales Receipt,1009,Walk-in client,,Logo consult,Checking,450.00,450.00
-Total for Advertising & Marketing,,,,,,,,"$450.00",
+,05/06/2026,Sales Receipt,1009,Walk-in client,,Logo consult,Checking,-450.00,-450.00
+Total for Advertising & Marketing,,,,,,,,"$-450.00",
 Ask My Accountant
 ,06/11/2026,Check,1170,R. Patel,,Check - no memo,Checking,750.00,750.00
 Total for Ask My Accountant,,,,,,,,"$750.00",

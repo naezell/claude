@@ -48,6 +48,10 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - **Safe owner pay**: how much more the owner can take over the next 13 weeks while every week stays above the cash cushion after tax payments and expected draws.
 - These are planning estimates, not tax, legal or lending advice, and the page says so.
 
+**Ties to QuickBooks**: add the client's Profit and Loss export for the same dates and the audit tab compares income, cost of goods sold, expenses and net income, then account by account, with a hint for each difference (missing from the export, treated as balance sheet, or entries outside the date range). The client report states whether the numbers tie.
+
+**Payee names**: bank-feed spellings of the same business ("AMZN Mktp US*2K41", "Amazon.com") are merged for vendor spend, subscriptions, the 1099 review and the duplicate and coding checks. When the Name field is blank, a cleaned bank memo names the payee.
+
 **Monthly review workflow**
 - Mark each audit flag as *Not an issue*, *Fixed in QuickBooks* or *Asked the client*. Cleared flags drop out of the counts and health score and stay cleared when next month's export is loaded (flags are matched on what the entry is, not on row numbers).
 - **Client questions**: turns open uncategorized items, possible double charges, entries needing context, invoices over 90 days old and W-9 requests into a friendly, numbered question list ready to email. One click marks the included flags as asked.
@@ -67,12 +71,12 @@ Open `index.html` in a browser, or serve the folder:
 npx serve .
 ```
 
-It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`, with its Chart of Accounts at `sample-data/harbor-pine-chart-of-accounts.csv`.
+It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`, with its Chart of Accounts at `sample-data/harbor-pine-chart-of-accounts.csv` and Profit and Loss at `sample-data/harbor-pine-profit-and-loss.csv`.
 
 ## Exporting from QuickBooks
 
 1. **Reports → Transaction Detail by Account** (or Transaction List by Date / Transaction Detail).
-2. For exact account types, also export **Reports → Account List** (the Chart of Accounts).
+2. For exact account types, also export **Reports → Account List** (the Chart of Accounts), and to check the numbers, the **Profit and Loss** for the same dates. Upload them together; each is recognized automatically.
 3. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work. Include the balance-sheet accounts (bank, A/R, A/P, credit cards) so the cash forecast can see open invoices, bills and bank balances.
 4. Set the date range, then **Export** to Excel or CSV. Both work; the Excel reader loads only when an Excel file is uploaded. Twelve months or more unlocks the year-over-year comparisons in Trends; if QuickBooks limits the range, export each year separately and upload them together.
 

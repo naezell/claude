@@ -26,6 +26,10 @@
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function build() {
+    return toCSV(buildEntries(), { [BANK]: OPENING_CASH, 'SBA Loan': LOAN_OPENING });
+  }
+
+  function buildEntries() {
     const rand = rng(20260101);
     const entries = [];
     let num = 1040;
@@ -174,7 +178,19 @@
       add({ date: d(k, 25), type: 'Credit Card Payment', num: '', name: 'Chase Card Services', customer: '', memo: 'Card autopay', pnl: null, bs: BANK, bs2: CARD, amount: Math.round(due * 100) / 100 });
     }
 
-    return toCSV(entries, { [BANK]: OPENING_CASH, 'SBA Loan': LOAN_OPENING });
+    return entries;
+  }
+
+  const INCOME_ACCOUNTS = /income/i;
+  const PNL_ACCOUNTS = /income|expense|cost|subcontract|materials|wages|rent|utilities|supplies|meals|software|advertising|fees|ask my accountant/i;
+
+  // How an entry moves its P&L account, as QuickBooks shows it: sales raise income and
+  // purchases raise expenses; a purchase coded to income (or a sale coded to an expense)
+  // lowers that account instead.
+  function pnlSign(e) {
+    if (!PNL_ACCOUNTS.test(e.pnl) || /loan|draw/i.test(e.pnl)) return 1;
+    const incoming = /invoice|sales receipt|deposit/i.test(e.type);
+    return INCOME_ACCOUNTS.test(e.pnl) === incoming ? 1 : -1;
   }
 
   // Lay entries out QuickBooks-style: one section per account, each entry
@@ -204,7 +220,7 @@
       const sign = reversing(e.type) ? -1 : 1;
       const bsAmt = e.bs === AR || e.bs === BANK ? (incoming ? 1 : -1) * e.amount : e.amount;
       push(e.bs, { ...base, split: e.pnl, amount: sign * bsAmt });
-      push(e.pnl, { ...base, split: e.bs, amount: sign * e.amount });
+      push(e.pnl, { ...base, split: e.bs, amount: sign * pnlSign(e) * e.amount });
     }
 
     const order = [BANK, AR, CARD, 'Accounts Payable (A/P)', 'Design Services Income', 'Uncategorized Income'];
@@ -244,9 +260,43 @@
     return lines.join('\n');
   }
 
+  // The sample company's QuickBooks "Profit and Loss" for the whole period, totalled
+  // directly from the generated entries (independent of the analysis engine).
+  function profitAndLoss() {
+    const entries = buildEntries();
+    const types = new Map(chartRows().map((r) => [r[0], r[1]]));
+    const totals = new Map();
+    for (const e of entries) {
+      const type = types.get(e.pnl);
+      if (!type || !/income|cost of goods|expense/i.test(type)) continue;
+      totals.set(e.pnl, (totals.get(e.pnl) || 0) + pnlSign(e) * e.amount);
+    }
+    const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const money = (n) => `"${n < 0 ? '-' : ''}${Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}"`;
+    const lines = ['Harbor & Pine Design Co.', 'Profit and Loss', '"January 2025 - June 2026"', '', ',Total'];
+    const section = (title, test) => {
+      const accts = [...totals.entries()].filter(([a]) => test(types.get(a))).sort((x, y) => x[0].localeCompare(y[0]));
+      lines.push(q(title) + ',');
+      let sum = 0;
+      for (const [a, v] of accts) { lines.push(`   ${q(a)},${money(v)}`); sum += v; }
+      lines.push(`${q(`Total ${title}`)},${money(sum)}`);
+      return sum;
+    };
+    const inc = section('Income', (t) => t === 'Income');
+    const cogs = section('Cost of Goods Sold', (t) => t === 'Cost of Goods Sold');
+    lines.push(`Gross Profit,${money(inc - cogs)}`);
+    const exp = section('Expenses', (t) => t === 'Expenses');
+    lines.push(`Net Operating Income,${money(inc - cogs - exp)}`);
+    const oexp = section('Other Expenses', (t) => t === 'Other Expense');
+    lines.push(`Net Other Income,${money(-oexp)}`);
+    lines.push(`Net Income,${money(inc - cogs - exp - oexp)}`);
+    lines.push('', '', 'Accrual basis');
+    return lines.join('\n');
+  }
+
   // The matching QuickBooks Online "Account List" export for the sample company.
-  function chartOfAccounts() {
-    const rows = [
+  function chartRows() {
+    return [
       ['Checking', 'Bank', 'Checking'],
       ['Accounts Receivable (A/R)', 'Accounts receivable (A/R)', 'Accounts Receivable (A/R)'],
       ['Chase Ink Card (4417)', 'Credit Card', 'Credit Card'],
@@ -269,10 +319,14 @@
       ['Ask My Accountant', 'Expenses', 'Other Miscellaneous Service Cost'],
       ['Interest Expense', 'Other Expense', 'Other Miscellaneous Expense'],
     ];
+  }
+
+  function chartOfAccounts() {
+    const rows = chartRows();
     const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
     return ['Harbor & Pine Design Co.', 'Account List', '', 'Account,Type,Detail type,Description,Balance']
       .concat(rows.map((r) => [...r, '', ''].map(q).join(','))).join('\n');
   }
 
-  return { build, chartOfAccounts };
+  return { build, chartOfAccounts, profitAndLoss };
 });

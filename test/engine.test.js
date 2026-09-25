@@ -497,3 +497,32 @@ test('payee cleanup merges bank-feed names without over-merging', () => {
   assert.deepEqual(adobe[0].aliases, ['ADOBE *CREATIVE CLD']);
   assert.equal(subs.list.find((x) => x.vendor === 'Adobe Creative Cloud').charges, 18, 'raw-named charges count toward the subscription');
 });
+
+test('tie-out to the QuickBooks P&L: ties when right, explains when not', () => {
+  const pnl = E.parseProfitAndLoss(S.profitAndLoss());
+  assert.ok(pnl && pnl.totals.netIncome != null && pnl.basis === 'accrual');
+  assert.equal(E.parseProfitAndLoss(S.build()), null, 'a transaction report is not a P&L');
+  assert.equal(E.parseChartOfAccounts(S.profitAndLoss()), null, 'a P&L is not a chart of accounts');
+  const p = E.parseTransactions(S.build());
+  const good = E.analyze(p, { pnl }).tieOut;
+  assert.equal(good.ties, true);
+  assert.ok(good.lines.every((l) => l.diff === 0));
+  // Misclassify an expense account as balance sheet: the tie-out finds it and says why.
+  const bad = E.analyze(p, { pnl, accountClass: { Meals: 'balance' } }).tieOut;
+  assert.equal(bad.ties, false);
+  const meals = bad.accounts.find((a) => a.name.trim() === 'Meals');
+  assert.ok(meals && /balance sheet/i.test(meals.hint));
+  // An account on the P&L that the export does not have.
+  const extra = E.parseProfitAndLoss(S.profitAndLoss().replace('   Bank Fees,', '   Insurance,"1,200.00"\n   Bank Fees,'));
+  const missing = E.analyze(p, { pnl: extra }).tieOut;
+  assert.ok(missing.accounts.some((a) => a.name.trim() === 'Insurance' && /Not in the Transaction Detail/.test(a.hint)));
+});
+
+test('saved sample files match the generator', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const dir = path.join(__dirname, '..', 'sample-data');
+  assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-transaction-detail.csv'), 'utf8'), S.build());
+  assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-chart-of-accounts.csv'), 'utf8'), S.chartOfAccounts());
+  assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-profit-and-loss.csv'), 'utf8'), S.profitAndLoss());
+});

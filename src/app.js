@@ -200,17 +200,19 @@
     // The chart of accounts, when one was loaded, gives exact account types.
     const sampleChart = useMemo(() => E.parseChartOfAccounts(window.LedgerSample.chartOfAccounts()), []);
     const chart = source.kind === 'sample' ? sampleChart : source.chart ? source.chart.parsed : null;
+    const samplePnl = useMemo(() => E.parseProfitAndLoss(window.LedgerSample.profitAndLoss()), []);
+    const pnl = source.kind === 'sample' ? samplePnl : source.pnl ? source.pnl.parsed : null;
 
     // Stable object: it only changes when one of the inputs does.
     const typedNow = useMemo(() => ({ cash: cashInputs, loan: loanInputs, tax: taxInputs }), [cashInputs, loanInputs, taxInputs]);
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
-      accountClass, groupBy, chart, reviewed,
+      accountClass, groupBy, chart, pnl, reviewed,
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, reviewed, startingCash, cashInputs.includeDoubtful, typed]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, reviewed, startingCash, cashInputs.includeDoubtful, typed]);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
@@ -262,6 +264,9 @@
           // A chart of accounts has Account and Type columns and no dates.
           const coa = E.parseChartOfAccounts(text);
           if (coa) { resolve({ name: file.name, chart: coa }); return; }
+          // A Profit and Loss report has a Net Income line and no dates.
+          const pl = E.parseProfitAndLoss(text);
+          if (pl) { resolve({ name: file.name, pnl: pl }); return; }
           const p = E.parseTransactions(text);
           if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
           resolve({ name: file.name, parsed: p });
@@ -279,18 +284,19 @@
       const results = await Promise.all(files.map(readFile));
       const bad = results.filter((r) => r.error);
       const good = results.filter((r) => r.parsed);
-      const charts = results.filter((r) => r.chart);
-      const chartFile = charts.length ? { name: charts[charts.length - 1].name, parsed: charts[charts.length - 1].chart } : null;
+      const lastOf = (key) => { const hits = results.filter((r) => r[key]); return hits.length ? { name: hits[hits.length - 1].name, parsed: hits[hits.length - 1][key] } : null; };
+      const chartFile = lastOf('chart');
+      const pnlFile = lastOf('pnl');
       const errors = bad.map((b) => `${b.name} ${b.error}`);
       const prev = sourceRef.current;
       if (!good.length) {
-        // A chart on its own attaches to the transactions already loaded.
-        if (chartFile && prev.kind === 'upload') setSource({ ...prev, chart: chartFile });
-        else if (chartFile) errors.push(`${chartFile.name} is a chart of accounts. Upload the client's Transaction Detail with it.`);
+        // A chart or P&L on its own attaches to the transactions already loaded.
+        if ((chartFile || pnlFile) && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl });
+        else if (chartFile || pnlFile) errors.push(`${(chartFile || pnlFile).name} is a ${chartFile ? 'chart of accounts' : 'Profit and Loss report'}. Upload the client's Transaction Detail with it.`);
       } else {
         const keepPrev = append && prev.kind === 'upload';
         const kept = keepPrev ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
-        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null) });
+        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null) });
       }
       setError(errors.join(' '));
     }, []);
@@ -341,6 +347,9 @@
           ${result && (result.chart
             ? html`<span class="pill good"><span class="dot"></span>Chart of accounts</span><span>${result.chart.matched} of ${result.chart.of} accounts typed from it</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the client's Chart of Accounts export (Account List report) for exact account types.</span>`)}
+          ${result && (result.tieOut
+            ? html`<span class=${`pill ${result.tieOut.ties ? 'good' : 'high'}`}><span class="dot"></span>${result.tieOut.ties ? 'Ties to QuickBooks P&L' : 'Does not tie to QuickBooks P&L'}</span>`
+            : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
         ${error && html`<div class="error" role="alert">${error}</div>`}
@@ -378,6 +387,22 @@
   }
 
   // ------------------------------------------------------------ audit tab
+
+  function TieOutPanel({ tie }) {
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Ties to QuickBooks</h2>
+        <span class=${`pill ${tie.ties ? 'good' : 'high'}`}><span class="dot"></span>${tie.ties ? 'Numbers match' : 'Differences found'}</span>
+        <p>Compares this analysis with the client's own Profit and Loss report for ${tie.period}${tie.basis ? ` (${tie.basis} basis)` : ''}. ${tie.ties ? 'Every total and account agrees, so the income and expense figures here match QuickBooks.' : 'Resolve these before sharing figures; each difference says where to look.'}${tie.companyMatches ? '' : ' The P&L is for a different company name than the transactions.'}</p>
+      </div>
+      <div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Line</th><th class="num">QuickBooks</th><th class="num">Ledger Lens</th><th class="num">Difference</th></tr></thead>
+        <tbody>${tie.lines.map((l) => html`<tr key=${l.label}><td>${l.label}</td><td class="num"><${Money} v=${l.quickbooks} /></td><td class="num"><${Money} v=${l.ledgerLens} /></td>
+          <td class="num">${l.ties ? html`<span class="pill good">Ties</span>` : html`<span class="neg num">${fmtMoney(l.diff)}</span>`}</td></tr>`)}
+          ${tie.accounts.map((a) => html`<tr key=${`acct-${a.name}`}><td>${a.name}<span class="sub">${a.hint}</span></td><td class="num"><${Money} v=${a.quickbooks} /></td><td class="num"><${Money} v=${a.ledgerLens} /></td><td class="num"><span class="neg num">${fmtMoney(a.diff)}</span></td></tr>`)}
+        </tbody>
+      </table></div></div>
+    </section>`;
+  }
 
   function ReviewSelect({ item, onReview }) {
     const status = item.review ? item.review.status : '';
@@ -428,6 +453,7 @@
         ${audit.cleared > 0 && html`<label class="check" for="show-cleared" style=${{ paddingTop: 0 }}><input id="show-cleared" type="checkbox" checked=${showCleared} onChange=${(e) => setShowCleared(e.target.checked)} />Show cleared</label>`}
       </div>
 
+      ${result.tieOut && html`<${TieOutPanel} tie=${result.tieOut} />`}
       <${IssuesByMonth} audit=${audit} />
       <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
       <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
