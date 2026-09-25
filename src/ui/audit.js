@@ -1,0 +1,278 @@
+/* Ledger Lens UI: Diagnostic audit tab. */
+(function () {
+  'use strict';
+  const { useState, useMemo } = React;
+  const html = htm.bind(React.createElement);
+  const { ResponsiveContainer, BarChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip } = Recharts;
+  const E = window.LedgerEngine;
+  const { fmtMoney, fmtWhole, counterpartyOf, leafAccount } = E;
+  const UI = window.LedgerUI;
+  const { useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf } = UI;
+
+  // ------------------------------------------------------------ audit tab
+
+  function TieOutPanel({ tie }) {
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Ties to QuickBooks</h2>
+        <span class=${`pill ${tie.ties ? 'good' : 'high'}`}><span class="dot"></span>${tie.ties ? 'Numbers match' : 'Differences found'}</span>
+        <p>Compares this analysis with the client's own Profit and Loss report for ${tie.period}${tie.basis ? ` (${tie.basis} basis)` : ''}. ${tie.ties ? 'Every total and account agrees, so the income and expense figures here match QuickBooks.' : 'Resolve these before sharing figures; each difference says where to look.'}${tie.companyMatches ? '' : ' The P&L is for a different company name than the transactions.'}</p>
+      </div>
+      <div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Line</th><th class="num">QuickBooks</th><th class="num">Ledger Lens</th><th class="num">Difference</th></tr></thead>
+        <tbody>${tie.lines.map((l) => html`<tr key=${l.label}><td>${l.label}</td><td class="num"><${Money} v=${l.quickbooks} /></td><td class="num"><${Money} v=${l.ledgerLens} /></td>
+          <td class="num">${l.ties ? html`<span class="pill good">Ties</span>` : html`<span class="neg num">${fmtMoney(l.diff)}</span>`}</td></tr>`)}
+          ${tie.accounts.map((a) => html`<tr key=${`acct-${a.name}`}><td>${a.name}<span class="sub">${a.hint}</span></td><td class="num"><${Money} v=${a.quickbooks} /></td><td class="num"><${Money} v=${a.ledgerLens} /></td><td class="num"><span class="neg num">${fmtMoney(a.diff)}</span></td></tr>`)}
+        </tbody>
+      </table></div></div>
+    </section>`;
+  }
+
+  function AuditTab({ result, accountClass, setAccountClass, onReview }) {
+    const { audit } = result;
+    const [showCleared, setShowCleared] = useState(false);
+    const vis = (list) => (showCleared ? list : list.filter((x) => !clearedOf(x)));
+    const score = audit.healthScore;
+    const scoreColor = score >= 90 ? 'var(--good)' : score >= 75 ? 'var(--warn)' : 'var(--critical)';
+    const scoreWord = score >= 90 ? 'Clean' : score >= 75 ? 'Needs cleanup' : 'Significant issues';
+    const asked = [...audit.uncategorized, ...audit.duplicates, ...audit.mismatches, ...(result.unusual ? [...result.unusual.flux, ...result.unusual.txns] : [])].filter((x) => x.review && x.review.status === 'asked').length;
+    return html`
+      <section class="kpis" aria-label="Audit summary">
+        <div class="kpi">
+          <span class="kpi-label">Books health score</span>
+          <span class="kpi-value">${score}<span style=${{ fontSize: '14px', color: 'var(--muted)' }}> / 100</span></span>
+          <div class="meter"><span style=${{ width: `${score}%`, background: scoreColor }}></span></div>
+          <span class="kpi-sub">${scoreWord} · ${audit.flaggedCount} of ${result.entryCount} entries still flagged</span>
+        </div>
+        <div class=${`kpi ${audit.open.uncategorized ? 'alert' : 'okay'}`}>
+          <span class="kpi-label">Uncategorized</span>
+          <span class="kpi-value">${audit.open.uncategorized}</span>
+          <span class="kpi-sub"><span class="num">${fmtMoney(audit.uncategorizedOpenTotal)}</span> not yet coded</span>
+        </div>
+        <div class=${`kpi ${audit.open.duplicates ? 'alert' : 'okay'}`}>
+          <span class="kpi-label">Potential duplicates</span>
+          <span class="kpi-value">${audit.open.duplicates}</span>
+          <span class="kpi-sub"><span class="num">${fmtMoney(audit.duplicateOpenExposure)}</span> possibly double-counted</span>
+        </div>
+        <div class=${`kpi ${audit.open.mismatches ? 'alert' : 'okay'}`}>
+          <span class="kpi-label">Mismatched entries</span>
+          <span class="kpi-value">${audit.open.mismatches}</span>
+          <span class="kpi-sub">${audit.mismatches.filter((m) => m.severity === 'High' && !clearedOf(m)).length} high severity</span>
+        </div>
+      </section>
+
+      <div class="review-bar">
+        <span>Mark each flag as you work through it. Cleared flags stay cleared when you load next month's export.</span>
+        <span class="hint">${audit.cleared} cleared · ${asked} asked the client</span>
+        ${audit.cleared > 0 && html`<label class="check" for="show-cleared" style=${{ paddingTop: 0 }}><input id="show-cleared" type="checkbox" checked=${showCleared} onChange=${(e) => setShowCleared(e.target.checked)} />Show cleared</label>`}
+      </div>
+
+      ${result.tieOut && html`<${TieOutPanel} tie=${result.tieOut} />`}
+      <${IssuesByMonth} audit=${audit} />
+      <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
+      <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
+      <${MismatchPanel} rows=${vis(audit.mismatches)} open=${audit.open.mismatches} onReview=${onReview} />
+      ${result.unusual && html`<${UnusualPanel} u=${result.unusual} vis=${vis} onReview=${onReview} />`}
+      <${AccountMapping} accounts=${result.accounts} accountClass=${accountClass} setAccountClass=${setAccountClass} />
+    `;
+  }
+
+  function IssuesByMonth({ audit }) {
+    const t = useTokens();
+    const data = useMemo(() => {
+      const m = new Map();
+      const bump = (dateStr, key) => {
+        const k = dateStr.slice(0, 7);
+        if (!m.has(k)) m.set(k, { month: k, uncategorized: 0, duplicates: 0, mismatches: 0 });
+        m.get(k)[key]++;
+      };
+      audit.uncategorized.forEach((r) => bump(r.dateStr, 'uncategorized'));
+      audit.duplicates.forEach((g) => bump(g.rows[g.rows.length - 1].dateStr, 'duplicates'));
+      audit.mismatches.forEach((r) => bump(r.dateStr, 'mismatches'));
+      return [...m.values()].sort((a, b) => a.month.localeCompare(b.month)).map((d) => ({
+        ...d,
+        label: new Date(`${d.month}-01T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+      }));
+    }, [audit]);
+    if (!data.length) return null;
+    const series = [
+      { key: 'uncategorized', label: 'Uncategorized', color: t.s1 },
+      { key: 'duplicates', label: 'Duplicate groups', color: t.s2 },
+      { key: 'mismatches', label: 'Mismatches', color: t.s3 },
+    ];
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Issues by month</h2><p>Where cleanup work is concentrated. Months with a cluster usually point to a missed bank-feed review.</p></div>
+      <div class="panel-body">
+        <div class="legend">${series.map((s) => html`<span key=${s.key}><i style=${{ background: s.color }}></i>${s.label}</span>`)}</div>
+        <div style=${{ height: 200 }}>
+          <${ResponsiveContainer} width="100%" height="100%">
+            <${BarChart} data=${data} margin=${{ top: 6, right: 8, bottom: 0, left: -18 }} barCategoryGap="28%">
+              <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+              <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 12 }} />
+              <${YAxis} allowDecimals=${false} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} />
+              <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => series.map((s) => ({ label: s.label, value: d[s.key], color: s.color }))} />`} />
+              ${series.map((s, i) => html`<${Bar} key=${s.key} dataKey=${s.key} stackId="a" fill=${s.color} stroke=${t.surface} strokeWidth=${2} radius=${i === series.length - 1 ? [4, 4, 0, 0] : 0} isAnimationActive=${false} />`)}
+            <//>
+          <//>
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function UncategorizedPanel({ rows, open, total, onReview }) {
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Uncategorized transactions</h2>
+        <span class=${`pill ${open ? 'high' : 'good'}`}>${open} open · ${fmtMoney(total)}</span>
+        <p>Posted to Uncategorized Income/Expense, Ask My Accountant, or left without an account. Each needs a category before month-end close.</p>
+      </div>
+      <div class="panel-body flush">
+        ${rows.length ? html`<div class="table-wrap scroll-y"><table>
+          <thead><tr><th>Review</th><th>CSV row</th><th>Date</th><th>Type</th><th>Payee</th><th>Memo</th><th>Where it sits</th><th class="num">Amount</th></tr></thead>
+          <tbody>${rows.map((r) => html`<tr key=${r.id} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td class="row-no">${r.line}</td>
+            <td class="nowrap num">${r.dateStr}</td>
+            <td class="nowrap">${r.type}</td>
+            <td>${counterpartyOf(r) || html`<span class="sub">No payee</span>`}</td>
+            <td>${r.memo}</td>
+            <td>${r.reason}</td>
+            <td class="num"><${Money} v=${r.amount} /></td>
+          </tr>`)}</tbody>
+        </table></div>` : html`<div class="empty">${Icon.check}${open ? 'All open items are hidden.' : 'Nothing left to categorize.'}</div>`}
+      </div>
+    </section>`;
+  }
+
+  function DuplicatesPanel({ groups, open, exposure, onReview }) {
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Potential duplicates</h2>
+        <span class=${`pill ${open ? 'high' : 'good'}`}>${open} open · ${fmtMoney(exposure)} exposure</span>
+        <p>Same payee, same amount and same account within 3 days, or a reference number entered twice. Common causes: a bank-feed match missed after a manual entry, or a bill entered twice.</p>
+      </div>
+      <div class="panel-body flush">
+        ${groups.length ? groups.map((g) => html`<div class=${`dup-group ${clearedOf(g) ? 'cleared' : ''}`} key=${g.id}>
+          <div class="dup-head"><${ReviewSelect} item=${g} onReview=${onReview} /><${Severity} level=${g.confidence} /><strong>${counterpartyOf(g.rows[0]) || g.rows[0].memo || 'No payee'}</strong><span style=${{ color: 'var(--ink-2)' }}>${g.reason}</span><span class="exposure">${fmtMoney(g.exposure)} at risk</span></div>
+          <div class="table-wrap"><table class="dup-table"><colgroup><col style=${{ width: '90px' }} /><col style=${{ width: '110px' }} /><col style=${{ width: '150px' }} /><col style=${{ width: '26%' }} /><col /><col style=${{ width: '120px' }} /></colgroup><tbody>${g.rows.map((r) => html`<tr key=${r.id}>
+            <td class="row-no" style=${{ paddingLeft: '18px' }}>row ${r.line}</td>
+            <td class="nowrap num">${r.dateStr}</td>
+            <td class="nowrap">${r.type}${r.num ? ` #${r.num}` : ''}</td>
+            <td>${leafAccount(r.account)}</td>
+            <td>${r.memo}</td>
+            <td class="num"><${Money} v=${r.amount} /></td>
+          </tr>`)}</tbody></table></div>
+        </div>`) : html`<div class="empty">${Icon.check}No open duplicates.</div>`}
+      </div>
+    </section>`;
+  }
+
+  // Not errors, so not in the health score: amounts that look out of line and are worth a second look.
+  function UnusualPanel({ u, vis, onReview }) {
+    const flux = vis(u.flux);
+    const txns = vis(u.txns);
+    const open = [...u.flux, ...u.txns].filter((x) => !clearedOf(x)).length;
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Unusual activity</h2>
+        <span class=${`pill ${open ? 'medium' : 'good'}`}>${open} to look at</span>
+        <p>Accounts that moved sharply in ${u.monthLabel} against a typical month (${u.priorLabel}), and single payments well above what a payee is usually paid, or large first payments to someone new. These are not errors, just worth a second look before the books are closed.</p>
+      </div>
+      <div class="panel-body flush">
+        ${flux.length > 0 && html`<div class="table-wrap"><table>
+          <thead><tr><th>Review</th><th>Account</th><th class="num">${u.monthLabel}</th><th class="num">Typical month</th><th class="num">Change</th><th>What moved</th></tr></thead>
+          <tbody>${flux.map((f) => html`<tr key=${f.key} class=${clearedOf(f) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${f} onReview=${onReview} /></td>
+            <td>${f.account}<span class="sub">${f.cls === 'income' ? 'Income' : f.cls === 'cogs' ? 'Cost of sales' : 'Expense'}</span></td>
+            <td class="num">${fmtWhole(f.now)}</td>
+            <td class="num">${fmtWhole(f.typical)}</td>
+            <td class="num" style=${{ color: f.concern ? 'var(--critical)' : 'var(--good)' }}>${f.up ? '+' : '−'}${fmtWhole(Math.abs(f.diff))}</td>
+            <td>${f.detail}</td>
+          </tr>`)}</tbody>
+        </table></div>`}
+        ${txns.length > 0 && html`<div class="table-wrap"><table>
+          <thead><tr><th>Review</th><th>Date</th><th>Payee</th><th>Why it stands out</th><th>Account</th><th class="num">Amount</th></tr></thead>
+          <tbody>${txns.map((r) => html`<tr key=${r.key} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td class="nowrap num">${r.dateStr}</td>
+            <td>${counterpartyOf(r) || html`<span class="sub">No payee</span>`}<span class="sub">${r.type}</span></td>
+            <td><strong style=${{ fontWeight: 500 }}>${r.kind}</strong><span class="sub">${r.detail}</span></td>
+            <td>${leafAccount(r.account)}</td>
+            <td class="num"><${Money} v=${r.amount} /></td>
+          </tr>`)}</tbody>
+        </table></div>`}
+        ${!flux.length && !txns.length && html`<div class="empty">${Icon.check}${open ? 'All open items are hidden.' : 'Nothing out of the ordinary.'}</div>`}
+      </div>
+    </section>`;
+  }
+
+  function MismatchPanel({ rows, open, onReview }) {
+    const kinds = useMemo(() => {
+      const m = new Map();
+      rows.forEach((r) => m.set(r.kind, (m.get(r.kind) || 0) + 1));
+      return [...m.entries()];
+    }, [rows]);
+    const [filter, setFilter] = useState('All');
+    const shown = filter === 'All' ? rows : rows.filter((r) => r.kind === filter);
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Mismatched entries</h2>
+        <span class=${`pill ${open ? 'medium' : 'good'}`}>${open} open</span>
+        <p>Transaction types that conflict with their account (an expense coded to income, a transfer hitting the P&L), vendors coded inconsistently, missing payees and unbalanced journal entries.</p>
+      </div>
+      ${rows.length > 0 && html`<div class="panel-body" style=${{ paddingBottom: '12px' }}>
+        <div class="chips">
+          ${[['All', rows.length], ...kinds].map(([k, n]) => html`<button key=${k} class="chip" aria-pressed=${filter === k} onClick=${() => setFilter(k)}>${k}<span class="n">${n}</span></button>`)}
+        </div>
+      </div>`}
+      <div class="panel-body flush">
+        ${rows.length ? html`<div class="table-wrap scroll-y"><table>
+          <thead><tr><th>Review</th><th>Severity</th><th>CSV row</th><th>Date</th><th>Payee</th><th>Issue</th><th class="num">Amount</th></tr></thead>
+          <tbody>${shown.map((r, i) => html`<tr key=${`${r.id}-${i}`} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td><${Severity} level=${r.severity} /></td>
+            <td class="row-no">${r.line}</td>
+            <td class="nowrap num">${r.dateStr}</td>
+            <td>${counterpartyOf(r) || html`<span class="sub">No payee</span>`}<span class="sub">${r.type}</span></td>
+            <td><strong style=${{ fontWeight: 500 }}>${r.kind}</strong><span class="sub">${r.detail}</span></td>
+            <td class="num"><${Money} v=${r.amount} /></td>
+          </tr>`)}</tbody>
+        </table></div>` : html`<div class="empty">${Icon.check}No coding conflicts found.</div>`}
+      </div>
+    </section>`;
+  }
+
+  const ROLE_LABEL = { cash: 'Bank', card: 'Credit card', ar: 'Receivable', ap: 'Payable', loan: 'Loan', equity: 'Owner equity', salestax: 'Sales tax', payrolltax: 'Payroll tax', otherbalance: 'Other balance sheet' };
+
+  function AccountMapping({ accounts, accountClass, setAccountClass }) {
+    const labels = { income: 'Income', cogs: 'Cost of goods sold', expense: 'Expense', balance: 'Balance sheet' };
+    const changed = Object.keys(accountClass).length;
+    const fromChart = accounts.filter((a) => a.source === 'chart').length;
+    return html`<details class="panel mapping">
+      <summary>Account mapping ${changed ? html`<span class="pill" style=${{ marginLeft: '8px' }}>${changed} changed by you</span>` : ''}<span style=${{ fontWeight: 400, fontFamily: 'var(--sans)', color: 'var(--muted)', fontSize: '13px', marginLeft: '8px' }}>${fromChart ? `${fromChart} of ${accounts.length} typed from the chart of accounts.` : 'Guessed from account names.'} Correct any that are wrong and every figure updates.</span></summary>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Account</th><th class="num">Rows</th><th>Treated as</th><th>Source</th></tr></thead>
+        <tbody>${accounts.map((a) => {
+          const manual = accountClass[a.name] != null;
+          return html`<tr key=${a.name}>
+          <td>${a.name}${(accountClass[a.name] || a.detected) === 'balance' ? html`<span class="sub">${ROLE_LABEL[a.role] || ''}</span>` : ''}</td>
+          <td class="num">${a.count}</td>
+          <td>
+            <select aria-label=${`Account type for ${a.name}`} value=${accountClass[a.name] || a.detected} onChange=${(e) => {
+              const v = e.target.value;
+              const next = { ...accountClass };
+              if (v === a.detected) delete next[a.name]; else next[a.name] = v;
+              setAccountClass(next);
+            }}>
+              ${Object.entries(labels).map(([k, l]) => html`<option key=${k} value=${k}>${l}</option>`)}
+              ${a.detected === 'blank' && html`<option value="blank">Unassigned</option>`}
+            </select>
+          </td>
+          <td class="sub" style=${{ display: 'table-cell' }}>${manual ? 'Changed by you' : a.source === 'chart' ? `Chart of accounts: ${a.type}` : 'Guessed from name'}</td>
+        </tr>`;
+        })}</tbody>
+      </table></div>
+    </details>`;
+  }
+
+  Object.assign(UI, { AuditTab });
+})();

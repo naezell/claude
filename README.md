@@ -102,12 +102,21 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | --- | --- |
 | `index.html` | Page shell, styles, library loading |
 | `src/engine.js` | CSV parsing and all analysis (pure JS, runs in Node too) |
-| `src/app.js` | React + Recharts dashboard |
 | `src/sample.js` | Deterministic sample export generator |
+| `src/ui/shared.js` | Helpers and small components shared by the tabs (storage, downloads, chart tokens, inputs) |
+| `src/ui/*.js` | One file per tab (`audit`, `growth`, `cash`, `breakeven`, `trends`, `budget`, `vendors`, `benchmarks`, `advisory`) and `drawers.js` for the report, client questions and saved clients |
+| `src/app.js` | Top-level app: file loading, state, tabs; mounts the page |
 | `test/engine.test.js` | Engine tests |
+| `test/ui.test.js` | Interface tests in headless Chromium |
+
+There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `shared.js` first, the tabs and drawers, then `app.js`.
 
 ## Tests
 
 ```sh
-node --test test/*.test.js
+npm install      # dev dependencies for the interface tests only
+npm test         # engine and interface tests
+npm run test:engine
 ```
+
+The engine tests need nothing installed. The interface tests open `index.html` in headless Chromium through `playwright-core`, serving React, Recharts and htm from `node_modules` so no network is needed. They find Playwright's own Chromium, any build under `PLAYWRIGHT_BROWSERS_PATH`, or the path in `CHROMIUM_PATH`, and skip themselves when none is available.
