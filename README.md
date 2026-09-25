@@ -85,7 +85,9 @@ All processing happens in the browser. The file is never uploaded anywhere.
 
 ## Running it
 
-Open `index.html` in a browser, or serve the folder:
+The live site is on Netlify (project `7d-ledger-lens`). `netlify.toml` tells Netlify to run `scripts/build-site.sh`, which copies the files into `dist/` and adds the page wrapper (doctype, viewport, favicon) a normal web host needs. Nothing is compiled. The same `index.html` also runs as-is as a claude.ai page.
+
+Locally, open `index.html` in a browser, or serve the folder:
 
 ```sh
 npx serve .

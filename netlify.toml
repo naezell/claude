@@ -1,0 +1,18 @@
+# Static site. The build only copies files into dist/ and adds the page wrapper; see
+# scripts/build-site.sh. Nothing is compiled.
+[build]
+  publish = "dist"
+  command = "sh scripts/build-site.sh"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    X-Frame-Options = "DENY"
+
+# Scripts change with each update; make browsers check for a new copy.
+[[headers]]
+  for = "/src/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

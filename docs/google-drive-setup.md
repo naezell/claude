@@ -11,8 +11,10 @@ Until then, the app still works: **Saved clients & backup → Save backup file**
 
 ## 1. Put the app online (Netlify)
 
+The Netlify project **7d-ledger-lens** already exists (`https://7d-ledger-lens.netlify.app`), with a `netlify.toml` in the repository. If it is live, skip to step 2. Otherwise:
+
 1. Sign up at [netlify.com](https://www.netlify.com) (the free plan is enough).
-2. **Add new site → Deploy manually**, and drag in a folder holding `index.html`, `src/` and `assets/` from this repository. Or choose **Import from Git** and pick the repository, so every update goes live on its own. There is no build step: leave the build command empty and set the publish directory to the repository root.
+2. Open the project, go to **Deploys**, and drag in the site folder (run `sh scripts/build-site.sh` and drag `dist/`). Or link the repository under **Project configuration → Build & deploy → Link repository**, so every update goes live on its own; the settings come from `netlify.toml`.
 3. Netlify gives the site an address like `https://7d-ledger-lens.netlify.app`. Rename it under **Site configuration → Change site name**.
 4. Optional: use an address on the firm's own domain, such as `https://app.7dbusinesssolutions.com`, under **Domain management**.
 
