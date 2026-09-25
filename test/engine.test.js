@@ -623,3 +623,21 @@ test('unusual activity: account swings and payments out of pattern', () => {
   assert.ok(done.unusual.txns.every((t) => t.review && t.review.status === 'ok'));
   assert.ok(!E.clientQuestions(done).sections.some((s) => s.title === 'Unusual payments'));
 });
+
+test('vendor price increases: steady charges that went up, and the price rise to cover them', () => {
+  const r = E.analyze(E.parseTransactions(S.build()));
+  const p = r.vendors.prices;
+  const by = Object.fromEntries(p.rows.map((x) => [x.name, x]));
+  assert.deepEqual(Object.keys(by).sort(), ['Adobe Creative Cloud', 'Brightline Properties', 'Google Workspace', 'Slack Technologies']);
+  assert.equal(by['Brightline Properties'].from, 3000);
+  assert.equal(by['Brightline Properties'].to, 3200);
+  assert.equal(by['Brightline Properties'].annualImpact, 2400);
+  assert.equal(by['Adobe Creative Cloud'].since, '2026-04-02');
+  assert.ok(!by['PrintWorks Co.'], 'amounts that vary job to job are not a price');
+  assert.equal(p.annualIncrease, 2841);
+  assert.ok(Math.abs(p.priceRiseToHold - p.annualIncrease / p.annualRevenue) < 1e-9);
+  const text = E.buildReport(r);
+  assert.ok(text.includes('Price increases from vendors'));
+  assert.ok(E.buildHtmlReport(r, { version: 'full' }).includes('Vendor price increases'));
+  assert.ok(E.nextSteps(r).some((s) => /price increases add/i.test(s)));
+});

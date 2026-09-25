@@ -37,6 +37,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 **Vendors**
 - Vendor spending over the last 12 months (payroll excluded), with each vendor's share, type (job cost or overhead), 3-month trend, how fast they get paid, open bills and payment method.
 - Bills coming due each forecast week against the projected cash balance, payables aging, and days to pay vendors (DPO) next to days to collect (DSO).
+- **Vendor price increases**: vendors that charge a steady amount (rent, software, services) and have raised it, with the old and new price, when it changed and the yearly cost. The total becomes the price rise the business would need on its own sales to hold profit steady. Amounts that vary job to job are not treated as a price.
 - Flags vendors paid well before 30-day terms and estimates the cash that paying on day 30 would keep in the business.
 - **1099 contractor review**: vendors paid by check or bank transfer at or above the threshold for each calendar year ($600 for payments through 2025, $2,000 from 2026), with the likely form (1099-NEC, or 1099-MISC for rent). Card-only vendors and likely corporations are marked separately. It is a screening list; a W-9 settles each case.
 
@@ -67,7 +68,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Client report** comes in three formats:
 - **Owner summary**: one or two printed pages with the key numbers, a revenue and cost chart, the 13-week cash chart, what changed, what we recommend and what we need from the client.
-- **Full review**: the summary plus detail tables (tie-out, customer profitability and concentration, break-even, vendors and 1099 review, subscriptions, loan readiness, tax set-aside, benchmarks).
+- **Full review**: the summary plus detail tables (tie-out, customer profitability and concentration, break-even, vendors, price increases and 1099 review, subscriptions, loan readiness, tax set-aside, benchmarks).
 - **Plain text**, as before.
 
 The formatted versions download as a single self-contained HTML file with built-in charts; open it in any browser and print to PDF to send.

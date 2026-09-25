@@ -1676,6 +1676,31 @@
     return html`<ul class="insight-list">${items.map((i) => html`<li key=${i.text}><span class=${`pill ${i.tone === 'good' ? 'good' : 'high'}`}><span class="dot"></span>${i.tone === 'good' ? 'Better' : 'Watch'}</span><span>${i.text}</span></li>`)}</ul>`;
   }
 
+  function PriceIncreases({ prices: p }) {
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Vendor price increases</h2>
+        <span class="pill medium">${wholeMoney(p.annualIncrease)} a year</span>
+        <p>Vendors that charge a steady amount and have raised it. The yearly cost is the increase times how often they charge. Worth a call to renegotiate, or a reason to review your own prices.</p>
+      </div>
+      <div class="panel-body flush">
+        <div class="table-wrap"><table>
+          <thead><tr><th>Vendor</th><th>Account</th><th class="num">Was</th><th class="num">Now</th><th class="num">Increase</th><th>Since</th><th class="num">Per year</th></tr></thead>
+          <tbody>${p.rows.map((r) => html`<tr key=${`${r.key}|${r.account}`}>
+            <td>${r.name}<span class="sub">Charged ${r.cadence}</span></td>
+            <td>${r.account}</td>
+            <td class="num">${fmtMoney(r.from)}</td>
+            <td class="num">${fmtMoney(r.to)}</td>
+            <td class="num">+${fmtPct(r.pct)}</td>
+            <td class="nowrap num">${new Date(`${r.since}T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })}</td>
+            <td class="num">${wholeMoney(r.annualImpact)}</td>
+          </tr>`)}</tbody>
+        </table></div>
+      </div>
+      ${p.priceRiseToHold != null && html`<div class="panel-body"><p class="hint" style=${{ margin: 0 }}>To cover these increases without losing profit, prices would need to rise about <strong>${fmtPct(p.priceRiseToHold)}</strong> on today's sales of ${wholeMoney(p.annualRevenue)} a year.</p></div>`}
+    </section>`;
+  }
+
   function VendorsTab({ vendors: v }) {
     const t = useTokens();
     const [year, setYear] = useState(() => {
@@ -1709,6 +1734,8 @@
         <div class="kpi"><span class="kpi-label">Open bills</span><span class="kpi-value">${wholeMoney(openTotal)}</span><span class="kpi-sub">${v.buckets[3].amount ? `${wholeMoney(v.buckets[3].amount)} over 90 days` : 'Nothing over 90 days'}</span></div>
         ${freed > 0 && html`<div class="kpi okay"><span class="kpi-label">Cash from 30-day terms</span><span class="kpi-value">${wholeMoney(freed)}</span><span class="kpi-sub">if early-paid vendors allow net 30</span></div>`}
       </section>
+
+      ${v.prices.rows.length > 0 && html`<${PriceIncreases} prices=${v.prices} />`}
 
       <div class="grid-2">
         <section class="panel">

@@ -1851,6 +1851,60 @@
     return out;
   }
 
+  // Vendors that charge the same amount again and again, and have raised it. A run of at least
+  // three matching charges, then at least two at a new higher level that is still in force.
+  function priceChanges(postings, range) {
+    const series = new Map();
+    for (const p of postings) {
+      const who = payeeOf(p.t);
+      if (!who.key || RX.uncategorized.test(p.category)) continue;
+      const k = `${who.key}|${lower(leafAccount(p.category))}`;
+      if (!series.has(k)) series.set(k, { key: who.key, names: new Map(), account: leafAccount(p.category), list: [] });
+      const s = series.get(k);
+      if (who.raw) s.names.set(who.raw, (s.names.get(who.raw) || 0) + 1);
+      s.list.push(p);
+    }
+    const same = (a, b) => Math.abs(a - b) <= Math.max(0.5, a * 0.01);
+    const out = [];
+    for (const s of series.values()) {
+      if (s.list.length < 5) continue;
+      const list = s.list.slice().sort((a, b) => a.t.date - b.t.date);
+      // Split into runs of matching amounts; a single stray charge (a one-off or a duplicate) is skipped.
+      const runs = [];
+      for (const p of list) {
+        const cur = runs[runs.length - 1];
+        if (cur && same(cur.amount, p.value)) { cur.items.push(p); continue; }
+        runs.push({ amount: p.value, items: [p] });
+      }
+      const steady = runs.filter((r) => r.items.length >= 2);
+      if (steady.length < 2) continue;
+      const now = steady[steady.length - 1], was = steady[steady.length - 2];
+      if (was.items.length < 3 || now !== runs[runs.length - 1] && runs[runs.length - 1].items.length > 1) continue;
+      // The new price must be current: its last charge is recent for the vendor's cadence.
+      const gaps = list.slice(1).map((p, i) => (p.t.date - list[i].t.date) / 864e5).filter((g) => g > 0);
+      const cadence = median(gaps);
+      if (!cadence || cadence > 100) continue;
+      const lastDate = now.items[now.items.length - 1].t.date;
+      if ((range.last - lastDate) / 864e5 > cadence * 2 + 7) continue;
+      const from = round2(was.amount), to = round2(now.amount);
+      if (!(to > from * 1.02 && to - from >= 2)) continue;
+      const perYear = Math.max(1, Math.round(365 / cadence));
+      out.push({
+        name: displayPayee(s.names),
+        key: s.key,
+        account: s.account,
+        from,
+        to,
+        pct: to / from - 1,
+        since: now.items[0].t.dateStr,
+        perYear,
+        cadence: perYear >= 50 ? 'weekly' : perYear >= 11 ? 'monthly' : perYear >= 4 ? 'quarterly' : 'yearly',
+        annualImpact: round2((to - from) * perYear),
+      });
+    }
+    return out.sort((a, b) => b.annualImpact - a.annualImpact);
+  }
+
   function vendorAnalysis(txns, accountClass, cash, trend, meta) {
     const range = dateRange(txns, meta);
     const ttm = trailingYear(range.first, range.last);
@@ -1955,6 +2009,15 @@
       });
     }
     for (const e of earlyPay) insights.push({ tone: 'bad', text: `${e.name} is paid about ${e.days} days after billing. If they allow 30-day terms, paying on day 30 would keep roughly ${fmtWhole(e.cashFreed)} more cash on hand.` });
+    // What the increases add up to, and the price rise that would pay for them.
+    const { increases, revenue } = memo('prices', txns, accountClass || EMPTY, () => ({
+      increases: priceChanges(all, range),
+      revenue: toPostings(txns, accountClass).filter((p) => p.cls === 'income' && (!ttm || (p.t.date >= ttm.start && p.t.date <= ttm.end))).reduce((t, p) => t + p.value, 0),
+    }));
+    const annualIncrease = round2(increases.reduce((t, r) => t + r.annualImpact, 0));
+    const annualRevenue = revenue * 12 / months;
+    const prices = { rows: increases, annualIncrease, annualRevenue: round2(annualRevenue), priceRiseToHold: annualRevenue > 0 ? annualIncrease / annualRevenue : null };
+    if (increases.length) insights.push({ tone: 'bad', text: `${increases.length} vendor${increases.length === 1 ? ' has' : 's have'} raised ${increases.length === 1 ? 'its price' : 'their prices'}, adding about ${fmtWhole(annualIncrease)} a year${prices.priceRiseToHold != null ? `. Holding profit steady would take a price rise of about ${fmtPct(prices.priceRiseToHold)} on today's sales` : ''}.` });
     const risers = rows.filter((r) => r.trendPct != null && r.trendPct >= 0.25 && r.monthly >= 200).slice(0, 2);
     for (const r of risers) insights.push({ tone: 'bad', text: `Spending with ${r.name} is up ${fmtPct(r.trendPct)} over the last 3 months.` });
 
@@ -1973,6 +2036,7 @@
       dso: latest ? latest.dso : null,
       apEnd: latest ? latest.apEnd : null,
       insights,
+      prices,
       tax: memo('tax1099', txns, accountClass || EMPTY, () => tax1099(txns, accountClass, meta)),
     };
   }
@@ -2559,7 +2623,7 @@
 
   // Month-end variance review: accounts that swung away from their usual month, and single
   // payments far outside a vendor's pattern (or large first payments to a new payee).
-  function unusualActivity(txns, accountClass, meta, trend, reviewed) {
+  function unusualActivityUncached(txns, accountClass, meta, trend) {
     if (!trend) return null;
     const full = trend.months.filter((m) => !m.partial);
     if (full.length < 4) return null;
@@ -2603,14 +2667,16 @@
     }
     const txnFlags = [];
     for (const list of byPayee.values()) {
-      const before = list.filter((p) => p.t.dateStr.slice(0, 7) < recentStart);
-      for (const p of list.filter((x) => x.t.dateStr.slice(0, 7) >= recentStart)) {
+      const before = [], recent = [];
+      for (const p of list) (p.t.dateStr.slice(0, 7) < recentStart ? before : recent).push(p);
+      if (!recent.length) continue;
+      // Past the payee's usual amount and past anything they have billed before, so vendors
+      // with two regular sizes of bill (a retainer and a job) don't trip it.
+      const usual = before.length >= 4 ? median(before.map((x) => x.value)) : 0;
+      const most = before.reduce((m, x) => Math.max(m, x.value), 0);
+      for (const p of recent) {
         const name = counterpartyOf(p.t) || payeeOf(p.t).raw;
         if (before.length >= 4) {
-          // Past the payee's usual amount and past anything they have billed before, so vendors
-          // with two regular sizes of bill (a retainer and a job) don't trip it.
-          const usual = median(before.map((x) => x.value));
-          const most = Math.max(...before.map((x) => x.value));
           if (p.value >= 500 && p.value >= usual * 3 && p.value >= most * 1.5) txnFlags.push({ t: p.t, kind: 'Out of pattern', detail: `${fmtWhole(p.value)} to ${name}, about ${Math.round(p.value / usual)} times their usual ${fmtWhole(usual)}.` });
         } else if (!before.length && p.value >= 1000 && list.length <= 2) {
           txnFlags.push({ t: p.t, kind: 'New payee', detail: `${fmtWhole(p.value)} to ${name}, a payee not paid before this period.` });
@@ -2618,8 +2684,15 @@
       }
     }
     const txnsOut = txnFlags.map((f) => ({ ...f.t, kind: f.kind, detail: f.detail, key: `x|txn|${rowKey(f.t)}` })).sort((a, b) => b.date - a.date);
-    for (const item of [...flux, ...txnsOut]) item.review = (reviewed && reviewed[item.key]) || null;
     return { month, monthLabel: monthLabel(month), priorLabel: `${monthLabel(prior[0])} to ${monthLabel(prior[prior.length - 1])}`, flux, txns: txnsOut };
+  }
+
+  // The checks depend only on the file and account setup; review status is laid on per run.
+  function unusualActivity(txns, accountClass, meta, trend, reviewed) {
+    const raw = memo('unusual', txns, accountClass || EMPTY, () => unusualActivityUncached(txns, accountClass, meta, trend));
+    if (!raw) return null;
+    const tag = (item) => ({ ...item, review: (reviewed && reviewed[item.key]) || null });
+    return { ...raw, flux: raw.flux.map(tag), txns: raw.txns.map(tag) };
   }
 
   // ---------------------------------------------------------------- review state & client questions
@@ -2992,6 +3065,8 @@
       if (be) h.push(`<section class="keep"><h3>Break-even</h3>${table(['Measure', 'Per month'], [['Average revenue', fmtWhole(be.base.revenue)], ['Variable costs', fmtWhole(be.base.variable)], ['Fixed costs', fmtWhole(be.base.fixed)], ['Break-even revenue', be.breakEvenRevenue != null ? fmtWhole(be.breakEvenRevenue) : 'n/a'], ['Margin of safety', fmtPct(be.marginOfSafety)]])}</section>`);
       if (vd) {
         h.push(`<section><h3>Largest vendors (${esc(vd.windowLabel)})</h3>${table(['Vendor', 'Per month', 'Share', 'Pays in', 'Type'], vd.rows.slice(0, 10).map((r) => [r.name, fmtWhole(r.monthly), fmtPct(r.share), r.days != null ? `${r.days}d` : '-', r.type]))}</section>`);
+        const pr = vd.prices;
+        if (pr.rows.length) h.push(`<section class="keep"><h3>Vendor price increases</h3>${table(['Vendor', 'Was', 'Now', 'Since', 'Per year'], pr.rows.map((r) => [r.name, fmtMoney(r.from), fmtMoney(r.to), niceDate(r.since), fmtWhole(r.annualImpact)]))}${pr.priceRiseToHold != null ? `<p class="small">Together about ${esc(fmtWhole(pr.annualIncrease))} a year; covering it without losing profit takes a price rise of about ${esc(fmtPct(pr.priceRiseToHold))}.</p>` : ''}</section>`);
         const yr = [...vd.tax].reverse().find((y2) => y2.full) || vd.tax[vd.tax.length - 1];
         if (yr) h.push(`<section class="keep"><h3>1099 review, ${yr.year}</h3>${table(['Vendor', 'Check / transfer', 'Form', 'Status'], yr.vendors.filter((x) => x.status !== 'Card only').map((x) => [x.vendor, fmtWhole(x.bank), x.form, x.status]))}<p class="small">A screening list; a W-9 settles each case.</p></section>`);
       }
@@ -3059,6 +3134,8 @@
     const dsoC = dsoM && (dsoM.yoy || dsoM.recent);
     if (dsoC && dsoC.delta >= 10) steps.push(`Collections are slowing (${Math.round(dsoC.from)} to ${Math.round(dsoC.to)} days). Send invoices sooner, add reminders, or require deposits.`);
     if (vd) {
+      const pr = vd.prices;
+      if (pr.rows.length && pr.annualIncrease >= 500) steps.push(`Vendor price increases add about ${fmtWhole(pr.annualIncrease)} a year (largest: ${pr.rows[0].name}). Renegotiate or shop around, and check that your own prices keep pace${pr.priceRiseToHold != null ? ` (about ${fmtPct(pr.priceRiseToHold)} covers it)` : ''}.`);
       for (const e of vd.earlyPay) steps.push(`Ask ${e.name} for 30-day terms; paying on day 30 instead of day ${e.days} keeps about ${fmtWhole(e.cashFreed)} more cash on hand.`);
       const yr = [...vd.tax].reverse().find((y) => y.full);
       if (yr && yr.reviewCount) steps.push(`Collect W-9s and prepare 1099s for ${yr.reviewCount} vendor${yr.reviewCount === 1 ? '' : 's'} paid ${fmtWhole(yr.threshold)} or more in ${yr.year}.`);
@@ -3260,6 +3337,11 @@
       if (vd.insights.length) {
         L.push('');
         for (const i of vd.insights) L.push(`  - ${i.text}`);
+      }
+      if (vd.prices.rows.length) {
+        L.push('');
+        L.push('  Price increases from vendors that charge a steady amount:');
+        for (const r of vd.prices.rows) L.push(`    ${pad(r.name, 26)} ${padL(fmtMoney(r.from), 11)} -> ${padL(fmtMoney(r.to), 11)}  since ${niceDate(r.since)}  ${padL(fmtWhole(r.annualImpact), 8)}/yr`);
       }
       const yr = [...vd.tax].reverse().find((y) => y.full) || vd.tax[vd.tax.length - 1];
       if (yr) {
