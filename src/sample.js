@@ -105,7 +105,9 @@
       ];
       for (const [vendor, amt, day, first] of saas) {
         if (k < first) continue;
-        add({ date: d(k, day), type: 'Expense', num: '', name: vendor, customer: '', memo: `${vendor} subscription`, pnl: 'Software & Subscriptions', bs: CARD, amount: amt });
+        // The last two Adobe charges came in through the bank feed with the raw card descriptor.
+        const name = vendor === 'Adobe Creative Cloud' && k >= 16 ? 'ADOBE *CREATIVE CLD' : vendor;
+        add({ date: d(k, day), type: 'Expense', num: '', name, customer: '', memo: `${vendor} subscription`, pnl: 'Software & Subscriptions', bs: CARD, amount: amt });
       }
       // A second Notion workspace appeared in 2026 and is billed separately.
       add({ date: d(k, 3), type: 'Expense', num: '', name: 'Notion Labs', customer: '', memo: 'Notion Plus - workspace A', pnl: 'Software & Subscriptions', bs: CARD, amount: 20.0 });
@@ -126,6 +128,9 @@
     [[2, 5000], [5, 6000], [8, 7000], [11, 11000], [14, 3000]].forEach(([k, amt]) => {
       add({ date: d(k, 28), type: 'Check', num: String(num++), name: 'Jordan Pike', customer: '', memo: 'Owner draw', pnl: "Owner's Draw", bs: BANK, amount: amt });
     });
+
+    // A marketplace order coded correctly, but under the raw bank-feed name.
+    add({ date: d26(6, 9), type: 'Expense', num: '', name: 'AMZN Mktp US*9X11', customer: '', memo: 'Printer paper and toner', pnl: 'Office Supplies', bs: CARD, amount: 64.1 });
 
     // Annual renewals.
     add({ date: d(1, 26), type: 'Expense', num: '', name: 'Squarespace', customer: '', memo: 'Squarespace Business annual plan', pnl: 'Software & Subscriptions', bs: CARD, amount: 259.0 });

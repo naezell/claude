@@ -62,8 +62,8 @@ test('debit/credit columns and journal imbalance', () => {
 
 test('sample "by Account" export: every seeded issue is found once', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
-  assert.equal(r.count, 1532);
-  assert.equal(r.entryCount, 766, 'each entry appears in two account sections');
+  assert.equal(r.count, 1534);
+  assert.equal(r.entryCount, 767, 'each entry appears in two account sections');
   assert.equal(r.audit.uncategorized.length, 11);
   assert.equal(r.audit.duplicates.length, 3);
   const kinds = r.audit.mismatches.map((m) => m.kind);
@@ -473,4 +473,27 @@ test('Excel serial dates are read as dates', () => {
   assert.equal(E.parseDate('46023').toISOString().slice(0, 10), '2026-01-01');
   assert.equal(E.parseDate('45658.5').toISOString().slice(0, 10), '2025-01-01');
   assert.equal(E.parseDate('12345'), null, 'small numbers are not dates');
+});
+
+test('payee cleanup merges bank-feed names without over-merging', () => {
+  const k = E.payeeKeyOf;
+  assert.equal(k('AMZN Mktp US*2K41'), k('Amazon.com'));
+  assert.equal(k('ADOBE *CREATIVE CLD'), k('Adobe Creative Cloud'));
+  assert.equal(k('THE HOME DEPOT #4417'), k('The Home Depot'));
+  assert.equal(k('TST* BLUE DOOR CAFE'), k('Blue Door Cafe'));
+  assert.equal(k('PrintWorks Co.'), k('Printworks Co'));
+  assert.equal(k('Uber *Trip'), 'uber');
+  assert.notEqual(k('Uber Eats'), k('Uber'));
+  assert.notEqual(k('Blue Door Cafe'), k('Blue Bottle Coffee'));
+  assert.equal(k('Studio 54 Bar'), 'studio 54 bar', 'short numbers in real names stay');
+  assert.equal(E.cleanPayee('POS DEBIT 4471 SQ *MAKERS'), 'MAKERS');
+  assert.equal(E.cleanPayee('ACH DEBIT WEB PMT 88213'), '');
+  assert.equal(E.payeeOf({ name: '', memo: 'POS DEBIT 4471 SQ *MAKERS' }).key, 'makers', 'the memo names the payee when Name is blank');
+  assert.equal(E.payeeOf({ name: '', memo: 'Card purchase' }).key, '');
+  const { vendors, subs } = E.analyze(E.parseTransactions(S.build()));
+  const adobe = vendors.rows.filter((r) => r.key === 'adobe');
+  assert.equal(adobe.length, 1);
+  assert.equal(adobe[0].name, 'Adobe Creative Cloud', 'the most common spelling is shown');
+  assert.deepEqual(adobe[0].aliases, ['ADOBE *CREATIVE CLD']);
+  assert.equal(subs.list.find((x) => x.vendor === 'Adobe Creative Cloud').charges, 18, 'raw-named charges count toward the subscription');
 });

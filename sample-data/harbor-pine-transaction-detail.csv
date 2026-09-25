@@ -746,7 +746,7 @@ Chase Ink Card (4417)
 ,04/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,1874.37
 ,04/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,1886.37
 ,04/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-905.43,980.94
-,05/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,1070.93
+,05/02/2026,Expense,,ADOBE *CREATIVE CLD,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,1070.93
 ,05/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,1090.93
 ,05/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,1105.92
 ,05/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,1149.67
@@ -766,7 +766,7 @@ Chase Ink Card (4417)
 ,05/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,1828.34
 ,05/22/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,88.50,1916.84
 ,05/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-980.94,935.90
-,06/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,1025.89
+,06/02/2026,Expense,,ADOBE *CREATIVE CLD,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,1025.89
 ,06/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,1045.89
 ,06/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,1060.88
 ,06/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,1104.63
@@ -776,17 +776,18 @@ Chase Ink Card (4417)
 ,06/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,2758.61
 ,06/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,2778.60
 ,06/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,68.57,2847.17
-,06/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,2877.66
-,06/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,2913.66
-,06/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,3003.66
-,06/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,3033.65
-,06/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,3053.65
-,06/18/2026,Expense,,,,Card purchase,Office Supplies,58.20,3111.85
-,06/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,104.97,3216.82
-,06/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,3228.81
-,06/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,3240.81
-,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-935.90,2304.91
-Total for Chase Ink Card (4417),,,,,,,,"$2,304.91",
+,06/09/2026,Expense,,AMZN Mktp US*9X11,,Printer paper and toner,Office Supplies,64.10,2911.27
+,06/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,2941.76
+,06/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,2977.76
+,06/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,3067.76
+,06/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,3097.75
+,06/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,3117.75
+,06/18/2026,Expense,,,,Card purchase,Office Supplies,58.20,3175.95
+,06/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,104.97,3280.92
+,06/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,3292.91
+,06/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,3304.91
+,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-935.90,2369.01
+Total for Chase Ink Card (4417),,,,,,,,"$2,369.01",
 Accounts Payable (A/P)
 ,01/10/2025,Bill,B2501-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2871.33,2871.33
 ,01/11/2025,Bill,B2501-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,708.99,3580.32
@@ -1185,9 +1186,10 @@ Office Supplies
 ,03/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),100.19,1395.47
 ,04/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),95.75,1491.22
 ,05/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),136.74,1627.96
-,06/18/2026,Expense,,,,Card purchase,Chase Ink Card (4417),58.20,1686.16
-,06/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),104.97,1791.13
-Total for Office Supplies,,,,,,,,"$1,791.13",
+,06/09/2026,Expense,,AMZN Mktp US*9X11,,Printer paper and toner,Chase Ink Card (4417),64.10,1692.06
+,06/18/2026,Expense,,,,Card purchase,Chase Ink Card (4417),58.20,1750.26
+,06/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),104.97,1855.23
+Total for Office Supplies,,,,,,,,"$1,855.23",
 Owner's Draw
 ,03/28/2025,Check,1165,Jordan Pike,,Owner draw,Checking,5000.00,5000.00
 ,06/28/2025,Check,1166,Jordan Pike,,Owner draw,Checking,6000.00,11000.00
@@ -1463,7 +1465,7 @@ Software & Subscriptions
 ,04/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,8303.98
 ,04/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,8315.97
 ,04/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,8327.97
-,05/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),89.99,8417.96
+,05/02/2026,Expense,,ADOBE *CREATIVE CLD,,Adobe Creative Cloud subscription,Chase Ink Card (4417),89.99,8417.96
 ,05/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,8437.96
 ,05/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,8452.95
 ,05/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,8496.70
@@ -1478,7 +1480,7 @@ Software & Subscriptions
 ,05/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Chase Ink Card (4417),20.00,8877.16
 ,05/21/2026,Expense,,Spotify,,Spotify subscription,Chase Ink Card (4417),11.99,8889.15
 ,05/22/2026,Expense,,Calendly,,Calendly subscription,Chase Ink Card (4417),12.00,8901.15
-,06/02/2026,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),89.99,8991.14
+,06/02/2026,Expense,,ADOBE *CREATIVE CLD,,Adobe Creative Cloud subscription,Chase Ink Card (4417),89.99,8991.14
 ,06/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,9011.14
 ,06/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Chase Ink Card (4417),14.99,9026.13
 ,06/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Chase Ink Card (4417),43.75,9069.88

@@ -403,6 +403,72 @@
 
   // ---------------------------------------------------------------- audit
 
+  // ---------------------------------------------------------------- payee names
+
+  // Bank feeds name the same business many ways ("AMZN Mktp US*2K41", "Amazon.com").
+  // Known brands map to one key; everything else loses bank noise before comparing.
+  const PAYEE_ALIASES = [
+    [/amazon web services|\baws\b/i, 'aws'], [/\bamzn\b|amazon/i, 'amazon'], [/costco/i, 'costco'], [/best ?buy/i, 'best buy'],
+    [/uber\s*\*?\s*eats/i, 'uber eats'], [/\buber\b/i, 'uber'], [/\blyft\b/i, 'lyft'], [/home ?depot/i, 'home depot'], [/lowe'?s\b/i, 'lowes'],
+    [/wal-?mart/i, 'walmart'], [/\btarget\b/i, 'target'], [/staples/i, 'staples'], [/office ?depot|officemax/i, 'office depot'],
+    [/starbucks/i, 'starbucks'], [/adobe/i, 'adobe'], [/dropbox/i, 'dropbox'], [/zoom\.?us|zoom video/i, 'zoom'], [/\bslack\b/i, 'slack'],
+    [/\bcanva\b/i, 'canva'], [/mailchimp/i, 'mailchimp'], [/intuit|quickbooks|qbooks/i, 'quickbooks'], [/g ?suite|google\s*\*?\s*(workspace|gsuite)/i, 'google workspace'],
+    [/\bmsft\b|microsoft/i, 'microsoft'], [/comcast|xfinity/i, 'comcast'], [/verizon/i, 'verizon'], [/at&t|\batt\*/i, 'att'],
+    [/fedex/i, 'fedex'], [/\bups\b/i, 'ups'], [/\busps\b/i, 'usps'], [/netflix/i, 'netflix'], [/spotify/i, 'spotify'],
+    [/apple\.com\/bill|itunes/i, 'apple'], [/github/i, 'github'], [/\bnotion\b/i, 'notion'], [/calendly/i, 'calendly'], [/zapier/i, 'zapier'],
+  ];
+  const PAYEE_PREFIX = /^((pos|ach|dbt|debit|credit|card|check ?card|checkcard|purchase|recurring|preauthorized|online|web|pmt|payment|withdrawal|visa|mc|crd|ppd|ccd)\b[\s.:-]*)+/i;
+  const PROCESSOR_TAG = /^(sq|tst|pp|paypal|sp|dd|pypl|in|sqsp)\s*\*\s*/i;
+  const NOISE_WORDS = new Set(['pos', 'debit', 'credit', 'ach', 'web', 'pmt', 'payment', 'purchase', 'card', 'checkcard', 'recurring', 'online', 'transfer', 'withdrawal', 'deposit', 'mobile', 'check', 'no', 'memo', 'inc', 'llc', 'co', 'corp', 'ltd', 'the', 'com', 'www', 'us', 'usa', 'mktp']);
+
+  function cleanPayee(raw) {
+    let s = norm(raw);
+    if (!s) return '';
+    // Order matters: store numbers, then long digit runs, then bank prefixes and processor tags.
+    s = s.replace(/#\s*\d+/g, ' ');
+    s = s.replace(/\b\d{4,}\b/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    s = s.replace(PAYEE_PREFIX, '').trim();
+    s = s.replace(PROCESSOR_TAG, '').trim();
+    // "ADOBE *CREATIVE CLD" -> "ADOBE": the part after an asterisk is a billing descriptor.
+    const star = s.indexOf('*');
+    if (star > 0 && /[a-z]{3,}/i.test(s.slice(0, star))) s = s.slice(0, star);
+    else if (star === 0) s = s.slice(1);
+    s = s.replace(/\s\d{3,}\b/g, ' ');
+    return s.replace(/\s{2,}/g, ' ').replace(/[\s.,:*#-]+$/, '').trim();
+  }
+
+  const payeeKeyCache = new Map();
+  function payeeKeyOf(raw) {
+    const r = norm(raw);
+    if (!r) return '';
+    if (payeeKeyCache.has(r)) return payeeKeyCache.get(r);
+    let key = '';
+    for (const [rx, k] of PAYEE_ALIASES) if (rx.test(r)) { key = k; break; }
+    if (!key) {
+      const words = lower(cleanPayee(r)).replace(/&/g, ' and ').replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w && !NOISE_WORDS.has(w));
+      key = words.join(' ');
+    }
+    if (payeeKeyCache.size > 20000) payeeKeyCache.clear();
+    payeeKeyCache.set(r, key);
+    return key;
+  }
+
+  // The business a cost went to, for grouping: the vendor or name, else a cleaned bank memo.
+  function payeeOf(t) {
+    const named = norm(t.vendor || t.name);
+    if (named) return { key: payeeKeyOf(named), raw: named };
+    const fromMemo = cleanPayee(t.memo);
+    const key = payeeKeyOf(fromMemo);
+    return key && /[a-z]{3,}/.test(key) ? { key, raw: fromMemo } : { key: '', raw: '' };
+  }
+
+  // Display name for a group of raw names: the one used most, tidied if it is bank shouting.
+  function displayPayee(counts) {
+    const [best] = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0] || [''];
+    const clean = best === best.toUpperCase() && /[A-Z]{3,}/.test(best) ? cleanPayee(best).toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase()) : best;
+    return clean || best;
+  }
+
   function counterpartyOf(t) {
     return t.name || t.vendor || t.customer || '';
   }
@@ -479,7 +545,7 @@
     const buckets = new Map();
     for (const t of txns) {
       if (!t.amount) continue;
-      const cp = lower(counterpartyOf(t)) || lower(t.memo).slice(0, 24);
+      const cp = payeeKeyOf(counterpartyOf(t)) || payeeOf(t).key || lower(t.memo).slice(0, 24);
       const key = [lower(t.account), cp, Math.abs(t.amount).toFixed(2)].join('|');
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(t);
@@ -551,10 +617,14 @@
 
     // Same vendor coded to different expense categories.
     const byVendor = new Map();
+    const vendorNames = new Map();
     for (const t of txns) {
       if (!EXPENSE_TYPES.test(t.type) || REVERSING_TYPES.test(t.type)) continue;
-      const v = counterpartyOf(t);
+      const who = counterpartyOf(t);
+      const v = payeeKeyOf(who);
       if (!v) continue;
+      if (!vendorNames.has(v)) vendorNames.set(v, new Map());
+      vendorNames.get(v).set(who, (vendorNames.get(v).get(who) || 0) + 1);
       const cat = ['expense', 'cogs'].includes(cls(t.account)) ? t.account : ['expense', 'cogs'].includes(cls(t.split)) ? t.split : '';
       if (!cat || RX.uncategorized.test(cat)) continue;
       if (!byVendor.has(v)) byVendor.set(v, new Map());
@@ -562,8 +632,9 @@
       if (!m.has(cat)) m.set(cat, []);
       m.get(cat).push(t);
     }
-    for (const [vendor, cats] of byVendor) {
+    for (const [key, cats] of byVendor) {
       if (cats.size < 2) continue;
+      const vendor = displayPayee(vendorNames.get(key));
       const sorted = [...cats.entries()].sort((a, b) => b[1].length - a[1].length);
       const [primary, primaryRows] = sorted[0];
       const total = [...cats.values()].reduce((s, l) => s + l.length, 0);
@@ -750,15 +821,18 @@
     const postings = toPostings(txns, accountClass).filter((p) => p.cls !== 'income' && p.value > 0);
     const byVendor = new Map();
     for (const p of postings) {
-      const vendor = p.t.vendor || p.t.name || p.t.memo.replace(/[#*]?\d{3,}.*$/, '').trim().slice(0, 40);
-      if (!vendor) continue;
-      const k = lower(vendor);
-      if (!byVendor.has(k)) byVendor.set(k, { vendor, rows: [] });
-      byVendor.get(k).rows.push(p);
+      const who = payeeOf(p.t);
+      if (!who.key) continue;
+      if (!byVendor.has(who.key)) byVendor.set(who.key, { names: new Map(), rows: [] });
+      const g = byVendor.get(who.key);
+      g.names.set(who.raw, (g.names.get(who.raw) || 0) + 1);
+      g.rows.push(p);
     }
 
     const subs = [];
-    for (const { vendor, rows } of byVendor.values()) {
+    for (const g of byVendor.values()) {
+      const vendor = displayPayee(g.names);
+      const rows = g.rows;
       rows.sort((a, b) => a.t.date - b.t.date);
       const text = `${vendor} ${rows.map((r) => r.t.memo).join(' ')}`;
       const category = saasCategory(text);
@@ -1675,23 +1749,24 @@
     const entries = logicalRows(txns, accountClass);
     const postings = toPostings(txns, accountClass);
     const byYear = new Map();
-    const add = (year, vendor, method, amount, account) => {
-      if (!vendor || amount <= 0) return;
+    const add = (year, who, method, amount, account) => {
+      if (!who.key || amount <= 0) return;
       if (!byYear.has(year)) byYear.set(year, new Map());
       const m = byYear.get(year);
-      if (!m.has(vendor)) m.set(vendor, { vendor, bank: 0, card: 0, count: 0, rent: 0, accounts: new Set() });
-      const v = m.get(vendor);
+      if (!m.has(who.key)) m.set(who.key, { names: new Map(), bank: 0, card: 0, count: 0, rent: 0, accounts: new Set() });
+      const v = m.get(who.key);
+      v.names.set(who.raw, (v.names.get(who.raw) || 0) + 1);
       v[method] += amount;
       v.count++;
       if (account) { v.accounts.add(leafAccount(account)); if (/rent|lease/i.test(account)) v.rent += amount; }
     };
     // Bills are reported when paid, so count the bill payments.
     const billAccount = new Map();
-    for (const p of postings) if (/^bill$/i.test(p.t.type)) billAccount.set(lower(vendorOf(p.t)), p.category);
+    for (const p of postings) if (/^bill$/i.test(p.t.type)) billAccount.set(payeeKeyOf(vendorOf(p.t)), p.category);
     for (const t of entries) {
       if (!/bill payment/i.test(t.type)) continue;
-      const v = vendorOf(t);
-      add(t.date.getUTCFullYear(), v, /credit card/i.test(t.type) ? 'card' : 'bank', Math.abs(t.amount), billAccount.get(lower(v)));
+      const who = payeeOf(t);
+      add(t.date.getUTCFullYear(), who, /credit card/i.test(t.type) ? 'card' : 'bank', Math.abs(t.amount), billAccount.get(who.key));
     }
     // Direct payments: checks, expenses and card charges coded straight to a cost account.
     for (const p of postings) {
@@ -1701,7 +1776,7 @@
       const fundRole = roleOf(accountClass, funding);
       const method = fundRole === 'card' ? 'card' : fundRole === 'cash' || cls(funding) === 'balance' ? 'bank' : null;
       if (!method) continue;
-      add(p.t.date.getUTCFullYear(), vendorOf(p.t), method, p.value, p.category);
+      add(p.t.date.getUTCFullYear(), payeeOf(p.t), method, p.value, p.category);
     }
     const range = dateRange(txns, meta);
     const years = [...byYear.keys()].sort();
@@ -1709,6 +1784,7 @@
       const full = range.first <= new Date(Date.UTC(year, 0, 3)) && range.last >= new Date(Date.UTC(year, 11, 28));
       const limit = threshold1099(year);
       const vendors = [...byYear.get(year).values()].map((v) => {
+        v.vendor = displayPayee(v.names);
         let status, note;
         const bank = round2(v.bank), card = round2(v.card);
         if (bank < limit && card >= limit) { status = 'Card only'; note = 'Card payments are reported by the card processor on 1099-K.'; }
@@ -1740,9 +1816,10 @@
 
     const vendors = new Map();
     for (const p of all) {
-      const name = vendorOf(p.t) || 'No vendor recorded';
-      if (!vendors.has(name)) vendors.set(name, { name, spend: 0, variable: 0, fixed: 0, charges: 0, accounts: new Map(), recent: 0, prior: 0, card: 0, bank: 0, viaBills: false });
-      const v = vendors.get(name);
+      const who = payeeOf(p.t);
+      if (!vendors.has(who.key)) vendors.set(who.key, { key: who.key, names: new Map(), spend: 0, variable: 0, fixed: 0, charges: 0, accounts: new Map(), recent: 0, prior: 0, card: 0, bank: 0, viaBills: false });
+      const v = vendors.get(who.key);
+      if (who.raw) v.names.set(who.raw, (v.names.get(who.raw) || 0) + 1);
       const k = p.t.dateStr.slice(0, 7);
       if (last3.has(k)) v.recent += p.value;
       if (prior3.has(k)) v.prior += p.value;
@@ -1758,14 +1835,17 @@
       else v.bank += p.value;
     }
     const total = [...vendors.values()].reduce((t, v) => t + v.spend, 0) || 1;
-    const lagBy = new Map(cash ? cash.ap.vendorLags.map((l) => [l.name, l.medianDays]) : []);
+    const lagBy = new Map(cash ? cash.ap.vendorLags.map((l) => [payeeKeyOf(l.name), l.medianDays]) : []);
     const openBy = new Map();
-    if (cash) for (const b of cash.ap.openBills) openBy.set(b.party, (openBy.get(b.party) || 0) + b.open);
+    if (cash) for (const b of cash.ap.openBills) openBy.set(payeeKeyOf(b.party), (openBy.get(payeeKeyOf(b.party)) || 0) + b.open);
     const rows = [...vendors.values()].filter((v) => v.spend > 0).map((v) => {
+      v.name = v.key ? displayPayee(v.names) : 'No vendor recorded';
       const topAccount = [...v.accounts.entries()].sort((a, b) => b[1] - a[1])[0];
-      const days = lagBy.has(v.name) ? lagBy.get(v.name) : null;
+      const days = lagBy.has(v.key) ? lagBy.get(v.key) : null;
       return {
         name: v.name,
+        key: v.key,
+        aliases: [...v.names.keys()].filter((n) => lower(n) !== lower(v.name)).slice(0, 4),
         spend: round2(v.spend),
         monthly: round2(v.spend / months),
         share: v.spend / total,
@@ -1775,7 +1855,7 @@
         trendPct: prior3.size === 3 && v.prior > 0 ? pctChange(v.prior, v.recent) : null,
         isNew: prior3.size === 3 && v.prior === 0 && v.recent > 0,
         days,
-        openBills: round2(openBy.get(v.name) || 0),
+        openBills: round2(openBy.get(v.key) || 0),
         paidBy: v.viaBills ? 'Bills' : v.card > v.bank ? 'Card' : 'Bank',
       };
     }).sort((a, b) => b.spend - a.spend);
@@ -1783,11 +1863,11 @@
     // Paying faster than 30-day terms would require ties up cash for nothing.
     const billedMonthly = new Map();
     for (const p of postings) if (/^bill$/i.test(p.t.type)) {
-      const v = vendorOf(p.t);
+      const v = payeeKeyOf(vendorOf(p.t));
       billedMonthly.set(v, (billedMonthly.get(v) || 0) + p.value / months);
     }
-    const earlyPay = rows.filter((r) => r.days != null && r.days <= 10 && (billedMonthly.get(r.name) || 0) >= 300).map((r) => {
-      const monthlyBills = round2(billedMonthly.get(r.name));
+    const earlyPay = rows.filter((r) => r.days != null && r.days <= 10 && (billedMonthly.get(r.key) || 0) >= 300).map((r) => {
+      const monthlyBills = round2(billedMonthly.get(r.key));
       return { name: r.name, days: r.days, monthlyBills, cashFreed: round2(monthlyBills * (30 - r.days) / 30.44) };
     });
 
@@ -2697,6 +2777,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

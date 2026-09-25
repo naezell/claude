@@ -1544,7 +1544,7 @@
         <div class="panel-body flush"><div class="table-wrap scroll-y"><table>
           <thead><tr><th>Vendor</th><th class="num">Per month</th><th>Share of spending</th><th>Type</th><th class="num">Last 3 mo.</th><th class="num">Pays in</th><th class="num">Open bills</th><th>Paid by</th></tr></thead>
           <tbody>${v.rows.map((r) => html`<tr key=${r.name}>
-            <td>${r.name}<span class="sub">${r.account}</span></td>
+            <td>${r.name}<span class="sub">${r.account}${r.aliases && r.aliases.length ? ` · also appears as ${r.aliases.join(', ')}` : ''}</span></td>
             <td class="num">${wholeMoney(r.monthly)}</td>
             <td><div class="share-cell"><span class="share-bar"><span style=${{ width: `${(r.share / maxShare) * 100}%` }}></span></span><span class="num">${fmtPct(r.share)}</span></div></td>
             <td>${r.type}</td>
