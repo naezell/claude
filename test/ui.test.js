@@ -50,13 +50,17 @@ before(async () => {
 });
 after(async () => { if (browser) await browser.close(); });
 
-async function openPage(opts) {
+// `setup(page)` runs before the page loads (init scripts); `serve(route, url)` may answer a
+// request itself and return true.
+async function openPage(opts, setup, serve) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, ...(opts || {}) });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.route('**/*', (route) => {
+  if (setup) await setup(page);
+  await page.route('**/*', async (route) => {
     const url = route.request().url();
     if (url.startsWith('file:')) return route.continue();
+    if (serve && await serve(route, url)) return;
     const hit = Object.keys(CDN).find((k) => url.endsWith(k));
     return hit ? route.fulfill({ path: path.join(NM, CDN[hit]), contentType: 'application/javascript' }) : route.abort();
   });
@@ -159,6 +163,111 @@ test('client report and client questions drawers build their documents', async (
   const q = await page.locator('.drawer').innerText();
   assert.match(q, /Unusual payments/i);
   assert.match(q, /Comcast Business/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('branding: firm name and logo in the header and on the report', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  assert.equal(await page.locator('.brand h1').innerText(), '7D Business Solutions');
+  assert.equal(await page.locator('.brand-logo').count(), 1);
+  await page.click('button:has-text("Help")');
+  assert.match(await page.locator('.drawer').innerText(), /Transaction Detail by Account/);
+  await page.click('.drawer-head button');
+  await page.click('button:has-text("Client report")');
+  await page.fill('#preparer', 'Jordan Lee');
+  await page.waitForFunction(() => { const h = document.querySelector('.drawer .report-shadow'); return h && h.shadowRoot && /Jordan Lee/.test(h.shadowRoot.textContent); });
+  const info = await page.evaluate(() => {
+    const root = document.querySelector('.drawer .report-shadow').shadowRoot;
+    return { brand: root.querySelector('.brand').textContent, logo: !!root.querySelector('img.logo[src^="data:image/png"]'), firm: root.querySelector('.firm').textContent };
+  });
+  assert.equal(info.brand, '7D Business Solutions');
+  assert.ok(info.logo, 'logo embedded in the report');
+  assert.match(info.firm, /Jordan Lee, 7D Business Solutions · www\.7dbusinesssolutions\.com/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// A stand-in for Google sign-in and the Drive API, holding files in memory.
+function fakeGoogle() {
+  const files = new Map();
+  const calls = [];
+  let n = 0;
+  const gis = `window.google = { accounts: { oauth2: {
+    initTokenClient: (cfg) => ({ requestAccessToken: () => setTimeout(() => cfg.callback({ access_token: 'tok', expires_in: 3600 }), 10) }),
+    revoke: (t, cb) => cb && cb(),
+  } } };`;
+  const serve = async (route, url) => {
+    const req = route.request();
+    if (url.startsWith('https://accounts.google.com/gsi/client')) { await route.fulfill({ body: gis, contentType: 'application/javascript' }); return true; }
+    if (!url.startsWith('https://www.googleapis.com/')) return false;
+    const auth = req.headers().authorization;
+    calls.push(`${req.method()} ${url.replace(/\?.*$/, '')}`);
+    if (auth !== 'Bearer tok') { await route.fulfill({ status: 401, body: '{}' }); return true; }
+    const json = (obj) => route.fulfill({ body: JSON.stringify(obj), contentType: 'application/json', headers: { 'access-control-allow-origin': '*' } });
+    const u = new URL(url);
+    if (req.method() === 'GET' && u.pathname === '/drive/v3/files') { await json({ files: [...files.entries()].map(([id, f]) => ({ id, name: f.name, modifiedTime: f.modified })) }); return true; }
+    const get = u.pathname.match(/^\/drive\/v3\/files\/(\w+)$/);
+    if (req.method() === 'GET' && get) { await route.fulfill({ body: files.get(get[1]).body, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' } }); return true; }
+    if (req.method() === 'POST' && u.pathname === '/upload/drive/v3/files') {
+      const text = req.postData();
+      const parts = text.split(/--ll\w+/).filter((p) => p.includes('{'));
+      const meta = JSON.parse(parts[0].slice(parts[0].indexOf('{')));
+      const body = parts[1].slice(parts[1].indexOf('{')).trim();
+      const id = `f${++n}`;
+      files.set(id, { name: meta.name, body, modified: new Date().toISOString(), meta });
+      await json({ id, modifiedTime: files.get(id).modified });
+      return true;
+    }
+    const patch = u.pathname.match(/^\/upload\/drive\/v3\/files\/(\w+)$/);
+    if (req.method() === 'PATCH' && patch) {
+      const f = files.get(patch[1]);
+      f.body = req.postData(); f.modified = new Date().toISOString();
+      await json({ id: patch[1], modifiedTime: f.modified });
+      return true;
+    }
+    if (req.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } }); return true; }
+    return false;
+  };
+  return { files, calls, serve };
+}
+
+test('Google Drive: connect, save, save automatically after a change, and restore', async (t) => {
+  if (skip) return t.skip(skip);
+  const g = fakeGoogle();
+  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com' }; }), g.serve);
+  await page.click('button:has-text("Saved clients")');
+  await page.click('button:has-text("Connect Google Drive")');
+  await page.waitForSelector('button:has-text("Save to Drive now")');
+  await page.click('button:has-text("Save to Drive now")');
+  await page.waitForFunction(() => /last saved today/.test(document.querySelector('.drawer').innerText));
+  assert.equal(g.files.size, 1);
+  const [id, file] = [...g.files.entries()][0];
+  assert.equal(file.name, 'Ledger Lens backup.json');
+  assert.deepEqual(file.meta.appProperties, { ledgerLens: 'clients-backup' });
+  assert.equal(JSON.parse(file.body).format, 'ledger-lens-clients');
+
+  // A review mark on an uploaded client is saved to Drive a few seconds later.
+  await page.click('.drawer-head button');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Uncategorized transactions' }) });
+  await panel.locator('select.review-select').first().selectOption('ok');
+  const deadline = Date.now() + 15000;
+  while (!Object.keys(JSON.parse(g.files.get(id).body).clients).length && Date.now() < deadline) await page.waitForTimeout(250);
+  const saved = JSON.parse(g.files.get(id).body).clients;
+  assert.equal(Object.keys(saved).length, 1, 'the uploaded client was saved automatically');
+  assert.ok(g.calls.some((c) => c.startsWith('PATCH')), 'the existing file is updated, not duplicated');
+  assert.equal(g.files.size, 1);
+
+  // Restoring brings in a client that only exists in the Drive copy.
+  const data = JSON.parse(g.files.get(id).body);
+  data.clients['other co'] = { name: 'Other Co', accountClass: {}, reviewed: { a: { status: 'ok' } }, updatedAt: '2030-01-01T00:00:00.000Z' };
+  g.files.get(id).body = JSON.stringify(data);
+  await page.click('button:has-text("Saved clients")');
+  await page.click('button:has-text("Restore from Drive")');
+  await page.waitForSelector('.client-row:has-text("Other Co")');
   assert.deepEqual(errors, []);
   await page.close();
 });

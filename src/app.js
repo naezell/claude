@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup } = UI;
 
   // ------------------------------------------------------------ top-level app
 
@@ -25,6 +25,12 @@
     const [restored, setRestored] = useState(null);
     const [questionsOpen, setQuestionsOpen] = useState(false);
     const [clientsOpen, setClientsOpen] = useState(false);
+    const [helpOpen, setHelpOpen] = useState(false);
+    const [welcome, setWelcome] = useState(() => !safeStore.get('ll.welcomed'));
+    const dismissWelcome = () => { safeStore.set('ll.welcomed', '1'); setWelcome(false); };
+    // Checked when the page opens and whenever the backup drawer closes.
+    const [backupDue, setBackupDue] = useState(() => Backup.overdue());
+    const [backupSnoozed, setBackupSnoozed] = useState(false);
     const [scenario, setScenario] = useState({ levers: [] });
     const [budgetPrefs, setBudgetPrefs] = useState({ mode: 'auto', revenueGrowth: '10', costGrowth: '5' });
     const [loanInputs, setLoanInputs] = useState({ amount: '', rate: '10.5', years: '10', addBacks: '' });
@@ -174,10 +180,12 @@
       <header class="topbar">
         <div class="wrap">
           <div class="brand">
-            <div class="brand-mark" aria-hidden="true">
-              <svg viewBox="0 0 16 16" fill="none" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="m10.2 10.2 3.3 3.3M5 7h4M7 5v4"/></svg>
-            </div>
-            <div><h1>Ledger Lens</h1><small>QuickBooks audit, profitability & cash forecast</small></div>
+            ${Firm.mark
+              ? html`<img class="brand-logo" src=${Firm.mark} alt="" />`
+              : html`<div class="brand-mark" aria-hidden="true">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="m10.2 10.2 3.3 3.3M5 7h4M7 5v4"/></svg>
+                </div>`}
+            <div><h1>${Firm.name || 'Ledger Lens'}</h1><small>${Firm.name ? 'Ledger Lens · QuickBooks review, profitability & cash forecast' : 'QuickBooks audit, profitability & cash forecast'}</small></div>
           </div>
           <div class="actions">
             <label class="btn" for="csv-upload">${Icon.upload}Upload export</label>
@@ -185,9 +193,10 @@
             ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
               <input id="csv-add" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
             ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
-            <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.sample}Saved clients</button>
+            <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.cloud}Saved clients</button>
             <button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
             <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>
+            <button class="btn" onClick=${() => setHelpOpen(true)}>${Icon.help}Help</button>
           </div>
         </div>
       </header>
@@ -207,6 +216,8 @@
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
         ${error && html`<div class="error" role="alert">${error}</div>`}
+        ${welcome && html`<${Banner} level="good" label="Welcome">New here? The getting-started guide covers which QuickBooks reports to export, a monthly routine and how to send reports. <button class="linkish" onClick=${() => { dismissWelcome(); setHelpOpen(true); }}>Open the guide</button> · <button class="linkish" onClick=${dismissWelcome}>Dismiss</button></${Banner}>`}
+        ${!welcome && backupDue && !backupSnoozed && html`<${Banner} level="medium" label="Back up">Your saved clients have not been backed up in over 30 days. They live only in this browser. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button> · <button class="linkish" onClick=${() => setBackupSnoozed(true)}>Later</button></${Banner}>`}
         ${restored && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
 
         <div class="tabs" role="tablist">
@@ -232,11 +243,12 @@
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
             : html`<${AdvisoryTab} result=${result} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
         </main>`}
-        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Saved clients. Flags are leads for review, not confirmed errors.</footer>
+        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Saved clients. Flags are leads for review, not confirmed errors.${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
       </div>
 
       ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
-      ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onClose=${() => setClientsOpen(false)} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
+      ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} />`}
+      ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
       ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} benchmarks=${benchmarks} onClose=${() => setReportOpen(false)} />`}
       ${dragging && html`<div class="drop-overlay">Drop the QuickBooks CSV to analyze it</div>`}
     `;

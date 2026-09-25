@@ -29,6 +29,9 @@
   // Everything goes through this object, so moving storage elsewhere is a one-place change.
   const ClientStore = {
     key: 'll.clients.v1',
+    // Told about every change, so a backup elsewhere (Google Drive) can follow along.
+    listeners: new Set(),
+    changed() { this.listeners.forEach((fn) => { try { fn(); } catch (e) { /* a listener failing must not stop saving */ } }); },
     all() { try { return JSON.parse(safeStore.get(this.key) || '{}') || {}; } catch (e) { return {}; } },
     get(id) { return id ? this.all()[id] || null : null; },
     put(id, profile) {
@@ -36,8 +39,9 @@
       const all = this.all();
       all[id] = { ...profile, updatedAt: new Date().toISOString() };
       safeStore.set(this.key, JSON.stringify(all));
+      this.changed();
     },
-    remove(id) { const all = this.all(); delete all[id]; safeStore.set(this.key, JSON.stringify(all)); },
+    remove(id) { const all = this.all(); delete all[id]; safeStore.set(this.key, JSON.stringify(all)); this.changed(); },
     // Import keeps whichever copy of each client was updated more recently.
     merge(incoming) {
       const all = this.all();
@@ -47,9 +51,41 @@
         if (!all[id] || String(p.updatedAt || '') > String(all[id].updatedAt || '')) { all[id] = p; n++; }
       }
       safeStore.set(this.key, JSON.stringify(all));
+      if (n) this.changed();
       return n;
     },
   };
+
+  // One backup file holds every saved client plus the preparer name. The same file is used for
+  // a download and for Google Drive, and restoring merges it (newer copies win).
+  const Backup = {
+    format: 'ledger-lens-clients',
+    build() {
+      return JSON.stringify({ format: this.format, version: 2, savedAt: new Date().toISOString(), clients: ClientStore.all(), settings: { preparer: safeStore.get('ll.preparer') || '' } }, null, 2);
+    },
+    restore(text) {
+      let data;
+      try { data = JSON.parse(String(text || '')); } catch (e) { throw new Error('the file is not valid JSON'); }
+      if (!data || data.format !== this.format) throw new Error('not a Ledger Lens backup');
+      const n = ClientStore.merge(data.clients);
+      const preparer = data.settings && typeof data.settings.preparer === 'string' ? data.settings.preparer : '';
+      if (preparer && !safeStore.get('ll.preparer')) safeStore.set('ll.preparer', preparer);
+      return n;
+    },
+    // When and where the last backup went, for the reminder.
+    mark(where) { safeStore.set('ll.lastBackup', JSON.stringify({ at: new Date().toISOString(), where })); },
+    last() { try { return JSON.parse(safeStore.get('ll.lastBackup') || 'null'); } catch (e) { return null; } },
+    // Saved clients exist and nothing has been backed up in 30 days (or ever).
+    overdue() {
+      const all = ClientStore.all();
+      const newest = Object.values(all).reduce((m, c) => (String(c.updatedAt || '') > m ? String(c.updatedAt) : m), '');
+      if (!newest) return false;
+      const last = this.last();
+      if (!last || !last.at) return true;
+      return last.at < newest && Date.now() - Date.parse(last.at) > 30 * 864e5;
+    },
+  };
+  const Firm = window.LedgerFirm || {};
   const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.cushion && !p.bench && !(p.loan && p.loan.amount) && !(p.tax && (p.tax.entity !== 'sole' || p.tax.rate || p.tax.salary || p.tax.paid)));
 
   // The Excel reader (SheetJS) is large, so it loads only when an Excel file is dropped in.
@@ -145,6 +181,8 @@
     check: html`<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 8.5 3 3 6-7"/></svg>`,
     download: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5v8M4.8 7.5 8 10.7l3.2-3.2M2.5 12.8h11"/></svg>`,
     copy: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="5" y="5" width="8.5" height="8.5" rx="1.2"/><path d="M11 5V3.2c0-.4-.3-.7-.7-.7H3.2c-.4 0-.7.3-.7.7v7.1c0 .4.3.7.7.7H5"/></svg>`,
+    help: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M6.2 6.2a1.9 1.9 0 0 1 3.6.8c0 1.3-1.8 1.6-1.8 2.8M8 11.6v.1"/></svg>`,
+    cloud: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5a3 3 0 0 1-.4-6 4 4 0 0 1 7.7-.9 3.2 3.2 0 0 1-.3 6.9z"/></svg>`,
   };
 
   function Severity({ level }) {
@@ -214,5 +252,5 @@
     }, [onClose]);
   }
 
-  Object.assign(UI, { compactMoney, truncate, safeStore, ClientStore, emptyProfile, excelToCsv, saveTextFile, copyText, slug, useDebounced, useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf, shortDate, wholeMoney, Banner, MoneyInput, Slider, InsightList, NumberInput, useEscape });
+  Object.assign(UI, { compactMoney, truncate, safeStore, ClientStore, emptyProfile, excelToCsv, saveTextFile, copyText, slug, useDebounced, useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf, shortDate, wholeMoney, Banner, MoneyInput, Slider, InsightList, NumberInput, useEscape, Backup, Firm });
 })();

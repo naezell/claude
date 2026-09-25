@@ -1,0 +1,56 @@
+# Turning on Google Drive backup
+
+Ledger Lens can keep its saved clients (review marks, account corrections and settings) in a file in the user's own Google Drive, saved automatically after each change. It needs two things that only the owner of the Google account can set up:
+
+1. **The app on its own web address.** Google only lets sign-in run on addresses registered in step 2. The claude.ai link can't be used for this, because claude.ai pages are not allowed to load Google's sign-in.
+2. **A Google sign-in key (OAuth client ID)** tied to that address.
+
+Both are free. Allow about 20 minutes.
+
+Until then, the app still works: **Saved clients & backup → Save backup file** writes one file with everything in it. With [Google Drive for desktop](https://www.google.com/drive/download/) installed, save that file into the Google Drive folder and it syncs like any other file.
+
+## 1. Put the app online (Netlify)
+
+1. Sign up at [netlify.com](https://www.netlify.com) (the free plan is enough).
+2. **Add new site → Deploy manually**, and drag in a folder holding `index.html`, `src/` and `assets/` from this repository. Or choose **Import from Git** and pick the repository, so every update goes live on its own. There is no build step: leave the build command empty and set the publish directory to the repository root.
+3. Netlify gives the site an address like `https://7d-ledger-lens.netlify.app`. Rename it under **Site configuration → Change site name**.
+4. Optional: use an address on the firm's own domain, such as `https://app.7dbusinesssolutions.com`, under **Domain management**.
+
+Client files are still read in the browser and never uploaded. Netlify only serves the page.
+
+## 2. Create the Google sign-in key
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com), signed in with the Google account whose Drive should hold the backup.
+2. Create a project, for example **7D Ledger Lens**.
+3. **APIs & Services → Library**: search for **Google Drive API** and choose **Enable**.
+4. **APIs & Services → OAuth consent screen** (called **Google Auth Platform** in newer consoles):
+   - User type **External**. App name **7D Ledger Lens**, plus a support email.
+   - Scopes / Data access: add `.../auth/drive.file`. This scope only lets the app see files it created itself, not the rest of the Drive.
+   - Audience / Test users: add the Gmail or Google Workspace address that will use the app. Leaving the app in **Testing** is fine for a few users. Google shows a "Google hasn't verified this app" screen at first sign-in; choose **Continue**.
+5. **APIs & Services → Credentials → Create credentials → OAuth client ID**:
+   - Application type **Web application**.
+   - **Authorized JavaScript origins**: the site address from step 1, for example `https://7d-ledger-lens.netlify.app`, with no trailing slash. Add the custom domain too if you set one up.
+   - Redirect URIs: none needed.
+6. Copy the **Client ID**. It ends in `.apps.googleusercontent.com`. It is not a secret; it only works from the addresses listed above.
+
+## 3. Add the key to the app
+
+In `src/config.js`, set:
+
+```js
+window.LedgerConfig = Object.assign({
+  googleClientId: '1234567890-abc123.apps.googleusercontent.com',
+}, window.LedgerConfig);
+```
+
+Redeploy (drag the folder in again, or push to Git if Netlify is connected).
+
+## Using it
+
+**Saved clients & backup → Connect Google Drive.** Approve access in the Google window. Then:
+
+- **Save to Drive now** creates `Ledger Lens backup.json` in My Drive. You can move it to any folder and the app still finds it.
+- With **Save to Drive automatically after each change** ticked, the file is updated a few seconds after each review mark or setting change, while connected.
+- **Restore from Drive** merges the Drive copy into this browser, keeping whichever copy of each client is newer. Use it on a new computer or after clearing the browser.
+- Google Drive keeps earlier versions of the file (right-click → File information → Manage versions).
+- For safety, Google asks again each time the page is opened (one click after the first time).

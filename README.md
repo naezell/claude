@@ -64,6 +64,12 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - **Client questions**: turns open uncategorized items, possible double charges, entries needing context, unusual payments, invoices over 90 days old and W-9 requests into a friendly, numbered question list ready to email. One click marks the included flags as asked.
 - **Saved clients**: account type corrections, reviewed flags, the cash cushion, benchmark industry and state, and loan and tax inputs are saved per client (matched on the company name in the report header) and restored when their file is loaded again. They are kept in this browser only; export a JSON backup to move them to another computer or share them with a colleague.
 
+**Firm branding**: the app header, client reports, client questions and plain-text report carry the bookkeeping firm's name, logo, colors and website, set in `src/firm.js`. The logo is embedded in each downloaded report, so reports stay self-contained.
+
+**Getting started guide**: the **Help** button opens a step-by-step guide covering which QuickBooks reports to export (Online and Desktop), loading them, a monthly routine, sending reports and backups. First-time visitors see a welcome note pointing to it.
+
+**Backups**: **Saved clients & backup** saves everything to one backup file and restores from it, and reminds you when nothing has been backed up for 30 days. With a Google sign-in key set in `src/config.js` and the app on its own web address, it also connects to **Google Drive**. It keeps `Ledger Lens backup.json` there, saves automatically after each change, and restores on another computer. It uses the `drive.file` scope, so it can only see the file it created. Setup steps are in [docs/google-drive-setup.md](docs/google-drive-setup.md).
+
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
 
 **Client report** comes in three formats:
@@ -103,13 +109,23 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `index.html` | Page shell, styles, library loading |
 | `src/engine.js` | CSV parsing and all analysis (pure JS, runs in Node too) |
 | `src/sample.js` | Deterministic sample export generator |
+| `src/config.js` | Settings for this copy (Google sign-in key for Drive backup) |
+| `src/firm.js` | The firm's name, website, colors and logo (from `assets/`) |
 | `src/ui/shared.js` | Helpers and small components shared by the tabs (storage, downloads, chart tokens, inputs) |
+| `src/ui/drive.js` | Google Drive backup (sign-in, save, restore, automatic saving) |
+| `src/ui/help.js` | Getting-started guide |
 | `src/ui/*.js` | One file per tab (`audit`, `growth`, `cash`, `breakeven`, `trends`, `budget`, `vendors`, `benchmarks`, `advisory`) and `drawers.js` for the report, client questions and saved clients |
 | `src/app.js` | Top-level app: file loading, state, tabs; mounts the page |
 | `test/engine.test.js` | Engine tests |
 | `test/ui.test.js` | Interface tests in headless Chromium |
 
 There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `shared.js` first, the tabs and drawers, then `app.js`.
+
+To change the logo, replace `assets/7d-logo.png` (full logo, used on reports) and `assets/7d-mark.png` (square mark, used in the header), then rebuild the embedded copies in `src/firm.js`:
+
+```sh
+node -e "const fs=require('fs'),u=(f)=>'data:image/png;base64,'+fs.readFileSync(f).toString('base64');let s=fs.readFileSync('src/firm.js','utf8');s=s.replace(/logo: '[^']*'/,\"logo: '\"+u('assets/7d-logo.png')+\"'\").replace(/mark: '[^']*'/,\"mark: '\"+u('assets/7d-mark.png')+\"'\");fs.writeFileSync('src/firm.js',s)"
+```
 
 ## Tests
 

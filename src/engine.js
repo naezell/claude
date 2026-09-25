@@ -2811,7 +2811,10 @@
     }
     L.push('');
     L.push('Thanks,');
-    if (opts.preparer) L.push(opts.preparer);
+    const sig = signature(opts);
+    if (sig) L.push(sig);
+    const site = firmOf(opts).website;
+    if (site) L.push(site);
     return { text: L.join('\n'), count, sections, keys };
   }
 
@@ -3009,8 +3012,33 @@
     return `<table><thead><tr>${headers.map((h, i) => `<th${i >= nf ? ' class="n"' : ''}>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c, i) => `<td${i >= nf ? ' class="n"' : ''}>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   }
 
+  // The preparing firm's name, website, colors and logo for report headers. Only an inline
+  // image is accepted as a logo so a report never loads anything from elsewhere.
+  const LOGO_RX = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+  const HEX_RX = /^#[0-9a-f]{6}$/i;
+  function firmOf(opts) {
+    const f = (opts && opts.firm) || {};
+    const website = String(f.website || '').trim();
+    return {
+      name: String(f.name || '').trim(),
+      website,
+      href: website ? (/^https?:\/\//i.test(website) ? website : `https://${website}`) : '',
+      logo: LOGO_RX.test(f.logo || '') ? f.logo : '',
+      color: HEX_RX.test(f.color || '') ? f.color : RC.accent,
+      color2: HEX_RX.test(f.color2 || '') ? f.color2 : RC.ink2,
+    };
+  }
+  // "Jordan Lee, 7D Business Solutions", or whichever half is known.
+  const signature = (opts) => {
+    const firm = firmOf(opts);
+    const who = String((opts && opts.preparer) || '').trim();
+    if (!who) return firm.name;
+    return firm.name && !lower(who).includes(lower(firm.name)) ? `${who}, ${firm.name}` : who;
+  };
+
   function buildHtmlReport(result, opts) {
     opts = opts || {};
+    const firm = firmOf(opts);
     const full = opts.version === 'full';
     const client = opts.clientName || result.meta.company || 'Client';
     const { audit, profit } = result;
@@ -3029,7 +3057,8 @@
 
     const tile = (label, value, sub, tone) => `<div class="tile ${tone || ''}"><div class="tl">${esc(label)}</div><div class="tv">${esc(value)}</div><div class="ts">${esc(sub)}</div></div>`;
     const h = [];
-    h.push(`<header><div class="brand">${esc(opts.preparer || 'Financial review')}</div><h1>${esc(client)}</h1><div class="meta">${full ? 'Full financial review' : 'Financial summary'} · ${esc(result.period.start)} to ${esc(result.period.end)} · prepared ${esc(today)}</div></header>`);
+    const by = signature(opts);
+    h.push(`<header><div class="head-text"><div class="brand">${esc(firm.name || opts.preparer || 'Financial review')}</div><h1>${esc(client)}</h1><div class="meta">${full ? 'Full financial review' : 'Financial summary'} · ${esc(result.period.start)} to ${esc(result.period.end)} · prepared ${esc(today)}${firm.name ? (opts.preparer ? ` by ${esc(opts.preparer)}` : '') : by ? ` by ${esc(by)}` : ''}</div></div>${firm.logo ? `<img class="logo" src="${esc(firm.logo)}" alt="${esc(firm.name || 'Logo')}">` : ''}</header>`);
     h.push('<section class="tiles">');
     h.push(tile(months.length >= 12 ? 'Revenue, last 12 months' : 'Revenue', fmtWhole(months.length ? rev12 : profit.totals.revenue), revCmp && revCmp.pct != null ? `${revCmp.pct >= 0 ? 'Up' : 'Down'} ${fmtPct(Math.abs(revCmp.pct))} ${revMetric.yoy ? 'on last year' : 'on the prior 3 months'}` : ''));
     h.push(tile('Net income', fmtWhole(months.length ? ni12 : profit.totals.netIncome), `${fmtPct(months.length ? (rev12 ? ni12 / rev12 : null) : profit.totals.netMargin)} of revenue`, (months.length ? ni12 : profit.totals.netIncome) < 0 ? 'bad' : ''));
@@ -3076,6 +3105,7 @@
       const bm = opts.benchmarks;
       if (bm && bm.rows) h.push(`<section class="keep"><h3>Industry benchmarks: ${esc(bm.industry)}${bm.state ? `, ${esc(bm.state)}` : ''}</h3>${table(['Measure', 'Client', 'Peers', 'Read'], bm.rows.map((r) => [r.label, r.company == null ? '-' : r.kind === 'pct' ? fmtPct(r.company) : fmtWhole(r.company), r.peer == null ? '-' : r.kind === 'pct' ? fmtPct(r.peer) : fmtWhole(r.peer), r.read]))}<p class="small">Peer data: ${esc(bm.source)}${bm.periodRange ? `, ${esc(bm.periodRange)}` : ''}.</p></section>`);
     }
+    if (firm.name || firm.website) h.push(`<div class="firm">${esc(by || firm.name)}${firm.website ? ` · <a href="${esc(firm.href)}">${esc(firm.website)}</a>` : ''}</div>`);
     h.push(`<footer>Figures come from the client's QuickBooks exports. Flags are leads for review, not confirmed errors. Tax and loan figures are planning estimates, not tax, legal or lending advice.</footer>`);
 
     const css = `
@@ -3083,8 +3113,12 @@
       * { box-sizing: border-box; }
       body { margin: 0; background: #fff; color: ${RC.ink}; font: 13px/1.5 -apple-system, "Segoe UI", system-ui, Roboto, sans-serif; }
       main { max-width: 760px; margin: 0 auto; padding: 28px 20px 40px; }
-      header { border-bottom: 3px solid ${RC.accent}; padding-bottom: 12px; margin-bottom: 18px; }
-      .brand { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: ${RC.accent}; font-weight: 600; }
+      header { border-bottom: 3px solid ${firm.color}; padding-bottom: 12px; margin-bottom: 18px; display: flex; align-items: center; gap: 16px; }
+      .head-text { flex: 1; min-width: 0; }
+      .logo { width: 84px; height: auto; flex: none; }
+      .brand { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: ${firm.color}; font-weight: 600; }
+      .firm { margin-top: 28px; font-size: 12px; font-weight: 600; color: ${firm.color}; }
+      .firm a { color: ${firm.color2}; text-decoration: none; }
       h1 { margin: 4px 0 2px; font-size: 26px; line-height: 1.2; }
       .meta { color: ${RC.ink2}; font-size: 12px; }
       h2 { font-size: 16px; margin: 22px 0 8px; }
@@ -3107,7 +3141,7 @@
       th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
       .small { font-size: 11px; color: ${RC.muted}; }
       section.keep, svg, tr { break-inside: avoid; }
-      footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 11px; color: ${RC.muted}; }
+      footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 11px; color: ${RC.muted}; }
     `;
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(client)}: ${full ? 'financial review' : 'financial summary'}</title><style>${css}</style></head><body><main>${h.join('\n')}</main></body></html>`;
   }
@@ -3151,7 +3185,8 @@
     opts = opts || {};
     const { audit, profit, subs } = result;
     const client = opts.clientName || result.meta.company || 'Client';
-    const preparer = opts.preparer || '';
+    const preparer = signature(opts);
+    const firm = firmOf(opts);
     const rule = '='.repeat(72);
     const thin = '-'.repeat(72);
     const L = [];
@@ -3162,6 +3197,7 @@
     L.push(`Period:        ${result.period.start} to ${result.period.end}`);
     L.push(`Transactions:  ${result.entryCount.toLocaleString('en-US')} entries reviewed${result.entryCount !== result.count ? ` (${result.count.toLocaleString('en-US')} report lines)` : ''}`);
     L.push(`Prepared:      ${new Date().toISOString().slice(0, 10)}${preparer ? ` by ${preparer}` : ''}`);
+    if (firm.website) L.push(`               ${firm.website}`);
     L.push('');
     L.push('EXECUTIVE SUMMARY');
     L.push(thin);

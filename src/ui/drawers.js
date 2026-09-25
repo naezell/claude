@@ -5,9 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape } = UI;
-
-  // ------------------------------------------------------------ report drawer
+  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive } = UI;
 
   // ------------------------------------------------------------ client questions drawer
 
@@ -26,7 +24,7 @@
     const [include, setInclude] = useState({ uncategorized: true, duplicates: true, coding: true, unusual: true, receivables: true, w9: true });
     const [status, setStatus] = useState('');
     const preRef = useRef(null);
-    const q = useMemo(() => E.clientQuestions(result, { greeting: greeting.trim() || undefined, preparer, include }), [result, greeting, preparer, include]);
+    const q = useMemo(() => E.clientQuestions(result, { greeting: greeting.trim() || undefined, preparer, include, firm: Firm }), [result, greeting, preparer, include]);
     const filename = `${slug(result.meta.company)}-questions-${result.period.end}.txt`;
     useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
     useEscape(onClose);
@@ -40,7 +38,7 @@
         <div class="drawer-head"><h2 id="questions-title">Questions for the client</h2><button class="btn" onClick=${onClose}>Close</button></div>
         <div class="drawer-fields">
           <label class="field" for="q-greeting">Client's first name<input id="q-greeting" value=${greeting} onInput=${(e) => setGreeting(e.target.value)} placeholder="e.g. Jordan" /></label>
-          <label class="field" for="q-preparer">Signed by<input id="q-preparer" value=${preparer} onInput=${(e) => setPreparer(e.target.value)} placeholder="Your name or firm" /></label>
+          <label class="field" for="q-preparer">Signed by<input id="q-preparer" value=${preparer} onInput=${(e) => setPreparer(e.target.value)} placeholder=${Firm.name ? 'Your name' : 'Your name or firm'} /></label>
           <div class="field" style=${{ gridColumn: '1 / -1' }}><span>Include</span>
             <div class="chips">${QUESTION_SECTIONS.map(([k, l]) => html`<button key=${k} class="chip" aria-pressed=${include[k]} onClick=${() => setInclude({ ...include, [k]: !include[k] })}>${l}</button>`)}</div>
           </div>
@@ -58,6 +56,45 @@
 
   // ------------------------------------------------------------ saved clients drawer
 
+  const fmtWhen = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const days = Math.floor((Date.now() - d.getTime()) / 864e5);
+    const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return days < 1 && new Date().toDateString() === d.toDateString() ? `today at ${time}` : days < 2 ? `yesterday at ${time}` : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  function DriveBackup({ onRestored }) {
+    const st = useDrive();
+    const [note, setNote] = useState('');
+    const connected = Drive.connected();
+    useEffect(() => { Drive.prepare().catch(() => { /* reported when Connect is pressed */ }); }, []);
+    if (!Drive.enabled()) {
+      return html`<div class="backup-block">
+        <h3>${Icon.cloud}Google Drive</h3>
+        <p>If Google Drive for desktop is installed, choose your Google Drive folder when saving the backup file below, and pick it from there to restore. Direct saving to Google Drive switches on when the app runs from its own web address; see <em>docs/google-drive-setup.md</em>.</p>
+      </div>`;
+    }
+    const restore = async () => {
+      const n = await Drive.restore();
+      if (n != null) { setNote(`Restored from Google Drive: ${n} client${n === 1 ? '' : 's'} updated (newer copies kept).`); onRestored(); }
+    };
+    return html`<div class="backup-block">
+      <h3>${Icon.cloud}Google Drive ${connected ? html`<span class="pill good"><span class="dot"></span>Connected</span>` : ''}</h3>
+      ${connected
+        ? html`<p>Saved clients are kept in <strong>Ledger Lens backup.json</strong> in your Google Drive${st.lastSaved ? `, last saved ${fmtWhen(st.lastSaved)}` : ''}. Google Drive keeps earlier versions of the file too.</p>
+          <div class="backup-actions">
+            <button class="btn primary" disabled=${!!st.busy} onClick=${() => { setNote(''); Drive.save(); }}>Save to Drive now</button>
+            <button class="btn" disabled=${!!st.busy} onClick=${restore}>Restore from Drive</button>
+            <button class="btn" disabled=${!!st.busy} onClick=${() => Drive.disconnect()}>Disconnect</button>
+          </div>
+          <label class="check" for="drive-auto" style=${{ paddingTop: '8px' }}><input id="drive-auto" type="checkbox" checked=${st.auto} onChange=${(e) => Drive.setAuto(e.target.checked)} />Save to Drive automatically after each change</label>`
+        : html`<p>${st.account ? 'Connect again to save or restore. Google asks every time the page is opened, for safety.' : 'Keep saved clients in your own Google Drive, so they survive a cleared browser and follow you to another computer. Ledger Lens can only see the backup file it creates, nothing else in your Drive.'}</p>
+          <div class="backup-actions"><button class="btn primary" disabled=${!!st.busy} onClick=${() => Drive.connect()}>${Icon.cloud}Connect Google Drive</button></div>`}
+      <p class="backup-status" role="status">${st.busy || st.error || note}</p>
+    </div>`;
+  }
+
   function ClientsDrawer({ currentId, onClose, onForget }) {
     const [clients, setClients] = useState(() => ClientStore.all());
     const [confirm, setConfirm] = useState(null);
@@ -65,15 +102,18 @@
     useEscape(onClose);
     const list = Object.entries(clients).sort((a, b) => String(b[1].updatedAt || '').localeCompare(String(a[1].updatedAt || '')));
     const refresh = () => setClients(ClientStore.all());
-    const doExport = async () => setStatus(await saveTextFile(`ledger-lens-clients-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ format: 'ledger-lens-clients', version: 1, clients: ClientStore.all() }, null, 2)));
+    const last = Backup.last();
+    const doExport = async () => {
+      const msg = await saveTextFile(`ledger-lens-backup-${new Date().toISOString().slice(0, 10)}.json`, Backup.build());
+      if (/^(Saved|Downloaded)/.test(msg)) Backup.mark('file');
+      setStatus(msg);
+    };
     const doImport = (file) => {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          const data = JSON.parse(String(reader.result || ''));
-          if (!data || data.format !== 'ledger-lens-clients') throw new Error('not a Ledger Lens backup');
-          const n = ClientStore.merge(data.clients);
+          const n = Backup.restore(reader.result);
           refresh();
           setStatus(`Imported ${n} client${n === 1 ? '' : 's'} (newer copies kept).`);
         } catch (e) { setStatus(`${file.name} could not be imported: ${e.message}.`); }
@@ -82,22 +122,31 @@
     };
     return html`<div class="scrim" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="clients-title">
-        <div class="drawer-head"><h2 id="clients-title">Saved clients</h2><button class="btn" onClick=${onClose}>Close</button></div>
-        <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Account type corrections, reviewed flags, the cash cushion and benchmark settings are saved per client, matched by the company name in the report header. They live in this browser only: export a backup to move them to another computer or share them with a colleague.</p></div>
-        <div class="clients-list">
-          ${list.length ? list.map(([id, c]) => html`<div class="client-row" key=${id}>
-            <div><strong>${c.name || id}</strong>${id === currentId ? html` <span class="pill good">Open now</span>` : ''}
-              <span class="sub">${Object.keys(c.accountClass || {}).length} account corrections · ${Object.keys(c.reviewed || {}).length} reviewed flags · saved ${String(c.updatedAt || '').slice(0, 10)}</span></div>
-            ${confirm === id
-              ? html`<span class="confirm">Forget this client? <button class="btn" onClick=${() => { ClientStore.remove(id); onForget(id); setConfirm(null); refresh(); }}>Forget</button><button class="btn" onClick=${() => setConfirm(null)}>Keep</button></span>`
-              : html`<button class="btn" onClick=${() => setConfirm(id)}>Forget</button>`}
-          </div>`) : html`<div class="empty">No saved clients yet. Upload a client's export and start reviewing; settings save as you go.</div>`}
-        </div>
-        <div class="drawer-foot">
-          <button class="btn primary" disabled=${!list.length} onClick=${doExport}>${Icon.download}Export backup (.json)</button>
-          <label class="btn" for="clients-import">${Icon.upload}Import backup</label>
-          <input id="clients-import" class="file-input" type="file" accept=".json,application/json" onChange=${(e) => { doImport(e.target.files[0]); e.target.value = ''; }} />
-          <span class="status" role="status">${status}</span>
+        <div class="drawer-head"><h2 id="clients-title">Saved clients & backup</h2><button class="btn" onClick=${onClose}>Close</button></div>
+        <div class="drawer-scroll">
+          <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Account type corrections, reviewed flags, the cash cushion and loan, tax and benchmark settings are saved per client as you work, matched by the company name in the report header. They are kept in this browser, so back them up.</p></div>
+          <div class="clients-list">
+            ${list.length ? list.map(([id, c]) => html`<div class="client-row" key=${id}>
+              <div><strong>${c.name || id}</strong>${id === currentId ? html` <span class="pill good">Open now</span>` : ''}
+                <span class="sub">${Object.keys(c.accountClass || {}).length} account corrections · ${Object.keys(c.reviewed || {}).length} reviewed flags · saved ${String(c.updatedAt || '').slice(0, 10)}</span></div>
+              ${confirm === id
+                ? html`<span class="confirm">Forget this client? <button class="btn" onClick=${() => { ClientStore.remove(id); onForget(id); setConfirm(null); refresh(); }}>Forget</button><button class="btn" onClick=${() => setConfirm(null)}>Keep</button></span>`
+                : html`<button class="btn" onClick=${() => setConfirm(id)}>Forget</button>`}
+            </div>`) : html`<div class="empty">No saved clients yet. Upload a client's export and start reviewing; settings save as you go.</div>`}
+          </div>
+          <div class="backup">
+            <${DriveBackup} onRestored=${refresh} />
+            <div class="backup-block">
+              <h3>${Icon.download}Backup file</h3>
+              <p>Save everything to one file you can keep anywhere (a Google Drive or Dropbox folder works well) and load it on another computer.${last ? ` Last backup: ${fmtWhen(last.at)}${last.where === 'Google Drive' ? ' to Google Drive' : ''}.` : ' No backup yet.'}</p>
+              <div class="backup-actions">
+                <button class="btn" disabled=${!list.length} onClick=${doExport}>${Icon.download}Save backup file</button>
+                <label class="btn" for="clients-import">${Icon.upload}Restore from file</label>
+                <input id="clients-import" class="file-input" type="file" accept=".json,application/json" onChange=${(e) => { doImport(e.target.files[0]); e.target.value = ''; }} />
+              </div>
+              <p class="backup-status" role="status">${status}</p>
+            </div>
+          </div>
         </div>
       </aside>
     </div>`;
@@ -128,7 +177,7 @@
     const [format, setFormat] = useState(() => safeStore.get('ll.reportFormat') || 'owner');
     const [status, setStatus] = useState('');
     const preRef = useRef(null);
-    const opts = { clientName, preparer, groupBy, cushion, benchmarks };
+    const opts = { clientName, preparer, groupBy, cushion, benchmarks, firm: Firm };
     const text = useMemo(() => E.buildReport(result, opts), [result, clientName, preparer, groupBy, cushion, benchmarks]);
     const doc = useMemo(() => (format === 'text' ? '' : E.buildHtmlReport(result, { ...opts, version: format })), [result, clientName, preparer, groupBy, cushion, benchmarks, format]);
     const base = `${slug(clientName)}-${format === 'full' ? 'financial-review' : format === 'owner' ? 'financial-summary' : 'books-review'}-${result.period.end}`;
@@ -145,7 +194,7 @@
         <div class="drawer-head"><h2 id="report-title">Client report</h2><button class="btn" onClick=${onClose}>Close</button></div>
         <div class="drawer-fields">
           <label class="field" for="client-name">Client name<input id="client-name" value=${clientName} onInput=${(e) => setClientName(e.target.value)} placeholder="Client business name" /></label>
-          <label class="field" for="preparer">Prepared by<input id="preparer" value=${preparer} onInput=${(e) => setPreparer(e.target.value)} placeholder="Your name or firm" /></label>
+          <label class="field" for="preparer">Prepared by<input id="preparer" value=${preparer} onInput=${(e) => setPreparer(e.target.value)} placeholder=${Firm.name ? 'Your name' : 'Your name or firm'} /></label>
           <div class="field" style=${{ gridColumn: '1 / -1' }}><span>Format</span>
             <div class="seg" role="group" aria-label="Report format">${REPORT_FORMATS.map(([k, l]) => html`<button key=${k} aria-pressed=${format === k} onClick=${() => setFormat(k)}>${l}</button>`)}</div>
           </div>

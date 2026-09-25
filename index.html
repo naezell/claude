@@ -13,9 +13,10 @@
     --muted: #7f8a84;
     --hair: #dde2dd;
     --axis: #c3c9c3;
-    --accent: #17614a;
+    --accent: #2b4c1c;
     --accent-ink: #ffffff;
-    --accent-wash: #e1efe8;
+    --accent-wash: #e6eddf;
+    --gold: #8a7126;
     --focus: #2a78d6;
     --series-1: #2a78d6;
     --series-2: #eb6834;
@@ -51,9 +52,10 @@
       --muted: #85908a;
       --hair: #29322d;
       --axis: #3a4540;
-      --accent: #4fbf94;
+      --accent: #8cc063;
       --accent-ink: #0b1a13;
-      --accent-wash: #173027;
+      --gold: #d2b457;
+      --accent-wash: #1f2e17;
       --series-1: #3987e5;
       --series-2: #d95926;
       --series-3: #199e70;
@@ -81,9 +83,10 @@
     --muted: #85908a;
     --hair: #29322d;
     --axis: #3a4540;
-    --accent: #4fbf94;
+    --accent: #8cc063;
     --accent-ink: #0b1a13;
-    --accent-wash: #173027;
+    --accent-wash: #1f2e17;
+    --gold: #d2b457;
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
@@ -122,6 +125,7 @@
   .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
   .brand-mark { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
   .brand-mark svg { width: 16px; height: 16px; }
+  .brand-logo { width: 40px; height: 40px; object-fit: contain; border-radius: 8px; background: #fff; padding: 3px; box-shadow: inset 0 0 0 1px var(--hair); flex: none; }
   .brand h1 { font: 600 18px/1 var(--cond); letter-spacing: 0.01em; margin: 0; }
   .brand small { display: block; font-size: 12px; color: var(--muted); margin-top: 3px; }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -378,6 +382,29 @@
 
   .drop-overlay { position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 14px; background: color-mix(in srgb, var(--surface) 88%, transparent); z-index: 30; display: grid; place-items: center; font: 600 20px var(--cond); color: var(--accent); pointer-events: none; }
 
+  /* Drawers with several sections scroll as one */
+  .drawer-scroll { flex: 1; overflow: auto; min-height: 0; }
+  .drawer-scroll .clients-list { flex: none; overflow: visible; }
+  .backup { display: grid; gap: 0; border-top: 1px solid var(--hair); }
+  .backup-block { padding: 16px 18px; border-bottom: 1px solid var(--hair); }
+  .backup-block h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 600 15px var(--cond); }
+  .backup-block h3 svg { width: 16px; height: 16px; }
+  .backup-block p { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; max-width: 75ch; }
+  .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .backup-status { margin: 8px 0 0 !important; min-height: 1.2em; font-size: 12.5px; }
+
+  /* Getting-started guide */
+  .help-nav { padding: 12px 18px; border-bottom: 1px solid var(--hair); }
+  .help { padding: 4px 18px 28px; }
+  .help-part { display: none; max-width: 75ch; }
+  .help-part.open { display: block; }
+  .help h3 { font: 600 18px var(--cond); margin: 16px 0 8px; }
+  .help h4 { font: 600 13px var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold); margin: 18px 0 6px; }
+  .help p, .help li { color: var(--ink-2); }
+  .help strong { color: var(--ink); font-weight: 600; }
+  .help ol, .help ul { padding-left: 22px; display: grid; gap: 6px; margin: 0 0 8px; }
+  .foot a { color: var(--gold); text-decoration: none; }
+
   .loading { padding: 80px 16px; text-align: center; color: var(--muted); }
   footer.foot { color: var(--muted); font-size: 12px; padding-block: 0 40px; }
 
@@ -391,9 +418,12 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/prop-types/15.8.1/prop-types.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js"></script>
+<script src="src/config.js"></script>
+<script src="src/firm.js"></script>
 <script src="src/engine.js"></script>
 <script src="src/sample.js"></script>
 <script src="src/ui/shared.js"></script>
+<script src="src/ui/drive.js"></script>
 <script src="src/ui/audit.js"></script>
 <script src="src/ui/growth.js"></script>
 <script src="src/ui/cash.js"></script>
@@ -404,4 +434,5 @@
 <script src="src/ui/benchmarks.js"></script>
 <script src="src/ui/advisory.js"></script>
 <script src="src/ui/drawers.js"></script>
+<script src="src/ui/help.js"></script>
 <script src="src/app.js"></script>

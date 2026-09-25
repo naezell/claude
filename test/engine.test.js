@@ -641,3 +641,24 @@ test('vendor price increases: steady charges that went up, and the price rise to
   assert.ok(E.buildHtmlReport(r, { version: 'full' }).includes('Vendor price increases'));
   assert.ok(E.nextSteps(r).some((s) => /price increases add/i.test(s)));
 });
+
+test('firm branding on reports: name, website, logo, and only inline images', () => {
+  const r = E.analyze(E.parseTransactions(S.build()));
+  const logo = 'data:image/png;base64,iVBORw0KGgo=';
+  const firm = { name: '7D Business Solutions', website: 'www.7dbusinesssolutions.com', color: '#2b4c1c', color2: '#8a7126', logo };
+  const doc = E.buildHtmlReport(r, { firm, preparer: 'Jordan Lee' });
+  assert.ok(doc.includes('<div class="brand">7D Business Solutions</div>'));
+  assert.ok(doc.includes(`<img class="logo" src="${logo}"`));
+  assert.ok(doc.includes('href="https://www.7dbusinesssolutions.com"'));
+  assert.ok(doc.includes('Jordan Lee, 7D Business Solutions'));
+  assert.ok(doc.includes('border-bottom: 3px solid #2b4c1c'));
+  // Anything but an inline image is dropped, and bad colors fall back.
+  const bad = E.buildHtmlReport(r, { firm: { ...firm, logo: 'https://evil.example/x.png', color: 'red;}' } });
+  assert.ok(!bad.includes('evil.example'));
+  assert.ok(!bad.includes('red;}'));
+  const text = E.buildReport(r, { firm, preparer: 'Jordan Lee' });
+  assert.ok(text.includes('by Jordan Lee, 7D Business Solutions'));
+  assert.ok(text.includes('www.7dbusinesssolutions.com'));
+  const q = E.clientQuestions(r, { firm });
+  assert.ok(q.text.trim().endsWith('7D Business Solutions\nwww.7dbusinesssolutions.com'));
+});
