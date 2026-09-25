@@ -12,7 +12,16 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - Revenue, direct cost, gross margin and **net margin after overhead** per **customer** or **project** (sub-customer `Customer:Project`, a Project column, or Class).
 - **Recurring SaaS & subscription detection**: finds steady weekly, monthly, quarterly and annual software charges, annualizes them, and flags overlapping tools (for example Asana + Monday.com), multiple charges per month (extra seats), price increases and consumer services on the business card. Estimates the annual savings.
 
-**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, and recommended next steps. Download it as `.txt` or copy it.
+**Cash Forecast**
+- A **13-week cash flow forecast** built from the export: open invoices are collected on each customer's own median days-to-pay (measured from their payment history, not the invoice terms), customers who bill monthly keep billing, open bills are paid on each vendor's usual timing, and monthly costs like payroll, rent and software are projected forward.
+- Starting cash comes from the bank accounts' beginning balance plus period activity. You can override it and set a minimum cash cushion. The tool warns about weeks below the cushion or below zero and names what lands in the lowest week.
+- Receivables aging, a payment-speed chart per customer, and open invoice and bill schedules. Invoices over 90 days old are left out unless you include them. Open bills that the audit flags as possible duplicates are marked so nobody pays them twice.
+
+**Break-even**
+- Break-even revenue per month, margin of safety, contribution margin, and monthly revenue against the break-even line. COGS accounts and customer-tagged costs count as variable; everything else is fixed (adjustable through Account mapping).
+- A **what-if panel**: change prices, variable costs or fixed costs and see the new profit and break-even side by side with today. It also shows how much work you could lose at a higher price and still match today's profit, and the revenue needed to hit a target monthly profit.
+
+**Client report**: a plain-text summary to hand to the client, with an executive summary, each finding, the 13-week forecast, break-even, and recommended next steps. Download it as `.txt` or copy it.
 
 All processing happens in the browser. The file is never uploaded anywhere.
 
@@ -29,7 +38,7 @@ It opens with a sample data set (a fictional design studio with seeded issues) s
 ## Exporting from QuickBooks
 
 1. **Reports → Transaction Detail by Account** (or Transaction List by Date / Transaction Detail).
-2. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work.
+2. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work. Include the balance-sheet accounts (bank, A/R, A/P, credit cards) so the cash forecast can see open invoices, bills and bank balances.
 3. Set the date range, then **Export → Export to CSV**.
 
 The parser skips the report title rows, section headers and "Total for…" lines. In the "by Account" layout each entry appears once per account it touches; Ledger Lens collapses these to one entry so nothing is counted twice.

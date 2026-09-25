@@ -28,14 +28,22 @@
     const d = (m, day) => `${String(m).padStart(2, '0')}/${String(day).padStart(2, '0')}/2026`;
     const money = (a, b) => Math.round((a + rand() * (b - a)) * 100) / 100;
     const add = (e) => entries.push(e);
+    const AS_OF = Date.UTC(2026, 5, 30);
+    // Date `days` after m/day, or null when it falls after the export's end.
+    const after = (m, day, days) => {
+      const t = Date.UTC(2026, m - 1, day) + days * 86400000;
+      if (t > AS_OF) return null;
+      const x = new Date(t);
+      return d(x.getUTCMonth() + 1, x.getUTCDate());
+    };
 
     const customers = [
-      { name: 'Northwind Outfitters', project: 'Spring Catalog', fee: [9800, 12500], cost: 0.28 },
-      { name: 'Bluebird Bakery', project: 'Brand Refresh', fee: [3200, 4200], cost: 0.18 },
-      { name: 'Cedar Ridge Dental', project: 'Website Build', fee: [5200, 6400], cost: 0.46 },
-      { name: 'Oakline Realty', project: 'Listing Collateral', fee: [2600, 3400], cost: 0.9 },
-      { name: 'Summit Fitness', project: 'Social Retainer', fee: [2400, 2400], cost: 0.12 },
-      { name: 'Harborview Hotel', project: 'Signage', fee: [6800, 8800], cost: 0.55 },
+      { name: 'Northwind Outfitters', project: 'Spring Catalog', fee: [9800, 12500], cost: 0.28, pays: 24 },
+      { name: 'Bluebird Bakery', project: 'Brand Refresh', fee: [3200, 4200], cost: 0.18, pays: 12 },
+      { name: 'Cedar Ridge Dental', project: 'Website Build', fee: [5200, 6400], cost: 0.46, pays: 33 },
+      { name: 'Oakline Realty', project: 'Listing Collateral', fee: [2600, 3400], cost: 0.9, pays: 47 },
+      { name: 'Summit Fitness', project: 'Social Retainer', fee: [2400, 2400], cost: 0.12, pays: 6 },
+      { name: 'Harborview Hotel', project: 'Signage', fee: [6800, 8800], cost: 0.55, pays: 54 },
     ];
 
     for (let m = 1; m <= 6; m++) {
@@ -45,11 +53,17 @@
         const fee = money(c.fee[0], c.fee[1]);
         const cust = `${c.name}:${c.project}`;
         add({ date: d(m, 3 + i), type: 'Invoice', num: String(inv++), name: c.name, customer: cust, memo: `${c.project} - ${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'][m - 1]} services`, pnl: 'Design Services Income', bs: AR, amount: fee });
-        add({ date: d(m, 18 + i), type: 'Payment', num: '', name: c.name, customer: cust, memo: 'Payment received', pnl: null, bs: BANK, bs2: AR, amount: fee });
+        // Cedar Ridge disputed its March invoice and has not paid it.
+        const paid = after(m, 3 + i, c.pays + Math.round(rand() * 6 - 3));
+        if (paid && !(c.name === 'Cedar Ridge Dental' && m === 3)) {
+          add({ date: paid, type: 'Payment', num: '', name: c.name, customer: cust, memo: 'Payment received', pnl: null, bs: BANK, bs2: AR, amount: fee });
+        }
         const sub = Math.round(fee * c.cost * (0.85 + rand() * 0.3) * 100) / 100;
         const vendor = ['Lena Ortiz Illustration', 'PrintWorks Co.', 'Dev Studio Partners', 'PrintWorks Co.', 'Lena Ortiz Illustration', 'Metro Sign Fabricators'][i];
         const acct = vendor === 'PrintWorks Co.' || vendor === 'Metro Sign Fabricators' ? 'Job Materials & Printing' : 'Subcontractors';
         add({ date: d(m, 10 + i), type: 'Bill', num: `B-${m}${i}`, name: vendor, customer: cust, memo: `${c.project} production`, pnl: acct, bs: 'Accounts Payable (A/P)', amount: sub });
+        const billPaid = after(m, 10 + i, vendor === 'Dev Studio Partners' ? 30 : 21);
+        if (billPaid) add({ date: billPaid, type: 'Bill Payment (Check)', num: String(num++), name: vendor, customer: '', memo: `Pay B-${m}${i}`, pnl: null, bs: BANK, bs2: 'Accounts Payable (A/P)', amount: sub });
       });
 
       // Fixed overhead.
@@ -115,12 +129,19 @@
     add({ date: d(3, 30), type: 'Transfer', num: '', name: '', customer: '', memo: 'Transfer to savings', pnl: 'Bank Fees', bs: BANK, amount: 2500.0 });
     add({ date: d(6, 18), type: 'Expense', num: '', name: '', customer: '', memo: 'Card purchase', pnl: 'Office Supplies', bs: CARD, amount: 58.2 });
 
-    return toCSV(entries);
+    // Card statement paid from checking on the 25th for the prior month's charges.
+    for (let m = 2; m <= 6; m++) {
+      const prefix = `${String(m - 1).padStart(2, '0')}/`;
+      const due = entries.filter((e) => e.bs === CARD && e.date.startsWith(prefix)).reduce((t, e) => t + e.amount, 0);
+      add({ date: d(m, 25), type: 'Credit Card Payment', num: '', name: 'Chase Card Services', customer: '', memo: 'Card autopay', pnl: null, bs: BANK, bs2: CARD, amount: Math.round(due * 100) / 100 });
+    }
+
+    return toCSV(entries, { [BANK]: 30000 });
   }
 
   // Lay entries out QuickBooks-style: one section per account, each entry
   // appearing under both of the accounts it touches.
-  function toCSV(entries) {
+  function toCSV(entries, openings) {
     const sections = new Map();
     const push = (acct, row) => {
       if (!sections.has(acct)) sections.set(acct, []);
@@ -129,8 +150,10 @@
     const reversing = (t) => /credit memo|refund|vendor credit/i.test(t);
     for (const e of entries) {
       const base = { date: e.date, type: e.type, num: e.num, name: e.name, customer: e.customer, memo: e.memo };
-      if (e.type === 'Payment') {
-        push(e.bs, { ...base, split: e.bs2, amount: e.amount });
+      if (e.bs2) {
+        // Customer payments raise cash and lower A/R; bill and card payments lower both sides.
+        const cashSign = e.type === 'Payment' ? 1 : -1;
+        push(e.bs, { ...base, split: e.bs2, amount: cashSign * e.amount });
         push(e.bs2, { ...base, split: e.bs, amount: -e.amount });
         continue;
       }
@@ -169,7 +192,8 @@
     for (const acct of names) {
       const rows = sections.get(acct).sort((a, b) => toKey(a.date).localeCompare(toKey(b.date)));
       lines.push(q(acct));
-      let bal = 0;
+      let bal = (openings && openings[acct]) || 0;
+      if (bal) lines.push(['', 'Beginning Balance', '', '', '', '', '', '', '', fmt(bal)].join(','));
       for (const r of rows) {
         bal += r.amount;
         lines.push(['', r.date, r.type, r.num, r.name, r.customer, r.memo, r.split, fmt(r.amount), fmt(bal)].map(q).join(','));

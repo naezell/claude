@@ -4,7 +4,7 @@
   const { useState, useMemo, useEffect, useRef, useCallback } = React;
   const html = htm.bind(React.createElement);
   const {
-    ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine,
+    ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine,
   } = Recharts;
   const E = window.LedgerEngine;
   const { fmtMoney, fmtPct, counterpartyOf, leafAccount } = E;
@@ -35,7 +35,7 @@
       return {
         s1: g('--series-1'), s2: g('--series-2'), s3: g('--series-3'), pos: g('--pos'), neg: g('--neg'),
         neutral: g('--neutral-mark'), grid: g('--hair'), axis: g('--axis'), muted: g('--muted'), ink2: g('--ink-2'),
-        surface: g('--surface'), surface2: g('--surface-2'),
+        surface: g('--surface'), surface2: g('--surface-2'), warnLine: g('--warn'),
       };
     };
     const [tokens, setTokens] = useState(read);
@@ -86,6 +86,8 @@
     const [accountClass, setAccountClass] = useState({});
     const [reportOpen, setReportOpen] = useState(false);
     const [dragging, setDragging] = useState(false);
+    // Forecast inputs. Empty strings mean "use the value estimated from the export".
+    const [cashInputs, setCashInputs] = useState({ startingCash: '', cushion: '', includeDoubtful: false });
 
     const sampleText = useMemo(() => window.LedgerSample.build(), []);
     const text = source.kind === 'sample' ? sampleText : source.text;
@@ -94,7 +96,13 @@
       try { return { ok: E.parseTransactions(text) }; } catch (e) { return { err: e.message }; }
     }, [text]);
 
-    const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, { accountClass, groupBy }) : null), [parsed, accountClass, groupBy]);
+    const startingCash = cashInputs.startingCash === '' ? undefined : parseFloat(cashInputs.startingCash);
+    const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
+      accountClass, groupBy, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
+    }) : null), [parsed, accountClass, groupBy, startingCash, cashInputs.includeDoubtful]);
+    // Default cushion: one month of fixed costs, rounded to the nearest $1,000.
+    const defaultCushion = result && result.breakeven ? Math.round(result.breakeven.base.fixed / 1000) * 1000 : 0;
+    const cushion = cashInputs.cushion === '' || isNaN(parseFloat(cashInputs.cushion)) ? defaultCushion : parseFloat(cashInputs.cushion);
 
     useEffect(() => { safeStore.set('ll.tab', tab); }, [tab]);
     useEffect(() => { if (parsed.err) setError(parsed.err); }, [parsed]);
@@ -110,6 +118,7 @@
           if (!p.transactions.length) throw new Error('The file has a header row but no dated transactions.');
           setError('');
           setAccountClass({});
+          setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false });
           setSource({ kind: 'upload', name: file.name, text: t });
         } catch (e) { setError(`${file.name}: ${e.message}`); }
       };
@@ -140,12 +149,12 @@
             <div class="brand-mark" aria-hidden="true">
               <svg viewBox="0 0 16 16" fill="none" stroke="var(--accent-ink)" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="m10.2 10.2 3.3 3.3M5 7h4M7 5v4"/></svg>
             </div>
-            <div><h1>Ledger Lens</h1><small>QuickBooks transaction audit & profitability</small></div>
+            <div><h1>Ledger Lens</h1><small>QuickBooks audit, profitability & cash forecast</small></div>
           </div>
           <div class="actions">
             <label class="btn" for="csv-upload">${Icon.upload}Upload CSV</label>
             <input id="csv-upload" class="file-input" type="file" accept=".csv,text/csv" onChange=${(e) => { loadFile(e.target.files[0]); e.target.value = ''; }} />
-            ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setSource({ kind: 'sample', name: 'Harbor & Pine Design Co. (sample)' }); }}>${Icon.sample}Load sample</button>`}
+            ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample', name: 'Harbor & Pine Design Co. (sample)' }); }}>${Icon.sample}Load sample</button>`}
             <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>
           </div>
         </div>
@@ -163,17 +172,20 @@
         <div class="tabs" role="tablist">
           <button class="tab" role="tab" id="tab-audit" aria-selected=${tab === 'audit'} onClick=${() => setTab('audit')}>Diagnostic audit<span class="count">${auditCount}</span></button>
           <button class="tab" role="tab" id="tab-growth" aria-selected=${tab === 'growth'} onClick=${() => setTab('growth')}>Growth & profitability insights</button>
+          <button class="tab" role="tab" id="tab-cash" aria-selected=${tab === 'cash'} onClick=${() => setTab('cash')}>Cash forecast</button>
+          <button class="tab" role="tab" id="tab-breakeven" aria-selected=${tab === 'breakeven'} onClick=${() => setTab('breakeven')}>Break-even</button>
         </div>
 
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
-          ${tab === 'audit'
-            ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} />`
-            : html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} />`}
+          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} />`
+            : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} />`
+            : tab === 'cash' ? html`<${CashTab} cash=${result.cash} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
+            : html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`}
         </main>`}
         <footer class="foot">Files are processed in your browser and never uploaded. Flags are leads for review, not confirmed errors.</footer>
       </div>
 
-      ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} onClose=${() => setReportOpen(false)} />`}
+      ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} onClose=${() => setReportOpen(false)} />`}
       ${dragging && html`<div class="drop-overlay">Drop the QuickBooks CSV to analyze it</div>`}
     `;
   }
@@ -590,14 +602,358 @@
     `;
   }
 
+  // ------------------------------------------------------------ cash forecast tab
+
+  const shortDate = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const wholeMoney = (n) => (Math.abs(n) < 0.5 ? '-' : `${n < 0 ? '-' : ''}$${Math.round(Math.abs(n)).toLocaleString('en-US')}`);
+
+  function Banner({ level, label, children }) {
+    return html`<div class=${`banner ${level}`} role="status"><span class=${`pill ${level}`}><span class="dot"></span>${label}</span><div>${children}</div></div>`;
+  }
+
+  function MoneyInput({ id, label, value, placeholder, onChange, hint }) {
+    return html`<label class="field" for=${id}>${label}
+      <span class="money-input"><span aria-hidden="true">$</span><input id=${id} inputmode="decimal" value=${value} placeholder=${placeholder} onInput=${(e) => onChange(e.target.value.replace(/[^0-9.\-]/g, ''))} /></span>
+      ${hint && html`<span class="hint">${hint}</span>`}
+    </label>`;
+  }
+
+  function CashTab({ cash, inputs, setInputs, cushion, defaultCushion }) {
+    const t = useTokens();
+    if (!cash) return html`<section class="panel"><div class="empty">Not enough dated transactions to build a forecast.</div></section>`;
+    const set = (k) => (v) => setInputs({ ...inputs, [k]: v });
+    const below = cash.weeks.filter((w) => w.ending < cushion);
+    const low = cash.lowest;
+    const lowIdx = low.week - 1;
+    const drivers = cash.outflowRows.map((r) => ({ label: r.label, v: r.values[lowIdx] })).filter((r) => r.v > 0 && !/run-rate/.test(r.label)).sort((a, b) => b.v - a.v).slice(0, 2);
+    const driverText = drivers.length ? ` ${drivers.map((d) => `${d.label} (${wholeMoney(d.v)})`).join(' and ')} land${drivers.length === 1 ? 's' : ''} that week.` : '';
+    const chartData = [{ label: 'Today', ending: cash.startingCash, start: cash.start }, ...cash.weeks.map((w) => ({ ...w, label: shortDate(w.start) }))];
+    const minY = Math.min(0, ...chartData.map((d) => d.ending));
+
+    return html`
+      <section class="panel">
+        <div class="panel-body inputs-row">
+          <${MoneyInput} id="starting-cash" label="Starting cash" value=${inputs.startingCash} placeholder=${Math.round(cash.estimatedCash).toLocaleString('en-US')} onChange=${set('startingCash')}
+            hint=${cash.cashAccounts.length ? `Estimated from ${cash.cashAccounts.join(', ')} on ${cash.asOf}` : 'No bank account in the export; enter today’s balance'} />
+          <${MoneyInput} id="cash-cushion" label="Minimum cash cushion" value=${inputs.cushion} placeholder=${defaultCushion.toLocaleString('en-US')} onChange=${set('cushion')} hint="Defaults to one month of fixed costs" />
+          <label class="check" for="include-doubtful"><input id="include-doubtful" type="checkbox" checked=${inputs.includeDoubtful} onChange=${(e) => setInputs({ ...inputs, includeDoubtful: e.target.checked })} />Count invoices over 90 days old</label>
+        </div>
+      </section>
+
+      ${cash.firstNegative
+        ? html`<${Banner} level="high" label="Cash shortfall">Cash runs out in the week of <strong>${shortDate(cash.firstNegative.start)}</strong>, reaching ${wholeMoney(low.ending)} by ${shortDate(low.start)}.${driverText}</${Banner}>`
+        : below.length
+          ? html`<${Banner} level="medium" label="Below cushion">Cash dips below your ${wholeMoney(cushion)} cushion in <strong>${below.length} of 13 weeks</strong>, bottoming at <strong>${wholeMoney(low.ending)}</strong> the week of ${shortDate(low.start)}.${driverText}</${Banner}>`
+          : html`<${Banner} level="good" label="Healthy">Cash stays above your ${wholeMoney(cushion)} cushion for all 13 weeks. The lowest point is ${wholeMoney(low.ending)} the week of ${shortDate(low.start)}.</${Banner}>`}
+      ${cash.ap.duplicateTotal > 0 && html`<${Banner} level="medium" label="Check before paying">${wholeMoney(cash.ap.duplicateTotal)} of open bills match entries the audit flags as possible duplicates. They are still in the forecast; void them in QuickBooks if they are duplicates.</${Banner}>`}
+
+      <section class="kpis" aria-label="Cash summary">
+        <div class="kpi"><span class="kpi-label">Starting cash</span><span class="kpi-value">${wholeMoney(cash.startingCash)}</span><span class="kpi-sub">${inputs.startingCash !== '' ? 'Entered manually' : `As of ${cash.asOf}`}</span></div>
+        <div class=${`kpi ${low.ending < 0 ? 'alert' : ''}`}><span class="kpi-label">Lowest balance</span><span class="kpi-value">${wholeMoney(low.ending)}</span><span class="kpi-sub">Week of ${shortDate(low.start)}</span></div>
+        <div class="kpi"><span class="kpi-label">Cash at week 13</span><span class="kpi-value">${wholeMoney(cash.totals.ending)}</span><span class="kpi-sub">${wholeMoney(cash.totals.inflow)} in · ${wholeMoney(cash.totals.outflow)} out</span></div>
+        <div class=${`kpi ${cash.ar.doubtfulTotal ? 'alert' : ''}`}><span class="kpi-label">Open receivables</span><span class="kpi-value">${wholeMoney(cash.ar.total)}</span><span class="kpi-sub">${cash.ar.doubtfulTotal ? `${wholeMoney(cash.ar.doubtfulTotal)} over 90 days` : 'Nothing over 90 days'}</span></div>
+        <div class="kpi"><span class="kpi-label">Open bills</span><span class="kpi-value">${wholeMoney(cash.ap.total)}</span><span class="kpi-sub">${cash.ap.openBills.length} unpaid${cash.cardBalance ? ` + ${wholeMoney(cash.cardBalance)} on cards` : ''}</span></div>
+      </section>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head"><h2>Projected cash balance</h2><p>Cash at the end of each week. Points below your cushion are marked red.</p></div>
+          <div class="panel-body">
+            <div class="legend"><span><i style=${{ background: t.s1 }}></i>Ending cash</span><span><i style=${{ background: t.warnLine, height: '2px' }}></i>Cushion</span></div>
+            <div style=${{ height: 260 }}>
+              <${ResponsiveContainer} width="100%" height="100%">
+                <${AreaChart} data=${chartData} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${12} />
+                  <${YAxis} domain=${[minY < 0 ? 'auto' : 0, 'auto']} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                  <${ReferenceLine} y=${cushion} stroke=${t.warnLine} strokeWidth=${2} />
+                  ${minY < 0 && html`<${ReferenceLine} y=${0} stroke=${t.axis} />`}
+                  <${Tooltip} cursor=${{ stroke: t.axis }} content=${html`<${ChartTooltip} rows=${(d) => d.week ? [
+                    { label: 'Cash in', value: fmtMoney(d.inflow) },
+                    { label: 'Cash out', value: fmtMoney(d.outflow) },
+                    { label: 'Ending cash', value: fmtMoney(d.ending), color: t.s1 },
+                  ] : [{ label: 'Starting cash', value: fmtMoney(d.ending), color: t.s1 }]} />`} />
+                  <${Area} type="linear" dataKey="ending" stroke=${t.s1} strokeWidth=${2} fill=${t.s1} fillOpacity=${0.12} isAnimationActive=${false}
+                    dot=${(p) => html`<circle key=${p.index} cx=${p.cx} cy=${p.cy} r=${p.payload.ending < cushion ? 5 : 3.5} fill=${p.payload.ending < cushion ? t.neg : t.s1} stroke=${t.surface} strokeWidth=${2} />`}
+                    activeDot=${{ r: 6, stroke: t.surface, strokeWidth: 2 }} />
+                <//>
+              <//>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Cash in vs. cash out</h2><p>Weeks where payroll and bills cluster ahead of collections are the pinch points.</p></div>
+          <div class="panel-body">
+            <div class="legend"><span><i style=${{ background: t.s1 }}></i>Cash in</span><span><i style=${{ background: t.s2 }}></i>Cash out</span></div>
+            <div style=${{ height: 260 }}>
+              <${ResponsiveContainer} width="100%" height="100%">
+                <${BarChart} data=${chartData.slice(1)} margin=${{ top: 8, right: 8, bottom: 0, left: 4 }} barGap=${2} barCategoryGap="22%">
+                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${12} />
+                  <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                  <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [
+                    { label: 'Cash in', value: fmtMoney(d.inflow), color: t.s1 },
+                    { label: 'Cash out', value: fmtMoney(d.outflow), color: t.s2 },
+                    { label: 'Net', value: fmtMoney(d.net) },
+                  ]} />`} />
+                  <${Bar} dataKey="inflow" fill=${t.s1} radius=${[4, 4, 0, 0]} maxBarSize=${14} isAnimationActive=${false} />
+                  <${Bar} dataKey="outflow" fill=${t.s2} radius=${[4, 4, 0, 0]} maxBarSize=${14} isAnimationActive=${false} />
+                <//>
+              <//>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <${WeekGrid} cash=${cash} cushion=${cushion} />
+
+      <div class="section-title"><h2>Receivables & payables</h2></div>
+      <div class="grid-2">
+        <${AgingPanel} ar=${cash.ar} includeDoubtful=${inputs.includeDoubtful} />
+        <${PaymentSpeedChart} lags=${cash.ar.customerLags} />
+      </div>
+      <${OpenInvoices} ar=${cash.ar} includeDoubtful=${inputs.includeDoubtful} />
+      <${OpenBills} ap=${cash.ap} />
+
+      <details class="panel mapping">
+        <summary>How this forecast is built</summary>
+        <div class="panel-body"><ul class="assumptions">${cash.assumptions.map((a) => html`<li key=${a}>${a}</li>`)}</ul></div>
+      </details>
+    `;
+  }
+
+  function WeekGrid({ cash, cushion }) {
+    const row = (r, cls) => html`<tr key=${r.label} class=${cls || ''}><th scope="row">${r.label}</th>${r.values.map((v, i) => html`<td key=${i} class="num">${wholeMoney(v)}</td>`)}<td class="num total">${wholeMoney(r.total)}</td></tr>`;
+    const sum = (rows, i) => rows.reduce((s, r) => s + r.values[i], 0);
+    const totalRow = (label, rows, cls) => row({ label, values: cash.weeks.map((_, i) => sum(rows, i)), total: rows.reduce((s, r) => s + r.total, 0) }, cls);
+    return html`<section class="panel">
+      <div class="panel-head"><h2>13-week cash flow</h2><p>The standard week-by-week view. Hover a chart above for detail, or read across a row to see when each item lands.</p></div>
+      <div class="panel-body flush"><div class="table-wrap"><table class="grid13">
+        <thead><tr><th>Week of</th>${cash.weeks.map((w) => html`<th key=${w.week} class="num">${shortDate(w.start)}</th>`)}<th class="num">13 weeks</th></tr></thead>
+        <tbody>
+          <tr class="group"><th scope="row" colspan=${cash.weeks.length + 2}>Cash in</th></tr>
+          ${cash.inflowRows.map((r) => row(r))}
+          ${totalRow('Total cash in', cash.inflowRows, 'subtotal')}
+          <tr class="group"><th scope="row" colspan=${cash.weeks.length + 2}>Cash out</th></tr>
+          ${cash.outflowRows.map((r) => row(r))}
+          ${totalRow('Total cash out', cash.outflowRows, 'subtotal')}
+          <tr class="subtotal"><th scope="row">Net change</th>${cash.weeks.map((w) => html`<td key=${w.week} class=${`num ${w.net < 0 ? 'neg' : ''}`}>${wholeMoney(w.net)}</td>`)}<td class="num total">${wholeMoney(cash.totals.inflow - cash.totals.outflow)}</td></tr>
+          <tr class="ending"><th scope="row">Ending cash</th>${cash.weeks.map((w) => html`<td key=${w.week} class=${`num ${w.ending < 0 ? 'neg' : w.ending < cushion ? 'warn' : ''}`}>${wholeMoney(w.ending)}</td>`)}<td class="num total">${wholeMoney(cash.totals.ending)}</td></tr>
+        </tbody>
+      </table></div></div>
+    </section>`;
+  }
+
+  function AgingPanel({ ar, includeDoubtful }) {
+    const total = ar.total || 1;
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Receivables aging</h2><span class="pill">${wholeMoney(ar.total)} open</span><p>Open invoices by age. Payments are matched to invoices by amount first, then oldest first.</p></div>
+      <div class="panel-body aging">
+        ${ar.buckets.map((b, i) => html`<div class=${`bucket ${i === 3 && b.amount ? 'bad' : i === 2 && b.amount ? 'warnb' : ''}`} key=${b.label}>
+          <span class="kpi-label">${b.label}</span>
+          <span class="bucket-value">${wholeMoney(b.amount)}</span>
+          <div class="meter"><span style=${{ width: `${(b.amount / total) * 100}%`, background: i === 3 ? 'var(--critical)' : i === 2 ? 'var(--serious)' : 'var(--series-1)' }}></span></div>
+          <span class="kpi-sub">${b.count} invoice${b.count === 1 ? '' : 's'}${i === 3 && b.amount ? (includeDoubtful ? ' · in forecast' : ' · left out of forecast') : ''}</span>
+        </div>`)}
+      </div>
+    </section>`;
+  }
+
+  function PaymentSpeedChart({ lags }) {
+    const t = useTokens();
+    if (!lags.length) return html`<section class="panel"><div class="panel-head"><h2>How fast customers pay</h2></div><div class="empty">No paid invoices to learn from yet.</div></section>`;
+    const data = lags.slice(0, 10).map((l) => ({ ...l, fullName: l.name, label: truncate(l.name, 20), slow: l.medianDays > 45 }));
+    const h = Math.max(200, data.length * 30 + 40);
+    return html`<section class="panel">
+      <div class="panel-head"><h2>How fast customers pay</h2><p>Median days from invoice to payment. The forecast uses each customer's own number, not the terms on the invoice.</p></div>
+      <div class="panel-body">
+        <div class="legend"><span><i style=${{ background: t.s2 }}></i>Slower than 45 days</span><span><i style=${{ background: t.neutral }}></i>45 days or faster</span></div>
+        <div style=${{ height: h }}>
+          <${ResponsiveContainer} width="100%" height="100%">
+            <${BarChart} data=${data} layout="vertical" margin=${{ top: 0, right: 16, bottom: 0, left: 0 }} barCategoryGap="28%">
+              <${CartesianGrid} horizontal=${false} stroke=${t.grid} />
+              <${XAxis} type="number" tickFormatter=${(v) => `${v}d`} tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 12 }} />
+              <${YAxis} type="category" dataKey="label" width=${150} tickLine=${false} axisLine=${false} tick=${{ fill: t.ink2, fontSize: 12 }} />
+              <${ReferenceLine} x=${30} stroke=${t.axis} label=${{ value: 'Net 30', position: 'top', fill: t.muted, fontSize: 11 }} />
+              <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [
+                { label: 'Median days to pay', value: `${d.medianDays}` },
+                { label: 'Invoices paid', value: `${d.paid}` },
+              ]} />`} />
+              <${Bar} dataKey="medianDays" maxBarSize=${14} radius=${[0, 4, 4, 0]} isAnimationActive=${false}>
+                ${data.map((d) => html`<${Cell} key=${d.name} fill=${d.slow ? t.s2 : t.neutral} />`)}
+              <//>
+            <//>
+          <//>
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function OpenInvoices({ ar, includeDoubtful }) {
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Open invoices</h2><span class="pill">${ar.openInvoices.length}</span><p>When each open invoice is expected to be paid, based on how that customer has paid before.</p></div>
+      <div class="panel-body flush">${ar.openInvoices.length ? html`<div class="table-wrap"><table>
+        <thead><tr><th>Status</th><th>Customer</th><th>Invoice</th><th>Date</th><th class="num">Age</th><th class="num">Open</th><th class="num">Usually pays in</th><th>Expected</th></tr></thead>
+        <tbody>${ar.openInvoices.map((i) => html`<tr key=${`${i.party}-${i.num}-${i.dateStr}`}>
+          <td>${i.doubtful ? html`<${Severity} level="High" />` : i.overdue ? html`<span class="pill medium"><span class="dot"></span>Late</span>` : html`<span class="pill good"><span class="dot"></span>On track</span>`}</td>
+          <td>${i.party}</td>
+          <td class="nowrap">${i.num ? `#${i.num}` : '-'}<span class="sub">row ${i.line}</span></td>
+          <td class="num nowrap">${i.dateStr}</td>
+          <td class="num">${i.age}d</td>
+          <td class="num"><${Money} v=${i.open} /></td>
+          <td class="num">${i.lag}d${i.lagKnown ? '' : html`<span class="sub">assumed</span>`}</td>
+          <td class="nowrap">${i.doubtful && !includeDoubtful ? html`<span class="sub">Left out (over 90 days)</span>` : html`<span class="num">${i.expectedStr}</span>${i.overdue ? html`<span class="sub">past usual timing</span>` : ''}`}</td>
+        </tr>`)}</tbody>
+      </table></div>` : html`<div class="empty">${Icon.check}No open invoices.</div>`}</div>
+    </section>`;
+  }
+
+  function OpenBills({ ap }) {
+    if (!ap.openBills.length) return null;
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Open bills</h2><span class="pill">${ap.openBills.length} · ${wholeMoney(ap.total)}</span><p>Unpaid vendor bills, scheduled on each vendor's usual payment timing.</p></div>
+      <div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Vendor</th><th>Bill</th><th>Date</th><th class="num">Open</th><th>Expected payment</th></tr></thead>
+        <tbody>${ap.openBills.map((b) => html`<tr key=${`${b.party}-${b.num}-${b.dateStr}`}>
+          <td>${b.party}${b.possibleDuplicate ? html`<span class="sub"><span class="pill medium">Possible duplicate</span></span>` : ''}</td>
+          <td class="nowrap">${b.num ? `#${b.num}` : '-'}<span class="sub">row ${b.line}</span></td>
+          <td class="num nowrap">${b.dateStr}</td>
+          <td class="num"><${Money} v=${b.open} /></td>
+          <td class="nowrap"><span class="num">${b.dueStr}</span>${b.late ? html`<span class="sub">past usual timing</span>` : ''}</td>
+        </tr>`)}</tbody>
+      </table></div></div>
+    </section>`;
+  }
+
+  // ------------------------------------------------------------ break-even tab
+
+  function BreakEvenTab({ be, onOpenMapping }) {
+    const t = useTokens();
+    const [sc, setSc] = useState({ price: 0, variable: 0, fixed: 0, target: '' });
+    if (!be) return html`<section class="panel"><div class="empty">No income or expense postings found to compute break-even.</div></section>`;
+    const target = sc.target === '' || isNaN(parseFloat(sc.target)) ? null : parseFloat(sc.target);
+    const scen = E.whatIf(be.base, { price: sc.price, variable: sc.variable, fixed: sc.fixed, target });
+    const changed = sc.price || sc.variable || sc.fixed;
+    const mos = be.marginOfSafety;
+    const data = be.monthly.map((m) => ({ ...m, label: new Date(`${m.month}-01T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }), below: be.breakEvenRevenue != null && m.revenue < be.breakEvenRevenue }));
+    const R = be.base.revenue || 1;
+    const split = [
+      { label: 'Variable costs', v: be.base.variable, color: t.s2 },
+      { label: 'Fixed costs', v: be.base.fixed, color: t.neutral },
+      { label: be.profit >= 0 ? 'Profit' : 'Loss', v: Math.abs(be.profit), color: be.profit >= 0 ? t.s1 : t.neg },
+    ];
+    const splitTotal = split.reduce((s, x) => s + x.v, 0) || 1;
+    const rows = [
+      ['Monthly revenue', be.revenue, scen.revenue, 'money'],
+      ['Variable costs', be.variable, scen.variable, 'money'],
+      ['Fixed costs', be.fixed, scen.fixed, 'money'],
+      ['Monthly profit', be.profit, scen.profit, 'money'],
+      ['Profit margin', be.profitMargin, scen.profitMargin, 'pct'],
+      ['Contribution margin', be.cmRatio, scen.cmRatio, 'pct'],
+      ['Break-even revenue', be.breakEvenRevenue, scen.breakEvenRevenue, 'money'],
+      ['Margin of safety', be.marginOfSafety, scen.marginOfSafety, 'pct'],
+    ];
+    const fmtCell = (v, kind) => (v == null ? 'n/a' : kind === 'pct' ? fmtPct(v) : wholeMoney(v));
+    const delta = (a, b, kind) => {
+      if (a == null || b == null || Math.abs(b - a) < (kind === 'pct' ? 0.0005 : 0.5)) return html`<span class="sub">-</span>`;
+      const d = b - a;
+      return html`<span class="num">${d > 0 ? '+' : ''}${kind === 'pct' ? `${(d * 100).toFixed(1)} pts` : wholeMoney(d)}</span>`;
+    };
+
+    return html`
+      <section class="kpis" aria-label="Break-even summary">
+        <div class="kpi"><span class="kpi-label">Break-even revenue</span><span class="kpi-value">${be.breakEvenRevenue != null ? wholeMoney(be.breakEvenRevenue) : 'n/a'}</span><span class="kpi-sub">per month</span></div>
+        <div class="kpi"><span class="kpi-label">Average revenue</span><span class="kpi-value">${wholeMoney(be.base.revenue)}</span><span class="kpi-sub">per month over ${be.months % 1 === 0 ? be.months : be.months.toFixed(1)} months</span></div>
+        <div class=${`kpi ${mos == null || mos < 0 ? 'alert' : mos >= 0.2 ? 'okay' : ''}`}><span class="kpi-label">Margin of safety</span><span class="kpi-value">${fmtPct(mos)}</span><span class="kpi-sub">${mos == null ? 'Break-even not reachable' : mos < 0 ? 'Revenue is below break-even' : `Revenue can fall ${fmtPct(mos)} before a loss`}</span></div>
+        <div class="kpi"><span class="kpi-label">Contribution margin</span><span class="kpi-value">${fmtPct(be.cmRatio)}</span><span class="kpi-sub">${be.cmRatio != null ? `${Math.round(be.cmRatio * 100)}¢ of each $1 left after job costs` : ''}</span></div>
+        <div class=${`kpi ${be.profit < 0 ? 'alert' : ''}`}><span class="kpi-label">Average profit</span><span class="kpi-value">${wholeMoney(be.profit)}</span><span class="kpi-sub">per month · ${fmtPct(be.profitMargin)} margin</span></div>
+      </section>
+
+      <div class="grid-2">
+        <section class="panel">
+          <div class="panel-head"><h2>Monthly revenue vs. break-even</h2><p>Months in red did not cover their costs at the period's average cost structure.</p></div>
+          <div class="panel-body">
+            <div class="legend"><span><i style=${{ background: t.s1 }}></i>Above break-even</span><span><i style=${{ background: t.neg }}></i>Below break-even</span><span><i style=${{ background: t.ink2, height: '2px' }}></i>Break-even</span></div>
+            <div style=${{ height: 260 }}>
+              <${ResponsiveContainer} width="100%" height="100%">
+                <${BarChart} data=${data} margin=${{ top: 16, right: 12, bottom: 0, left: 4 }} barCategoryGap="30%">
+                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 12 }} />
+                  <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                  <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [
+                    { label: 'Revenue', value: fmtMoney(d.revenue), color: d.below ? t.neg : t.s1 },
+                    { label: 'Variable costs', value: fmtMoney(d.variable) },
+                    { label: 'Fixed costs', value: fmtMoney(d.fixed) },
+                    { label: 'Profit', value: fmtMoney(d.profit) },
+                  ]} />`} />
+                  <${Bar} dataKey="revenue" maxBarSize=${36} radius=${[4, 4, 0, 0]} isAnimationActive=${false}>
+                    ${data.map((d) => html`<${Cell} key=${d.month} fill=${d.below ? t.neg : t.s1} />`)}
+                  <//>
+                  ${be.breakEvenRevenue != null && html`<${ReferenceLine} y=${be.breakEvenRevenue} stroke=${t.ink2} strokeWidth=${2} label=${{ value: `Break-even ${compactMoney(be.breakEvenRevenue)}`, position: 'insideTopLeft', fill: t.ink2, fontSize: 11 }} />`}
+                <//>
+              <//>
+            </div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Where each sales dollar goes</h2><p>Variable costs rise with each job. Fixed costs are owed whether or not work comes in.</p></div>
+          <div class="panel-body" style=${{ display: 'grid', gap: '16px' }}>
+            <div class="split-bar" role="img" aria-label=${split.map((x) => `${x.label} ${Math.round((x.v / R) * 100)} cents`).join(', ')}>
+              ${split.map((x) => html`<span key=${x.label} style=${{ width: `${(x.v / splitTotal) * 100}%`, background: x.color }}></span>`)}
+            </div>
+            <div class="split-legend">${split.map((x) => html`<div key=${x.label}><i style=${{ background: x.color }}></i><span>${x.label}</span><b class="num">${Math.round((x.v / R) * 100)}¢</b><span class="sub num">${wholeMoney(x.v)}/mo</span></div>`)}</div>
+            <div class="cost-lists">
+              <div><h3>Fixed costs</h3><table><tbody>${be.fixedAccounts.slice(0, 8).map((a) => html`<tr key=${a.name}><td>${a.name}</td><td class="num">${wholeMoney(a.monthly)}</td></tr>`)}</tbody></table></div>
+              <div><h3>Variable costs</h3><table><tbody>${be.variableAccounts.length ? be.variableAccounts.slice(0, 8).map((a) => html`<tr key=${a.name}><td>${a.name}</td><td class="num">${wholeMoney(a.monthly)}</td></tr>`) : html`<tr><td class="sub">None found</td></tr>`}</tbody></table></div>
+            </div>
+            <p class="chart-note">COGS accounts and expenses tagged to a customer count as variable; everything else is fixed. <button class="linkish" onClick=${onOpenMapping}>Change account types in Account mapping</button>.</p>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel">
+        <div class="panel-head"><h2>What if?</h2><p>Test a price change or cost change before making it. Price changes assume the same amount of work at the new rate.</p>
+          ${changed ? html`<button class="btn spacer" onClick=${() => setSc({ ...sc, price: 0, variable: 0, fixed: 0 })}>Reset</button>` : ''}</div>
+        <div class="panel-body whatif">
+          <div class="sliders">
+            <${Slider} id="wi-price" label="Prices" value=${sc.price} min=${-10} max=${25} step=${1} fmt=${(v) => `${v > 0 ? '+' : ''}${v}%`} onChange=${(v) => setSc({ ...sc, price: v })} />
+            <${Slider} id="wi-variable" label="Variable costs" value=${sc.variable} min=${-20} max=${20} step=${1} fmt=${(v) => `${v > 0 ? '+' : ''}${v}%`} onChange=${(v) => setSc({ ...sc, variable: v })} />
+            <${Slider} id="wi-fixed" label="Fixed costs per month" value=${sc.fixed} min=${-Math.ceil(be.base.fixed / 2 / 500) * 500} max=${Math.ceil(be.base.fixed / 2 / 500) * 500} step=${250} fmt=${(v) => `${v > 0 ? '+' : v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString('en-US')}`} onChange=${(v) => setSc({ ...sc, fixed: v })} />
+            <${MoneyInput} id="wi-target" label="Target monthly profit" value=${sc.target} placeholder="e.g. 10,000" onChange=${(v) => setSc({ ...sc, target: v })} />
+          </div>
+          <div class="whatif-out">
+            <div class="table-wrap"><table>
+              <thead><tr><th></th><th class="num">Today</th><th class="num">Scenario</th><th class="num">Change</th></tr></thead>
+              <tbody>${rows.map(([label, a, b, kind]) => html`<tr key=${label} class=${label === 'Monthly profit' ? 'strong' : ''}><td>${label}</td><td class="num">${fmtCell(a, kind)}</td><td class=${`num ${kind === 'money' && b < 0 ? 'neg' : ''}`}>${fmtCell(b, kind)}</td><td class="num">${delta(a, b, kind)}</td></tr>`)}</tbody>
+            </table></div>
+            <div class="insights">
+              ${scen.volumeCushion != null && scen.volumeCushion > 0 && html`<p>At ${sc.price}% higher prices you could lose <strong>${fmtPct(scen.volumeCushion)}</strong> of your work and still earn today's profit.</p>`}
+              ${target != null && (scen.revenueForTarget != null
+                ? html`<p>To earn <strong>${wholeMoney(target)}</strong> a month you need <strong>${wholeMoney(scen.revenueForTarget)}</strong> in monthly revenue, ${scen.revenueForTarget > be.base.revenue ? `${fmtPct(scen.revenueForTarget / be.base.revenue - 1)} more than today` : 'which you already reach'}.</p>`
+                : html`<p>Costs exceed revenue on each sale in this scenario, so no revenue level reaches that target.</p>`)}
+              ${!changed && target == null && html`<p class="sub">Move a slider to compare against today.</p>`}
+            </div>
+          </div>
+        </div>
+      </section>
+    `;
+  }
+
+  function Slider({ id, label, value, min, max, step, fmt, onChange }) {
+    return html`<label class="field slider" for=${id}>
+      <span class="slider-head"><span>${label}</span><b class="num">${fmt(value)}</b></span>
+      <input id=${id} type="range" min=${min} max=${max} step=${step} value=${value} onInput=${(e) => onChange(parseFloat(e.target.value))} />
+    </label>`;
+  }
+
   // ------------------------------------------------------------ report drawer
 
-  function ReportDrawer({ result, groupBy, onClose }) {
+  function ReportDrawer({ result, groupBy, cushion, onClose }) {
     const [clientName, setClientName] = useState(() => result.meta.company || '');
     const [preparer, setPreparer] = useState(() => safeStore.get('ll.preparer') || '');
     const [status, setStatus] = useState('');
     const preRef = useRef(null);
-    const report = useMemo(() => E.buildReport(result, { clientName, preparer, groupBy }), [result, clientName, preparer, groupBy]);
+    const report = useMemo(() => E.buildReport(result, { clientName, preparer, groupBy, cushion }), [result, clientName, preparer, groupBy, cushion]);
     const filename = `${(clientName || 'client').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'client'}-books-review-${result.period.end}.txt`;
 
     useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);

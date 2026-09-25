@@ -155,6 +155,7 @@
     const meta = rows.slice(0, header.index).map((r) => r.filter(Boolean).join(' ').trim()).filter(Boolean);
 
     const txns = [];
+    const openingBalances = {};
     let section = '';
     let skippedTotals = 0;
     for (let i = header.index + 1; i < rows.length; i++) {
@@ -163,6 +164,13 @@
       if (!nonEmpty.length) continue;
       const first = norm(r[0]);
       if (/^total\b/i.test(first) || /^total for\b/i.test(nonEmpty[0])) { skippedTotals++; continue; }
+      // "Beginning Balance" rows open each account section in QuickBooks exports.
+      if (nonEmpty.some((c) => /^(beginning|opening) balance$/i.test(c))) {
+        const acct = get(r, 'account') || section;
+        const nums = nonEmpty.map(parseAmount).filter((n) => n != null);
+        if (acct && nums.length) openingBalances[acct] = nums[nums.length - 1];
+        continue;
+      }
       const date = parseDate(get(r, 'date'));
       if (!date) {
         // Section header in "by Account" layouts ("Office Supplies", "Checking (1)").
@@ -211,6 +219,7 @@
         rowCount: txns.length,
         skippedTotals,
         grouped: map.account == null,
+        openingBalances,
       },
     };
   }
@@ -641,6 +650,401 @@
     };
   }
 
+  // ---------------------------------------------------------------- cash forecast
+
+  const CASH_ACCOUNT = /checking|savings|\bbank\b|money market|cash on hand|petty cash|undeposited/i;
+  const CARD_ACCOUNT = /credit card|\bvisa\b|mastercard|\bamex\b|american express|\bcard\b/i;
+  const NON_CASH_ACCOUNT = /depreciation|amortization/i;
+  const partyOf = (t) => norm(t.customer || t.name || t.vendor).split(':')[0].trim();
+  const vendorOf = (t) => norm(t.vendor || t.name);
+  const addDays = (d, n) => new Date(d.getTime() + n * DAY);
+
+  // Rebuilds open invoices (or bills) by applying each party's payments to its
+  // oldest items first, and measures how many days each paid item took.
+  function openItems(entries, isCharge, isSettle, partyFn) {
+    const parties = new Map();
+    const party = (k) => {
+      if (!parties.has(k)) parties.set(k, { name: k, charges: [], settles: [] });
+      return parties.get(k);
+    };
+    for (const t of entries) {
+      if (isCharge(t)) {
+        const k = partyFn(t);
+        if (!k) continue;
+        const list = party(k).charges;
+        // Multi-line invoices share date + number: fold them into one item.
+        const prev = t.num && list.find((c) => c.num === t.num && c.dateStr === t.dateStr);
+        if (prev) { prev.amount = round2(prev.amount + Math.abs(t.amount)); prev.open = prev.amount; }
+        else list.push({ party: k, num: t.num, date: t.date, dateStr: t.dateStr, amount: Math.abs(t.amount), open: Math.abs(t.amount), line: t.line });
+      } else if (isSettle(t)) {
+        const k = partyFn(t);
+        if (k) party(k).settles.push({ date: t.date, amount: Math.abs(t.amount) });
+      }
+    }
+    const open = [];
+    const lags = new Map();
+    for (const p of parties.values()) {
+      p.charges.sort((a, b) => a.date - b.date);
+      p.settles.sort((a, b) => a.date - b.date);
+      const days = [];
+      let i = 0;
+      for (const s of p.settles) {
+        // A payment for exactly one invoice's amount almost always pays that invoice.
+        const exact = p.charges.find((c) => c.open > 0.004 && c.date <= s.date && Math.abs(c.open - s.amount) < 0.01);
+        if (exact) {
+          exact.open = 0;
+          days.push(Math.max(0, (s.date - exact.date) / DAY));
+          continue;
+        }
+        let left = s.amount;
+        while (left > 0.004 && i < p.charges.length) {
+          const c = p.charges[i];
+          if (c.open <= 0.004) { i++; continue; }
+          const applied = Math.min(c.open, left);
+          c.open = round2(c.open - applied);
+          left = round2(left - applied);
+          if (c.open <= 0.004) { days.push(Math.max(0, (s.date - c.date) / DAY)); i++; }
+        }
+      }
+      if (days.length) lags.set(p.name, { median: Math.round(median(days)), paid: days.length });
+      for (const c of p.charges) if (c.open > 0.004) open.push(c);
+    }
+    return { open, lags };
+  }
+
+  // Groups recurring outflows (rent, payroll, software, monthly vendors) and
+  // projects their next occurrences.
+  function recurringOutflows(postings, asOf, horizonEnd, apLagFor) {
+    const byVendor = new Map();
+    for (const p of postings) {
+      const v = vendorOf(p.t) || leafAccount(p.category);
+      const k = lower(v);
+      if (!byVendor.has(k)) byVendor.set(k, { vendor: v, rows: [] });
+      byVendor.get(k).rows.push(p);
+    }
+    const items = [];
+    const recurringVendors = new Set();
+    for (const [k, { vendor, rows }] of byVendor) {
+      rows.sort((a, b) => a.t.date - b.t.date);
+      const months = new Map();
+      for (const r of rows) {
+        const m = r.t.dateStr.slice(0, 7);
+        if (!months.has(m)) months.set(m, { first: r.t.date, total: 0, count: 0 });
+        const mm = months.get(m);
+        mm.total += r.value;
+        mm.count++;
+      }
+      const keys = [...months.keys()].sort();
+      if (keys.length < 3) continue;
+      const firsts = keys.map((m) => months.get(m).first);
+      const gaps = [];
+      for (let i = 1; i < firsts.length; i++) gaps.push((firsts[i] - firsts[i - 1]) / DAY);
+      const cadence = cadenceOf(median(gaps));
+      if (!cadence || cadence.label !== 'Monthly') continue;
+      // Needs to still be active: billed within the last ~45 days.
+      if ((asOf - rows[rows.length - 1].t.date) / DAY > 45) continue;
+      const recent = keys.slice(-3).map((m) => months.get(m).total);
+      const amount = round2(median(recent));
+      const day = Math.round(median(firsts.map((d) => d.getUTCDate())));
+      const viaBill = rows.some((r) => /bill/i.test(r.t.type));
+      const lag = viaBill ? apLagFor(vendor) : 0;
+      const group = groupFor(rows[rows.length - 1].category);
+      recurringVendors.add(k);
+      const lastBilled = rows[rows.length - 1].t.date;
+      for (let m = 1; m <= 5; m++) {
+        const base = new Date(Date.UTC(lastBilled.getUTCFullYear(), lastBilled.getUTCMonth() + m, Math.min(day, 28)));
+        const pay = addDays(base, lag);
+        if (pay <= asOf) continue;
+        if (pay > horizonEnd) break;
+        items.push({ date: pay, amount, group, label: vendor, source: viaBill ? `Monthly bill, paid ~${lag} days after billing` : 'Monthly charge' });
+      }
+    }
+    return { items, recurringVendors };
+  }
+
+  function groupFor(category) {
+    const leaf = leafAccount(category);
+    if (/payroll|wages|salar/i.test(category)) return 'Payroll';
+    if (/rent|lease/i.test(category)) return 'Rent';
+    if (SAAS_ACCOUNT.test(category)) return 'Software';
+    return leaf;
+  }
+
+  function cashForecast(txns, accountClass, opts) {
+    opts = opts || {};
+    const weeksN = opts.weeks || 13;
+    const cls = (a) => accountClass[a] || classifyAccount(a);
+    const entries = logicalRows(txns, accountClass);
+    if (!entries.length) return null;
+    const asOf = entries.reduce((m, t) => (t.date > m ? t.date : m), entries[0].date);
+    const start = addDays(asOf, 1);
+    const horizonEnd = addDays(asOf, weeksN * 7);
+    const weekOf = (d) => Math.max(0, Math.min(weeksN - 1, Math.floor((d - start) / DAY / 7)));
+
+    // Starting cash: opening balances plus period activity in cash accounts.
+    const opening = opts.openingBalances || {};
+    const cashAccts = new Map();
+    const cardAccts = new Map();
+    for (const [a, v] of Object.entries(opening)) {
+      if (cls(a) !== 'balance') continue;
+      if (CASH_ACCOUNT.test(a)) cashAccts.set(a, v);
+      else if (CARD_ACCOUNT.test(a)) cardAccts.set(a, v);
+    }
+    for (const t of txns) {
+      if (cls(t.account) !== 'balance') continue;
+      if (CASH_ACCOUNT.test(t.account)) cashAccts.set(t.account, (cashAccts.get(t.account) || 0) + t.amount);
+      else if (CARD_ACCOUNT.test(t.account)) cardAccts.set(t.account, (cardAccts.get(t.account) || 0) + t.amount);
+    }
+    const estimatedCash = round2([...cashAccts.values()].reduce((s, v) => s + v, 0));
+    const cardBalance = round2(Math.max(0, [...cardAccts.values()].reduce((s, v) => s + v, 0)));
+    const startingCash = opts.startingCash != null && !isNaN(opts.startingCash) ? +opts.startingCash : estimatedCash;
+
+    // Receivables.
+    const ar = openItems(
+      entries,
+      (t) => /invoice|statement charge/i.test(t.type),
+      (t) => /^payment$|receive payment|credit memo/i.test(t.type),
+      partyOf,
+    );
+    const allLags = [...ar.lags.values()].map((l) => l.median);
+    const defaultArLag = allLags.length ? Math.round(median(allLags)) : 30;
+    const arLagFor = (c) => (ar.lags.get(c) ? ar.lags.get(c).median : defaultArLag);
+    const buckets = [
+      { label: 'Current (0-30)', max: 30, amount: 0, count: 0 },
+      { label: '31-60 days', max: 60, amount: 0, count: 0 },
+      { label: '61-90 days', max: 90, amount: 0, count: 0 },
+      { label: 'Over 90 days', max: Infinity, amount: 0, count: 0 },
+    ];
+    const doubtfulAfter = opts.doubtfulAfter || 90;
+    const openInvoices = ar.open.map((c) => {
+      const age = Math.round((asOf - c.date) / DAY);
+      const lag = arLagFor(c.party);
+      let expected = addDays(c.date, lag);
+      const overdue = expected <= asOf;
+      if (overdue) expected = addDays(asOf, 10); // past its usual timing: assume a nudge collects it soon
+      const doubtful = age > doubtfulAfter;
+      const b = buckets.find((x) => age <= x.max);
+      b.amount = round2(b.amount + c.open);
+      b.count++;
+      return { ...c, age, lag, lagKnown: ar.lags.has(c.party), expected, expectedStr: isoDate(expected), overdue, doubtful, week: doubtful && !opts.includeDoubtful ? null : weekOf(expected) };
+    }).sort((a, b) => b.age - a.age);
+
+    // Payables.
+    const ap = openItems(
+      entries,
+      (t) => /^bill$/i.test(t.type),
+      (t) => /bill payment|vendor credit/i.test(t.type),
+      vendorOf,
+    );
+    const apLags = [...ap.lags.values()].map((l) => l.median);
+    const defaultApLag = apLags.length ? Math.round(median(apLags)) : 30;
+    const apLagFor = (v) => (ap.lags.get(v) ? ap.lags.get(v).median : defaultApLag);
+    const openBills = ap.open.map((c) => {
+      let due = addDays(c.date, apLagFor(c.party));
+      const late = due <= asOf;
+      if (late) due = addDays(asOf, 3);
+      return { ...c, age: Math.round((asOf - c.date) / DAY), due, dueStr: isoDate(due), late, week: weekOf(due) };
+    }).sort((a, b) => a.due - b.due);
+
+    // Expected new billings from customers invoiced in 3 of the last 4 months.
+    const postings = toPostings(txns, accountClass);
+    const recentCut = addDays(asOf, -122);
+    const invoicesByCustomer = new Map();
+    for (const t of entries) {
+      if (!/invoice/i.test(t.type) || t.date < recentCut) continue;
+      const k = partyOf(t);
+      if (!k) continue;
+      if (!invoicesByCustomer.has(k)) invoicesByCustomer.set(k, []);
+      invoicesByCustomer.get(k).push(t);
+    }
+    const newBillings = [];
+    for (const [cust, list] of invoicesByCustomer) {
+      const months = new Map();
+      for (const t of list) months.set(t.dateStr.slice(0, 7), (months.get(t.dateStr.slice(0, 7)) || 0) + Math.abs(t.amount));
+      if (months.size < 3) continue;
+      const keys = [...months.keys()].sort();
+      const amount = round2(median(keys.slice(-3).map((k) => months.get(k))));
+      const last = list.reduce((m, t) => (t.date > m ? t.date : m), list[0].date);
+      const day = Math.min(28, Math.round(median(list.map((t) => t.date.getUTCDate()))));
+      const lag = arLagFor(cust);
+      for (let m = 1; m <= 4; m++) {
+        const inv = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + m, day));
+        const pay = addDays(inv, lag);
+        if (pay <= asOf || pay > horizonEnd) continue;
+        newBillings.push({ customer: cust, invoiceDate: isoDate(inv), date: pay, amount, week: weekOf(pay) });
+      }
+    }
+
+    // Receipts that never touch A/R (sales receipts, direct deposits to income).
+    const directCut = addDays(asOf, -91);
+    const directReceipts = postings.filter((p) => p.cls === 'income' && !/invoice|credit memo|statement charge/i.test(p.t.type) && p.t.date >= directCut);
+    const directWeekly = round2(directReceipts.reduce((s, p) => s + p.value, 0) / 13);
+
+    // Outflows.
+    const cashOut = postings.filter((p) => p.cls !== 'income' && p.value > 0 && !NON_CASH_ACCOUNT.test(p.category));
+    const { items: recurringItems, recurringVendors } = recurringOutflows(cashOut, asOf, horizonEnd, apLagFor);
+    const otherSpend = cashOut.filter((p) => p.t.date >= directCut && !/^bill$/i.test(p.t.type) && !recurringVendors.has(lower(vendorOf(p.t) || leafAccount(p.category))));
+    const otherWeekly = round2(otherSpend.reduce((s, p) => s + p.value, 0) / 13);
+
+    // Assemble the week grid.
+    const rowsIn = new Map();
+    const rowsOut = new Map();
+    const put = (map, key, week, amt) => {
+      if (!map.has(key)) map.set(key, new Array(weeksN).fill(0));
+      map.get(key)[week] = round2(map.get(key)[week] + amt);
+    };
+    for (const inv of openInvoices) if (inv.week != null) put(rowsIn, 'Collections on open invoices', inv.week, inv.open);
+    for (const b of newBillings) put(rowsIn, 'Collections on new billings', b.week, b.amount);
+    if (directWeekly > 0) for (let w = 0; w < weeksN; w++) put(rowsIn, 'Other receipts (run-rate)', w, directWeekly);
+    for (const b of openBills) put(rowsOut, 'Open bills (A/P)', b.week, b.open);
+    if (cardBalance > 0) put(rowsOut, 'Credit card balance', Math.min(1, weeksN - 1), cardBalance);
+    for (const it of recurringItems) put(rowsOut, it.group, weekOf(it.date), it.amount);
+    if (otherWeekly > 0) for (let w = 0; w < weeksN; w++) put(rowsOut, 'Other spending (run-rate)', w, otherWeekly);
+
+    const weeks = [];
+    let bal = startingCash;
+    for (let w = 0; w < weeksN; w++) {
+      const inflow = round2([...rowsIn.values()].reduce((s, r) => s + r[w], 0));
+      const outflow = round2([...rowsOut.values()].reduce((s, r) => s + r[w], 0));
+      const opening = bal;
+      bal = round2(bal + inflow - outflow);
+      const ws = addDays(start, w * 7);
+      weeks.push({ week: w + 1, start: isoDate(ws), end: isoDate(addDays(ws, 6)), opening: round2(opening), inflow, outflow, net: round2(inflow - outflow), ending: bal });
+    }
+    const lowest = weeks.reduce((m, w) => (w.ending < m.ending ? w : m), weeks[0]);
+    const firstNegative = weeks.find((w) => w.ending < 0) || null;
+    const sortRows = (map) => [...map.entries()].map(([label, values]) => ({ label, values, total: round2(values.reduce((s, v) => s + v, 0)) }))
+      .sort((a, b) => b.total - a.total);
+    const doubtful = openInvoices.filter((i) => i.doubtful);
+
+    const assumptions = [
+      `Forecast starts ${isoDate(start)}, the day after the last transaction in the export.`,
+      opts.startingCash != null ? 'Starting cash entered manually.' : cashAccts.size
+        ? `Starting cash is the ${Object.keys(opening).some((a) => cashAccts.has(a)) ? 'opening balance plus ' : ''}activity in ${[...cashAccts.keys()].join(', ')}.`
+        : 'No bank account found in the export: enter starting cash for an accurate balance.',
+      `Open invoices are collected on each customer's own median days-to-pay (${defaultArLag} days when a customer has no payment history). Invoices already past that point are assumed to arrive within about 10 days.`,
+      `Invoices over ${doubtfulAfter} days old are ${opts.includeDoubtful ? 'included' : 'left out as doubtful'}.`,
+      'Customers billed in at least 3 of the last 4 months are assumed to keep billing at their recent monthly amount.',
+      'Monthly bills and charges (rent, payroll, software, repeat vendors) are projected forward at their recent amount; other spending uses the last 13-week average.',
+      cardBalance > 0 ? `The current credit card balance (${fmtMoney(cardBalance)}) is assumed paid in week 2.` : 'No outstanding credit card balance detected.',
+      'Card purchases are treated as cash out on the charge date. Loan payments, owner draws and taxes only appear if they are in the export.',
+    ];
+
+    const lagRows = [...ar.lags.entries()].map(([name, l]) => ({ name, medianDays: l.median, paid: l.paid }))
+      .sort((a, b) => b.medianDays - a.medianDays);
+
+    return {
+      asOf: isoDate(asOf),
+      start: isoDate(start),
+      startingCash: round2(startingCash),
+      estimatedCash,
+      cashAccounts: [...cashAccts.keys()],
+      cardBalance,
+      weeks,
+      inflowRows: sortRows(rowsIn),
+      outflowRows: sortRows(rowsOut),
+      totals: {
+        inflow: round2(weeks.reduce((s, w) => s + w.inflow, 0)),
+        outflow: round2(weeks.reduce((s, w) => s + w.outflow, 0)),
+        ending: weeks[weeks.length - 1].ending,
+      },
+      lowest,
+      firstNegative,
+      ar: {
+        total: round2(openInvoices.reduce((s, i) => s + i.open, 0)),
+        overdue: round2(openInvoices.filter((i) => i.overdue).reduce((s, i) => s + i.open, 0)),
+        doubtfulTotal: round2(doubtful.reduce((s, i) => s + i.open, 0)),
+        buckets,
+        openInvoices,
+        defaultLag: defaultArLag,
+        customerLags: lagRows,
+      },
+      ap: { total: round2(openBills.reduce((s, b) => s + b.open, 0)), openBills },
+      newBillings,
+      recurring: recurringItems.map((i) => ({ ...i, dateStr: isoDate(i.date) })),
+      assumptions,
+    };
+  }
+
+  // ---------------------------------------------------------------- break-even
+
+  // Variable costs are COGS plus any expense tagged to a customer; everything
+  // else is fixed overhead. Averages are per 30.44-day month of the export span.
+  function monthsCovered(first, last) {
+    const endOfMonth = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0)).getUTCDate();
+    // Whole calendar months when the export runs from a month's start to a month's end.
+    if (first.getUTCDate() <= 3 && last.getUTCDate() >= endOfMonth - 3) {
+      return (last.getUTCFullYear() - first.getUTCFullYear()) * 12 + last.getUTCMonth() - first.getUTCMonth() + 1;
+    }
+    return Math.max(1, ((last - first) / DAY + 1) / 30.44);
+  }
+
+  function breakEven(txns, accountClass) {
+    const postings = toPostings(txns, accountClass);
+    if (!postings.length) return null;
+    const all = txns.map((t) => t.date).sort((a, b) => a - b);
+    const dates = [all[0], all[all.length - 1]];
+    const months = monthsCovered(dates[0], dates[1]);
+    const byMonth = new Map();
+    const fixedByAcct = new Map();
+    const varByAcct = new Map();
+    let R = 0, V = 0, F = 0;
+    for (const p of postings) {
+      const m = p.t.dateStr.slice(0, 7);
+      if (!byMonth.has(m)) byMonth.set(m, { month: m, revenue: 0, variable: 0, fixed: 0 });
+      const row = byMonth.get(m);
+      if (p.cls === 'income') { R += p.value; row.revenue += p.value; continue; }
+      const variable = p.cls === 'cogs' || !!customerOf(p.t, p.cls);
+      const acct = leafAccount(p.category) || 'Unassigned';
+      if (variable) { V += p.value; row.variable += p.value; varByAcct.set(acct, (varByAcct.get(acct) || 0) + p.value); }
+      else { F += p.value; row.fixed += p.value; fixedByAcct.set(acct, (fixedByAcct.get(acct) || 0) + p.value); }
+    }
+    const base = { revenue: round2(R / months), variable: round2(V / months), fixed: round2(F / months) };
+    const toList = (m) => [...m.entries()].map(([name, v]) => ({ name, monthly: round2(v / months) })).sort((a, b) => b.monthly - a.monthly);
+    return {
+      months: round2(months),
+      base,
+      ...whatIf(base, {}),
+      monthly: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)).map((r) => ({
+        month: r.month, revenue: round2(r.revenue), variable: round2(r.variable), fixed: round2(r.fixed), profit: round2(r.revenue - r.variable - r.fixed),
+      })),
+      fixedAccounts: toList(fixedByAcct),
+      variableAccounts: toList(varByAcct),
+      firstDate: isoDate(dates[0]),
+      lastDate: isoDate(dates[dates.length - 1]),
+    };
+  }
+
+  // Scenario math. price: % change in prices at today's volume; variable: % change
+  // in variable costs; fixed: $ change in monthly fixed costs; target: monthly profit goal.
+  function whatIf(base, s) {
+    const price = (s.price || 0) / 100;
+    const varChg = (s.variable || 0) / 100;
+    const R = base.revenue * (1 + price);
+    const V = base.variable * (1 + varChg);
+    const F = base.fixed + (s.fixed || 0);
+    const cm = R - V;
+    const cmRatio = R > 0 ? cm / R : null;
+    const breakEvenRevenue = cmRatio && cmRatio > 0 ? round2(F / cmRatio) : null;
+    const profit = round2(R - V - F);
+    const baseProfit = base.revenue - base.variable - base.fixed;
+    // Share of volume that could be lost at the new price while keeping today's profit.
+    const volumeCushion = price > 0 && cm > 0 ? 1 - (baseProfit + F) / cm : null;
+    return {
+      revenue: round2(R),
+      variable: round2(V),
+      fixed: round2(F),
+      contribution: round2(cm),
+      cmRatio,
+      breakEvenRevenue,
+      profit,
+      profitMargin: R > 0 ? profit / R : null,
+      marginOfSafety: breakEvenRevenue != null && R > 0 ? (R - breakEvenRevenue) / R : null,
+      revenueForTarget: s.target != null && cmRatio && cmRatio > 0 ? round2((F + s.target) / cmRatio) : null,
+      volumeCushion,
+    };
+  }
+
   // ---------------------------------------------------------------- orchestration
 
   function listAccounts(txns) {
@@ -666,6 +1070,18 @@
     const mismatches = findMismatches(entries, accountClass, txns);
     const profit = profitability(txns, accountClass, opts.groupBy);
     const subs = subscriptions(txns, accountClass);
+    const cash = cashForecast(txns, accountClass, {
+      openingBalances: parsed.meta.openingBalances,
+      startingCash: opts.startingCash,
+      includeDoubtful: opts.includeDoubtful,
+    });
+    const breakeven = breakEven(txns, accountClass);
+    // Open bills that the audit flags as possible duplicates should not be paid blindly.
+    if (cash) {
+      const dupKeys = new Set(duplicates.flatMap((g) => g.rows.map((r) => `${lower(vendorOf(r))}|${r.num}|${r.dateStr}`)));
+      for (const b of cash.ap.openBills) b.possibleDuplicate = dupKeys.has(`${lower(b.party)}|${b.num}|${b.dateStr}`);
+      cash.ap.duplicateTotal = round2(cash.ap.openBills.filter((b) => b.possibleDuplicate).reduce((t, b) => t + b.open, 0));
+    }
     const uncategorizedTotal = round2(uncategorized.reduce((s, t) => s + Math.abs(t.amount), 0));
     const duplicateExposure = round2(duplicates.reduce((s, g) => s + g.exposure, 0));
     const flaggedIds = new Set([...uncategorized.map((t) => t.id), ...duplicates.flatMap((g) => g.rows.map((r) => r.id)), ...mismatches.map((t) => t.id)]);
@@ -679,6 +1095,8 @@
       audit: { uncategorized, uncategorizedTotal, duplicates, duplicateExposure, mismatches, flaggedCount: flaggedIds.size, healthScore },
       profit,
       subs,
+      cash,
+      breakeven,
     };
   }
 
@@ -792,6 +1210,48 @@
       }
     }
     L.push('');
+    const cash = result.cash;
+    if (cash) {
+      const cushion = opts.cushion || 0;
+      L.push('6. 13-WEEK CASH FORECAST');
+      L.push(thin);
+      L.push(`Starting cash:                ${fmtMoney(cash.startingCash)} (as of ${cash.asOf})`);
+      L.push(`Expected in / out (13 wks):   ${fmtMoney(cash.totals.inflow)} / ${fmtMoney(cash.totals.outflow)}`);
+      L.push(`Projected cash at week 13:    ${fmtMoney(cash.totals.ending)}`);
+      L.push(`Lowest point:                 ${fmtMoney(cash.lowest.ending)} (week of ${cash.lowest.start})`);
+      if (cash.firstNegative) L.push(`WARNING: cash runs out in the week of ${cash.firstNegative.start}.`);
+      else if (cushion && cash.lowest.ending < cushion) {
+        const below = cash.weeks.filter((w) => w.ending < cushion).length;
+        L.push(`Cash dips below the ${fmtMoney(cushion)} cushion in ${below} of 13 weeks.`);
+      } else L.push('Cash stays positive for all 13 weeks.');
+      L.push('');
+      L.push(`  ${pad('Week of', 12)} ${padL('Cash in', 12)} ${padL('Cash out', 12)} ${padL('Ending cash', 13)}`);
+      for (const w of cash.weeks) L.push(`  ${pad(w.start, 12)} ${padL(fmtMoney(w.inflow), 12)} ${padL(fmtMoney(w.outflow), 12)} ${padL(fmtMoney(w.ending), 13)}${cushion && w.ending < cushion ? '  < cushion' : ''}`);
+      L.push('');
+      L.push(`  Open receivables: ${fmtMoney(cash.ar.total)}${cash.ar.doubtfulTotal ? ` (${fmtMoney(cash.ar.doubtfulTotal)} over 90 days, left out of the forecast)` : ''}`);
+      const slow = cash.ar.customerLags.filter((c) => c.medianDays > 45);
+      if (slow.length) L.push(`  Slow payers: ${slow.map((c) => `${c.name} (${c.medianDays} days)`).join(', ')}`);
+      L.push(`  Open bills: ${fmtMoney(cash.ap.total)}${cash.ap.duplicateTotal ? ` (${fmtMoney(cash.ap.duplicateTotal)} may be duplicate entries; confirm before paying)` : ''}`);
+      L.push('');
+    }
+
+    const be = result.breakeven;
+    if (be) {
+      L.push('7. BREAK-EVEN');
+      L.push(thin);
+      L.push(`Average monthly revenue:      ${fmtMoney(be.base.revenue)}`);
+      L.push(`Variable costs (job costs):   ${fmtMoney(be.base.variable)} per month`);
+      L.push(`Fixed costs (overhead):       ${fmtMoney(be.base.fixed)} per month`);
+      L.push(`Contribution margin:          ${fmtPct(be.cmRatio)} of each sales dollar`);
+      L.push(`Break-even revenue:           ${be.breakEvenRevenue != null ? `${fmtMoney(be.breakEvenRevenue)} per month` : 'n/a (costs exceed revenue per sale)'}`);
+      L.push(`Margin of safety:             ${fmtPct(be.marginOfSafety)}`);
+      const lift = whatIf(be.base, { price: 5 });
+      L.push('');
+      L.push(`  A 5% price increase at today's volume would lift monthly profit from ${fmtMoney(be.profit)} to ${fmtMoney(lift.profit)}.`);
+      if (lift.volumeCushion != null && lift.volumeCushion > 0) L.push(`  You could lose ${fmtPct(lift.volumeCushion)} of work at the higher price and still match today's profit.`);
+      L.push('');
+    }
+
     L.push('RECOMMENDED NEXT STEPS');
     L.push(thin);
     const steps = [];
@@ -799,6 +1259,10 @@
     if (audit.duplicates.length) steps.push(`Review the ${audit.duplicates.length} possible duplicate groups; we will void confirmed duplicates or request vendor refunds.`);
     if (audit.mismatches.length) steps.push(`We will correct ${audit.mismatches.length} miscoded entries and set bank rules to keep vendor coding consistent.`);
     if (subs.potentialSavings > 0) steps.push(`Review flagged subscriptions; cancelling overlaps and unused seats could save about ${fmtMoney(subs.potentialSavings)} a year.`);
+    if (cash && cash.firstNegative) steps.push(`Plan for a cash shortfall in the week of ${cash.firstNegative.start}: chase open invoices, delay discretionary spend, or line up credit now.`);
+    else if (cash && opts.cushion && cash.lowest.ending < opts.cushion) steps.push(`Cash drops to ${fmtMoney(cash.lowest.ending)} in the week of ${cash.lowest.start}; speed up collections from slow payers before then.`);
+    if (cash && cash.ar.doubtfulTotal) steps.push(`Follow up on ${fmtMoney(cash.ar.doubtfulTotal)} in invoices more than 90 days old.`);
+    if (be && be.marginOfSafety != null && be.marginOfSafety < 0.15) steps.push(`Revenue is only ${fmtPct(be.marginOfSafety)} above break-even; review pricing and fixed costs together.`);
     const weak = profit.groups.filter((g) => g.netMargin != null && g.netMargin < 0.1 && g.revenue > 0);
     if (weak.length) steps.push(`Discuss pricing on ${weak.length} low-margin ${opts.groupBy === 'project' ? 'project' : 'customer'}${weak.length > 1 ? 's' : ''}.`);
     if (!steps.length) steps.push('No action items. The books look clean for this period.');
@@ -814,6 +1278,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, logicalRows, fmtMoney, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, logicalRows, cashForecast, breakEven, whatIf, fmtMoney, fmtPct, counterpartyOf, leafAccount,
   };
 });
