@@ -1,6 +1,6 @@
 # Ledger Lens
 
-A browser-based audit and profitability dashboard for bookkeeping practices. Drop in a QuickBooks **Transaction Detail** CSV export and get:
+A browser-based audit and profitability dashboard for bookkeeping practices. Drop in a QuickBooks **Transaction Detail** export (CSV or Excel) and get:
 
 **Diagnostic Audit**
 - **Uncategorized transactions**: anything in Uncategorized Income/Expense/Asset, Ask My Accountant, suspense, or with no account at all. Shows exact CSV row numbers.
@@ -74,7 +74,7 @@ It opens with a sample data set (18 months of a fictional design studio, with se
 1. **Reports → Transaction Detail by Account** (or Transaction List by Date / Transaction Detail).
 2. For exact account types, also export **Reports → Account List** (the Chart of Accounts).
 3. **Customize → Rows/Columns** and include at least: Date, Transaction Type, Num, Name, Customer, Memo/Description, Account (if offered), Split and Amount. Debit/Credit columns also work. Include the balance-sheet accounts (bank, A/R, A/P, credit cards) so the cash forecast can see open invoices, bills and bank balances.
-4. Set the date range, then **Export → Export to CSV**. Twelve months or more unlocks the year-over-year comparisons in Trends; if QuickBooks limits the range, export each year separately and upload them together.
+4. Set the date range, then **Export** to Excel or CSV. Both work; the Excel reader loads only when an Excel file is uploaded. Twelve months or more unlocks the year-over-year comparisons in Trends; if QuickBooks limits the range, export each year separately and upload them together.
 
 The parser skips the report title rows, section headers and "Total for…" lines. In the "by Account" layout each entry appears once per account it touches; Ledger Lens collapses these to one entry so nothing is counted twice.
 

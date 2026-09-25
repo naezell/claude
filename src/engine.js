@@ -56,6 +56,8 @@
 
   function parseDate(v) {
     const s = norm(v);
+    // Excel stores dates as day counts from 1899-12-30; unformatted cells arrive that way.
+    if (/^\d{5}(\.\d+)?$/.test(s) && +s > 20000 && +s < 80000) return new Date(Date.UTC(1899, 11, 30) + Math.floor(+s) * DAY);
     let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
     if (m) {
       let y = +m[3];

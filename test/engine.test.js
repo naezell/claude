@@ -468,3 +468,9 @@ test('tax set-aside: projection, schedule, S corp check and safe owner pay', () 
   assert.ok(low.available > 0 && low.shortfall === 0);
   assert.ok(high.available === 0 && high.shortfall > 0);
 });
+
+test('Excel serial dates are read as dates', () => {
+  assert.equal(E.parseDate('46023').toISOString().slice(0, 10), '2026-01-01');
+  assert.equal(E.parseDate('45658.5').toISOString().slice(0, 10), '2025-01-01');
+  assert.equal(E.parseDate('12345'), null, 'small numbers are not dates');
+});

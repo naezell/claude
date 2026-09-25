@@ -54,6 +54,32 @@
   };
   const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.cushion && !p.bench && !(p.loan && p.loan.amount) && !(p.tax && (p.tax.entity !== 'sole' || p.tax.rate || p.tax.salary || p.tax.paid)));
 
+  // The Excel reader (SheetJS) is large, so it loads only when an Excel file is dropped in.
+  const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  let xlsxLoading = null;
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxLoading) {
+      xlsxLoading = new Promise((resolve, reject) => {
+        const el = document.createElement('script');
+        el.src = XLSX_URL;
+        el.onload = () => (window.XLSX ? resolve(window.XLSX) : reject(new Error('the Excel reader did not load')));
+        el.onerror = () => { xlsxLoading = null; reject(new Error('could not load the Excel reader. Check the connection, or export the report as CSV instead')); };
+        document.head.appendChild(el);
+      });
+    }
+    return xlsxLoading;
+  }
+
+  // First sheet of a workbook as CSV text, using the cells' displayed values (dates stay dates).
+  async function excelToCsv(buffer) {
+    const XLSX = await loadXlsx();
+    const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    if (!sheet) throw new Error('has no sheets.');
+    return XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+  }
+
   async function saveTextFile(filename, data) {
     const downloads = await downloadsReady;
     if (downloads) {
@@ -224,10 +250,14 @@
     useEffect(() => { if (parsed.err) setError(parsed.err); }, [parsed]);
 
     const readFile = (file) => new Promise((resolve) => {
-      if (!/\.(csv|txt)$/i.test(file.name)) { resolve({ name: file.name, error: 'is not a CSV. In QuickBooks, open the report and choose Export → Export to CSV.' }); return; }
+      const excel = /\.(xlsx|xlsm|xls)$/i.test(file.name);
+      if (!excel && !/\.(csv|txt)$/i.test(file.name)) { resolve({ name: file.name, error: 'is not a CSV or Excel file. In QuickBooks, open the report and choose Export.' }); return; }
       const reader = new FileReader();
-      reader.onload = () => {
-        const text = String(reader.result || '');
+      reader.onload = async () => {
+        let text;
+        try {
+          text = excel ? await excelToCsv(reader.result) : String(reader.result || '');
+        } catch (e) { resolve({ name: file.name, error: e.message }); return; }
         try {
           // A chart of accounts has Account and Type columns and no dates.
           const coa = E.parseChartOfAccounts(text);
@@ -238,7 +268,7 @@
         } catch (e) { resolve({ name: file.name, error: e.message }); }
       };
       reader.onerror = () => resolve({ name: file.name, error: 'could not be read.' });
-      reader.readAsText(file);
+      if (excel) reader.readAsArrayBuffer(file); else reader.readAsText(file);
     });
 
     // Loads one or more exports. With `append`, adds them to the files already loaded
@@ -291,10 +321,10 @@
             <div><h1>Ledger Lens</h1><small>QuickBooks audit, profitability & cash forecast</small></div>
           </div>
           <div class="actions">
-            <label class="btn" for="csv-upload">${Icon.upload}Upload CSV</label>
-            <input id="csv-upload" class="file-input" type="file" multiple accept=".csv,text/csv" onChange=${(e) => { loadFiles(e.target.files, false); e.target.value = ''; }} />
+            <label class="btn" for="csv-upload">${Icon.upload}Upload export</label>
+            <input id="csv-upload" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, false); e.target.value = ''; }} />
             ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
-              <input id="csv-add" class="file-input" type="file" multiple accept=".csv,text/csv" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
+              <input id="csv-add" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
             ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
             <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.sample}Saved clients</button>
             <button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
@@ -306,7 +336,7 @@
       <div class="wrap">
         <div class="source">
           ${source.kind === 'sample'
-            ? html`<span class="pill sample"><span class="dot"></span>Sample data</span><span>Showing a fictional design studio. Upload your QuickBooks <strong>Transaction Detail</strong> CSV (or several, such as one per year), or drop them anywhere on this page.</span>`
+            ? html`<span class="pill sample"><span class="dot"></span>Sample data</span><span>Showing a fictional design studio. Upload your QuickBooks <strong>Transaction Detail</strong> export (CSV or Excel; several at once is fine, such as one per year), or drop them anywhere on this page.</span>`
             : html`<span class="pill good"><span class="dot"></span>${source.files.length > 1 ? `${source.files.length} files combined` : 'Your file'}</span><strong>${source.files.map((f) => f.name).join(', ')}</strong>${parsed.ok && parsed.ok.meta.droppedOverlap ? html`<span>${parsed.ok.meta.droppedOverlap} overlapping rows skipped</span>` : ''}`}
           ${result && (result.chart
             ? html`<span class="pill good"><span class="dot"></span>Chart of accounts</span><span>${result.chart.matched} of ${result.chart.of} accounts typed from it</span>`
