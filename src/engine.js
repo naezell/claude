@@ -2695,6 +2695,294 @@
     return { ...raw, flux: raw.flux.map(tag), txns: raw.txns.map(tag) };
   }
 
+  // ---------------------------------------------------------------- balance sheet check
+
+  // Accounts that normally run negative, so a negative balance there is not a warning sign.
+  const CONTRA_BALANCE = /draw|distribution|dividend|accumulated|depreciation|amortization|retained earnings|allowance|discount|contra|personal/i;
+  const SIGN_HINT = {
+    cash: 'shows an overdraft. If the bank statement is not overdrawn, deposits are missing or payments were entered twice.',
+    card: 'has a credit balance: the card was overpaid, or a payment or refund was entered twice.',
+    ar: 'is negative overall: customer payments were recorded without their invoices.',
+    ap: 'is negative overall: bills were paid without the bill being entered, or vendor credits were never applied.',
+    loan: 'is below zero: more has been paid than was borrowed. Usually interest was recorded as principal, or the loan was never set up with its opening balance.',
+    salestax: 'is negative: more sales tax was paid than collected. A payment may be recorded twice, or tax on sales is not being tracked.',
+    payrolltax: 'is negative: more was paid than withheld. A payroll tax payment may be recorded twice.',
+    equity: 'has an unusual negative balance. Check for entries posted here by mistake.',
+    otherbalance: 'has a negative balance, which an asset or liability account should not have. Check for entries posted here by mistake.',
+  };
+
+  // Balance sheet problems that sit unnoticed for months: money never deposited, Opening
+  // Balance Equity left over from setup, accounts with the wrong sign, customer credits and
+  // vendor debits, and bills or invoices left open long after they were likely settled.
+  // Needs a "by Account" export, where each account's section carries its running balance.
+  function balanceSheetCheckUncached(txns, accountClass, meta, cash) {
+    if (!meta || !meta.grouped) return { available: false, reason: 'The export is not grouped by account, so account balances cannot be worked out. Use Transaction Detail by Account.' };
+    const range = dateRange(txns, meta);
+    const asOf = isoDate(range.last);
+    const accts = new Map();
+    const acct = (a) => {
+      if (!accts.has(a)) accts.set(a, { name: a, balance: 0, opening: 0, rows: [] });
+      return accts.get(a);
+    };
+    for (const [a, v] of Object.entries(meta.openingBalances || {})) {
+      if (classOf(accountClass, a) !== 'balance') continue;
+      const x = acct(a); x.balance += v; x.opening = v;
+    }
+    const parties = { ar: new Map(), ap: new Map() };
+    for (const t of txns) {
+      if (!t.account || classOf(accountClass, t.account) !== 'balance') continue;
+      const x = acct(t.account);
+      x.balance += t.amount;
+      x.rows.push(t);
+      const role = roleOf(accountClass, t.account);
+      if (role === 'ar' || role === 'ap') {
+        const who = counterpartyOf(t) || '';
+        const k = payeeKeyOf(who);
+        if (!k) continue;
+        const m = parties[role];
+        if (!m.has(k)) m.set(k, { name: who, total: 0, last: t.dateStr });
+        const p = m.get(k);
+        p.total += t.amount;
+        if (t.dateStr > p.last) p.last = t.dateStr;
+      }
+    }
+    const items = [];
+    const push = (it) => items.push(it);
+    const balances = [];
+    for (const x of accts.values()) {
+      const balance = round2(x.balance);
+      const role = roleOf(accountClass, x.name);
+      balances.push({ account: x.name, role, balance });
+      if (Math.abs(balance) < 1) continue;
+      if (/undeposited/i.test(x.name)) {
+        if (balance <= 0) continue;
+        // How long money has been waiting: since the running balance was last at zero.
+        let run = x.opening, since = null;
+        for (const t of x.rows.slice().sort((a, b) => a.date - b.date)) {
+          const before = run;
+          run += t.amount;
+          if (Math.abs(before) < 0.01 && run > 0.01) since = t.dateStr;
+          if (Math.abs(run) < 0.01) since = null;
+        }
+        const days = since ? Math.round((range.last - new Date(`${since}T00:00:00Z`)) / DAY) : null;
+        push({ kind: 'Undeposited Funds', severity: days != null && days <= 7 ? 'Low' : 'High', account: x.name, amount: balance, key: `b|undeposited|${lower(x.name)}|${Math.round(balance)}`,
+          detail: `${fmtMoney(balance)} is waiting in ${x.name}${since ? ` since ${niceDate(since)} (${days} days)` : ''}. Customer payments were recorded but never grouped into a bank deposit, or the deposit was entered separately, which counts the income twice.`,
+          fix: 'Match each payment to its bank deposit (Bank Deposit screen), or remove payments that were deposited another way.' });
+        continue;
+      }
+      if (/opening bal/i.test(x.name)) {
+        push({ kind: 'Opening Balance Equity', severity: 'High', account: x.name, amount: balance, key: `b|obe|${lower(x.name)}|${Math.round(balance)}`,
+          detail: `${x.name} holds ${fmtMoney(balance)}. It should be zero once the books are set up; lenders and auditors read a balance here as unfinished bookkeeping.`,
+          fix: 'Find what was posted here (usually opening balances of bank, card or loan accounts) and move it to Owner\'s Equity or Retained Earnings, or correct the opening balance.' });
+        continue;
+      }
+      if (balance < 0 && !CONTRA_BALANCE.test(x.name) && !RX.uncategorized.test(x.name)) {
+        push({ kind: 'Wrong-sign balance', severity: role === 'ar' || role === 'ap' || role === 'loan' ? 'High' : 'Medium', account: x.name, amount: balance, key: `b|sign|${lower(x.name)}`,
+          detail: `${x.name} (${fmtMoney(balance)}) ${SIGN_HINT[role] || SIGN_HINT.otherbalance}`,
+          fix: 'Open the account register, sort by amount and look for entries that do not belong.' });
+      }
+    }
+    for (const p of parties.ar.values()) {
+      if (p.total > -1) continue;
+      push({ kind: 'Customer credit', severity: 'Medium', account: p.name, amount: round2(p.total), key: `b|custcredit|${lower(p.name)}`,
+        detail: `${p.name} shows a ${fmtMoney(-p.total)} credit in receivables: a payment not applied to its invoice, or received twice.`,
+        fix: 'Apply the payment to the open invoice, refund it, or delete the duplicate payment.' });
+    }
+    for (const p of parties.ap.values()) {
+      if (p.total > -1) continue;
+      push({ kind: 'Vendor debit', severity: 'Medium', account: p.name, amount: round2(p.total), key: `b|vendordebit|${lower(p.name)}`,
+        detail: `${p.name} shows a ${fmtMoney(-p.total)} debit in payables: a bill paid twice, a payment without its bill, or a vendor credit not used.`,
+        fix: 'Apply the payment or credit to its bill, or ask the vendor for a refund.' });
+    }
+    if (cash) {
+      for (const b of cash.ap.openBills.filter((x) => x.age > 90)) {
+        push({ kind: 'Old open bill', severity: 'Medium', account: b.party, amount: b.open, key: `b|oldbill|${lower(b.party)}|${b.num}|${b.dateStr}`,
+          detail: `Bill${b.num ? ` #${b.num}` : ''} from ${b.party} for ${fmtMoney(b.open)} has been open ${b.age} days${b.possibleDuplicate ? ' and looks like a duplicate' : ''}. If it was paid by check or card as a separate expense, the bill is still open and the cost is counted twice.`,
+          fix: 'Link the payment to the bill (Pay Bills), or delete the bill if it was entered twice.' });
+      }
+      for (const i of cash.ar.openInvoices.filter((x) => x.age > 120)) {
+        push({ kind: 'Old open invoice', severity: 'Low', account: i.party, amount: i.open, key: `b|oldinv|${lower(i.party)}|${i.num}|${i.dateStr}`,
+          detail: `Invoice${i.num ? ` #${i.num}` : ''} to ${i.party} for ${fmtMoney(i.open)} has been open ${i.age} days. If the customer paid and the money was recorded as a deposit to income, revenue is counted twice.`,
+          fix: 'Receive the payment against the invoice, or write it off if it will not be paid.' });
+      }
+    }
+    const rank = { High: 0, Medium: 1, Low: 2 };
+    items.sort((a, b) => rank[a.severity] - rank[b.severity] || Math.abs(b.amount) - Math.abs(a.amount));
+    balances.sort((a, b) => BALANCE_ROLES.indexOf(a.role) - BALANCE_ROLES.indexOf(b.role) || a.account.localeCompare(b.account));
+    return { available: true, asOf, balances, items };
+  }
+
+  function withReview(raw, lists, reviewed) {
+    if (!raw) return raw;
+    const tag = (item) => ({ ...item, review: (reviewed && reviewed[item.key]) || null });
+    const out = { ...raw };
+    for (const k of lists) if (Array.isArray(raw[k])) out[k] = raw[k].map(tag);
+    return out;
+  }
+
+  function balanceSheetCheck(txns, accountClass, meta, cash, reviewed) {
+    // Open bills and invoices depend on the forecast inputs; the rest only on the file.
+    const raw = balanceSheetCheckUncached(txns, accountClass, meta, cash);
+    const out = withReview(raw, ['items'], reviewed);
+    if (out.items) out.open = out.items.filter((x) => !isCleared(x.review)).length;
+    return out;
+  }
+
+  // ---------------------------------------------------------------- closed months
+
+  // A short fingerprint of an entry: what it is and where it was coded.
+  const fnv = (s) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(36);
+  };
+  const entryPrint = (t) => fnv(`${rowKey(t)}|${lower(leafAccount(t.split || ''))}|${lower(t.memo || '')}`);
+
+  // What each month looked like when the bookkeeper closed it: entry count, totals by
+  // account and a fingerprint per entry. Small enough to keep with the client's settings.
+  function periodSnapshot(txns, accountClass, through) {
+    const months = {};
+    for (const t of logicalRows(txns, accountClass)) {
+      const k = t.dateStr.slice(0, 7);
+      if (k > through) continue;
+      const m = months[k] || (months[k] = { count: 0, accounts: {}, prints: [] });
+      m.count++;
+      const a = leafAccount(t.account) || '(no account)';
+      m.accounts[a] = round2((m.accounts[a] || 0) + t.amount);
+      m.prints.push(entryPrint(t));
+    }
+    for (const m of Object.values(months)) m.prints = m.prints.sort().join(',');
+    return { version: 1, through, takenAt: new Date().toISOString(), months };
+  }
+
+  // Months the export covers from their first to their last day.
+  function fullMonths(txns, meta) {
+    const r = dateRange(txns, meta);
+    const first = r.first.getUTCDate() === 1 ? isoDate(r.first).slice(0, 7) : isoDate(new Date(Date.UTC(r.first.getUTCFullYear(), r.first.getUTCMonth() + 1, 1))).slice(0, 7);
+    const lastDay = new Date(Date.UTC(r.last.getUTCFullYear(), r.last.getUTCMonth() + 1, 0)).getUTCDate();
+    const last = r.last.getUTCDate() === lastDay ? isoDate(r.last).slice(0, 7) : isoDate(new Date(Date.UTC(r.last.getUTCFullYear(), r.last.getUTCMonth() - 1, 1))).slice(0, 7);
+    const out = [];
+    for (let d = new Date(`${first}-01T00:00:00Z`); isoDate(d).slice(0, 7) <= last; d = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1))) out.push(isoDate(d).slice(0, 7));
+    return out;
+  }
+
+  // Compares the closed months with the same months in this export: entries added, changed
+  // or removed, and which account totals moved. Months the export does not fully cover are
+  // skipped, so a shorter export never reads as deleted history.
+  function closedPeriodChanges(txns, accountClass, meta, snapshot) {
+    if (!snapshot || !snapshot.months || !snapshot.through) return null;
+    const covered = new Set(fullMonths(txns, meta));
+    const now = periodSnapshot(txns, accountClass, snapshot.through);
+    const entries = logicalRows(txns, accountClass);
+    const months = [];
+    const keys = [...new Set([...Object.keys(snapshot.months), ...Object.keys(now.months)])].filter((k) => k <= snapshot.through && covered.has(k)).sort();
+    for (const k of keys) {
+      const was = snapshot.months[k] || { count: 0, accounts: {}, prints: '' };
+      const cur = now.months[k] || { count: 0, accounts: {}, prints: '' };
+      if (was.prints === cur.prints) continue;
+      const left = new Map();
+      for (const p of (was.prints ? was.prints.split(',') : [])) left.set(p, (left.get(p) || 0) + 1);
+      const added = [];
+      for (const t of entries) {
+        if (t.dateStr.slice(0, 7) !== k) continue;
+        const p = entryPrint(t);
+        if (left.get(p)) left.set(p, left.get(p) - 1);
+        else added.push({ dateStr: t.dateStr, date: t.date, type: t.type, num: t.num, name: counterpartyOf(t) || '', memo: t.memo || '', account: leafAccount(t.account), split: leafAccount(t.split || ''), amount: t.amount, line: t.line });
+      }
+      const removed = [...left.values()].reduce((s, n) => s + n, 0);
+      const accounts = [];
+      for (const a of new Set([...Object.keys(was.accounts), ...Object.keys(cur.accounts)])) {
+        const w = was.accounts[a] || 0, c = cur.accounts[a] || 0;
+        if (Math.abs(c - w) >= 0.01) accounts.push({ account: a, was: round2(w), now: round2(c), diff: round2(c - w) });
+      }
+      accounts.sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff));
+      months.push({ month: k, label: monthLabel(k), added: added.sort((a, b) => a.date - b.date), removed, accounts });
+    }
+    const skipped = Object.keys(snapshot.months).filter((k) => !covered.has(k)).length;
+    return {
+      through: snapshot.through,
+      throughLabel: monthLabel(snapshot.through),
+      takenAt: snapshot.takenAt,
+      months,
+      changedMonths: months.length,
+      changedEntries: months.reduce((s, m) => s + Math.max(m.added.length, m.removed), 0),
+      skippedMonths: skipped,
+    };
+  }
+
+  // ---------------------------------------------------------------- job costing gaps
+
+  // Job costs that never reached a job make every job look more profitable than it is.
+  // Finds job-type costs with no customer or project, jobs with costs but no billing, and
+  // jobs billed with no costs, when the business otherwise tracks costs by job.
+  function jobCostGapsUncached(txns, accountClass, profit) {
+    const postings = profit.postings;
+    let cogs = 0, tagged = 0;
+    const byVendorJob = new Map();
+    const untagged = [];
+    for (const p of postings) {
+      if (p.cls !== 'cogs' || p.value <= 0) continue;
+      cogs += p.value;
+      const job = customerOf(p.t, p.cls);
+      const vendor = payeeOf(p.t);
+      if (job) {
+        tagged += p.value;
+        if (vendor.key) {
+          if (!byVendorJob.has(vendor.key)) byVendorJob.set(vendor.key, new Map());
+          const m = byVendorJob.get(vendor.key);
+          const top = job.split(':')[0].trim();
+          m.set(top, (m.get(top) || 0) + p.value);
+        }
+      } else if (!RX.uncategorized.test(p.category)) {
+        untagged.push(p);
+      }
+    }
+    if (cogs <= 0) return { mode: 'none', reason: 'No cost of goods sold or job cost accounts were found.' };
+    const taggedShare = tagged / cogs;
+    if (taggedShare < 0.2) {
+      return { mode: 'untracked', cogs: round2(cogs), taggedShare,
+        reason: `Only ${fmtPct(taggedShare)} of job costs carry a customer or project, so customer profit here is revenue minus overhead share only. Tagging bills and expenses with the customer makes it real.` };
+    }
+    // A vendor whose tagged costs nearly all go to one job suggests where an untagged one belongs.
+    const suggest = (vendorKey) => {
+      const m = byVendorJob.get(vendorKey);
+      if (!m) return null;
+      const total = [...m.values()].reduce((s, v) => s + v, 0);
+      const [name, v] = [...m.entries()].sort((a, b) => b[1] - a[1])[0];
+      return v / total >= 0.8 ? name : null;
+    };
+    const items = untagged.sort((a, b) => b.value - a.value).map((p) => {
+      const vendor = payeeOf(p.t);
+      const guess = vendor.key ? suggest(vendor.key) : null;
+      return {
+        ...p.t, kind: 'No job', cost: round2(p.value), account: leafAccount(p.category), vendor: counterpartyOf(p.t) || vendor.raw || '',
+        suggestion: guess, key: `j|untagged|${rowKey(p.t)}`,
+        detail: `${fmtMoney(p.value)} on ${leafAccount(p.category)} with no customer or project${guess ? `; other costs from ${counterpartyOf(p.t) || 'this vendor'} go to ${guess}` : ''}.`,
+      };
+    });
+    const untaggedTotal = round2(untagged.reduce((s, p) => s + p.value, 0));
+    const jobs = [];
+    const revenueWithCosts = profit.groups.filter((g) => g.directCost > 0).reduce((s, g) => s + g.revenue, 0);
+    const revenueAll = profit.groups.reduce((s, g) => s + g.revenue, 0) || 1;
+    for (const g of profit.groups) {
+      if (g.revenue <= 0.5 && g.directCost >= 250) {
+        jobs.push({ kind: 'Costs, no billing', name: g.name, revenue: g.revenue, cost: g.directCost, key: `j|unbilled|${lower(g.name)}`,
+          detail: `${g.name} has ${fmtMoney(g.directCost)} of costs and nothing billed. Either the work has not been invoiced yet, or the costs are tagged to the wrong customer.` });
+      } else if (g.directCost <= 0.5 && g.revenue >= 2500 && revenueWithCosts / revenueAll >= 0.7) {
+        jobs.push({ kind: 'Billing, no costs', name: g.name, revenue: g.revenue, cost: 0, key: `j|nocost|${lower(g.name)}`,
+          detail: `${g.name} was billed ${fmtMoney(g.revenue)} with no costs recorded, unlike most customers. If there were subcontractor or material costs, they are sitting on another job or on no job.` });
+      }
+    }
+    return { mode: 'tracked', cogs: round2(cogs), taggedShare, untaggedTotal, untaggedShare: untaggedTotal / cogs, items, jobs };
+  }
+
+  function jobCostGaps(txns, accountClass, profit, reviewed, groupBy) {
+    const raw = memo(`jobgaps:${groupBy || 'customer'}`, txns, accountClass || EMPTY, () => jobCostGapsUncached(txns, accountClass, profit));
+    const out = withReview(raw, ['items', 'jobs'], reviewed);
+    if (out.items) out.open = [...out.items, ...out.jobs].filter((x) => !isCleared(x.review)).length;
+    return out;
+  }
+
   // ---------------------------------------------------------------- review state & client questions
 
   // Keys that survive re-exporting: no line numbers or ids, only what the entry is.
@@ -2919,6 +3207,12 @@
     };
     out.tieOut = tieOut(txns, accountClass, parsed.meta, opts.pnl);
     out.unusual = unusualActivity(txns, accountClass, parsed.meta, trend, opts.reviewed);
+    out.balanceSheet = balanceSheetCheck(txns, accountClass, parsed.meta, cash, opts.reviewed);
+    out.jobCosts = jobCostGaps(txns, accountClass, profit, opts.reviewed, opts.groupBy);
+    out.closed = closedPeriodChanges(txns, accountClass, parsed.meta, opts.closed);
+    out.closableMonths = once('fullMonths', () => fullMonths(txns, parsed.meta));
+    // Takes a snapshot for "close the books through" a month; kept with the client's settings.
+    out.closeBooks = (through) => periodSnapshot(txns, accountClass, through);
     // Budget: an uploaded QuickBooks budget, else one built from last year's actuals.
     const budget = opts.budget || (opts.budgetFromHistory !== false ? budgetFromHistory(txns, accountClass, parsed.meta, opts.budgetGrowth) : null);
     out.budget = budgetVsActual(txns, accountClass, parsed.meta, budget);
@@ -3087,6 +3381,12 @@
     if (full) {
       h.push('<h2 class="part">Details</h2>');
       if (tie) h.push(`<section class="keep"><h3>Ties to QuickBooks (${esc(tie.period)})</h3>${table(['Line', 'QuickBooks', 'This review', 'Difference'], tie.lines.map((l) => [l.label, fmtMoney(l.quickbooks), fmtMoney(l.ledgerLens), l.ties ? 'Ties' : fmtMoney(l.diff)]))}</section>`);
+      const bsc = result.balanceSheet;
+      if (bsc && bsc.available && bsc.items.length) h.push(`<section class="keep"><h3>Balance sheet check (as of ${esc(bsc.asOf)})</h3>${table(['Issue', 'Account', 'Amount', 'Status'], bsc.items.map((x) => [x.kind, x.account, fmtMoney(x.amount), x.review ? REVIEW_STATUSES[x.review.status] || 'Open' : 'Open']))}</section>`);
+      const cls = result.closed;
+      if (cls && cls.changedMonths) h.push(`<section class="keep"><h3>Changes to closed months</h3><p>Books were closed through ${esc(monthLabel(cls.through))} on ${esc(String(cls.takenAt).slice(0, 10))}. Since then:</p>${table(['Month', 'New or edited', 'Removed or edited', 'Accounts that moved'], cls.months.map((m) => [m.label, String(m.added.length), String(m.removed), m.accounts.slice(0, 4).map((a) => `${a.account} ${a.diff > 0 ? '+' : ''}${fmtMoney(a.diff)}`).join('; ')]))}</section>`);
+      const jcs = result.jobCosts;
+      if (jcs && jcs.mode === 'tracked' && (jcs.items.length || jcs.jobs.length)) h.push(`<section class="keep"><h3>Job costing gaps</h3><p>${esc(fmtPct(jcs.taggedShare))} of job costs are assigned to a customer; ${esc(fmtMoney(jcs.untaggedTotal))} is not.</p>${table(['Issue', 'Vendor / job', 'Date', 'Amount'], [...jcs.items.map((x) => ['No job', x.vendor, x.dateStr, fmtMoney(x.cost)]), ...jcs.jobs.map((x) => [x.kind, x.name, '', fmtMoney(x.kind === 'Billing, no costs' ? x.revenue : x.cost)])])}</section>`);
       h.push(`<section><h3>Profitability by customer</h3>${table(['Customer', 'Revenue', 'Direct cost', 'Gross margin', 'Net margin'], profit.groups.slice(0, 20).map((g) => [g.name, fmtWhole(g.revenue), fmtWhole(g.directCost), fmtPct(g.margin), fmtPct(g.netMargin)]))}</section>`);
       if (cr) h.push(`<section><h3>Customer concentration (${esc(cr.windowLabel)})</h3><p>${esc(cr.top.name)} is ${esc(fmtPct(cr.top1Share))} of revenue; the top 3 are ${esc(fmtPct(cr.top3Share))} (${esc(cr.level.label.toLowerCase())}).</p>${table(['Customer', 'Share', 'Gross margin', 'Open A/R', 'Pays in', 'Flags'], cr.rows.slice(0, 12).map((r) => [r.name, fmtPct(r.share), fmtPct(r.margin), fmtWhole(r.openAR), r.days != null ? `${r.days}d` : '-', r.flags.map((f) => f.kind).join(', ')]))}</section>`);
       const bv = result.budget;
@@ -3156,6 +3456,22 @@
     if (audit.open.uncategorized) steps.push(`Provide receipts or context for the ${audit.open.uncategorized} uncategorized items so they can be coded.`);
     if (audit.open.duplicates) steps.push(`Review the ${audit.open.duplicates} possible duplicate groups; we will void confirmed duplicates or request vendor refunds.`);
     if (audit.open.mismatches) steps.push(`We will correct ${audit.open.mismatches} miscoded entries and set bank rules to keep vendor coding consistent.`);
+    const openOf = (list) => (list || []).filter((x) => !isCleared(x.review));
+    const cl = result.closed;
+    if (cl && cl.changedMonths) steps.push(`${cl.changedEntries} entr${cl.changedEntries === 1 ? 'y' : 'ies'} in months already closed (${cl.months.map((m) => m.label).join(', ')}) changed after they were reported. We will review each change before accepting it.`);
+    const bsItems = result.balanceSheet && result.balanceSheet.available ? openOf(result.balanceSheet.items) : [];
+    const uf = bsItems.find((x) => x.kind === 'Undeposited Funds');
+    if (uf) steps.push(`Clear ${fmtMoney(uf.amount)} sitting in Undeposited Funds by matching each payment to its bank deposit.`);
+    const obe = bsItems.find((x) => x.kind === 'Opening Balance Equity');
+    if (obe) steps.push(`Move the ${fmtMoney(obe.amount)} in Opening Balance Equity to the right equity account so the balance sheet is lender-ready.`);
+    const otherBs = bsItems.filter((x) => x !== uf && x !== obe);
+    if (otherBs.length) steps.push(`Fix ${otherBs.length} other balance sheet item${otherBs.length === 1 ? '' : 's'} (${[...new Set(otherBs.map((x) => x.kind.toLowerCase()))].join(', ')}).`);
+    const jc = result.jobCosts;
+    if (jc && jc.mode === 'tracked') {
+      const untagged = openOf(jc.items);
+      if (untagged.length) steps.push(`Assign ${fmtMoney(untagged.reduce((t, x) => t + x.cost, 0))} of job costs (${untagged.length} entr${untagged.length === 1 ? 'y' : 'ies'}) to their jobs so job profit is accurate.`);
+      for (const j of openOf(jc.jobs).filter((x) => x.kind === 'Costs, no billing')) steps.push(`${j.name} has ${fmtMoney(j.cost)} of costs and nothing billed yet. Invoice the work, or move the costs to the right customer.`);
+    }
     if (subs.potentialSavings > 0) steps.push(`Review flagged subscriptions; cancelling overlaps and unused seats could save about ${fmtMoney(subs.potentialSavings)} a year.`);
     if (cash && cash.firstNegative) steps.push(`Plan for a cash shortfall in the week of ${cash.firstNegative.start}: chase open invoices, delay discretionary spend, or line up credit now.`);
     else if (cash && opts.cushion && cash.lowest.ending < opts.cushion) steps.push(`Cash drops to ${fmtMoney(cash.lowest.ending)} in the week of ${cash.lowest.start}; speed up collections from slow payers before then.`);
@@ -3175,7 +3491,7 @@
       if (yr && yr.reviewCount) steps.push(`Collect W-9s and prepare 1099s for ${yr.reviewCount} vendor${yr.reviewCount === 1 ? '' : 's'} paid ${fmtWhole(yr.threshold)} or more in ${yr.year}.`);
     }
     if (tx && tx.next && tx.next.amount > 0) steps.push(`Set aside about ${fmtWhole(tx.next.amount)} for the ${tx.next.label} estimated tax payment due ${tx.next.due}.`);
-    if (ln && ln.checks.some((c) => c.status === 'fail')) steps.push(`Before applying for financing, fix: ${ln.checks.filter((c) => c.status === 'fail').map((c) => c.label.toLowerCase()).join('; ')}.`);
+    if (ln && ln.checks.some((c) => c.status === 'fail')) steps.push(`Before applying for financing, get these lender checks to pass: ${ln.checks.filter((c) => c.status === 'fail').map((c) => `"${c.label}"`).join(', ')} (see Tax & lending).`);
     const weak = profit.groups.filter((g) => g.netMargin != null && g.netMargin < 0.1 && g.revenue > 0);
     if (weak.length) steps.push(`Discuss pricing on ${weak.length} low-margin ${opts.groupBy === 'project' ? 'project' : 'customer'}${weak.length > 1 ? 's' : ''}.`);
     return steps;
@@ -3462,6 +3778,31 @@
       L.push('');
     }
 
+    const bsc = result.balanceSheet;
+    const cls = result.closed;
+    if ((bsc && bsc.available && bsc.items.length) || (cls && cls.changedMonths)) {
+      L.push(`15. BALANCE SHEET & CLOSED MONTHS${bsc && bsc.available ? ` (as of ${bsc.asOf})` : ''}`);
+      L.push(thin);
+      if (bsc && bsc.available) {
+        if (!bsc.items.length) L.push('  No balance sheet problems found.');
+        for (const x of bsc.items) L.push(`  [${x.severity}] ${x.kind}: ${x.detail}${x.review ? ` (${REVIEW_STATUSES[x.review.status] || 'reviewed'})` : ''}`);
+      }
+      if (cls) {
+        L.push(`  Books closed through ${monthLabel(cls.through)} on ${String(cls.takenAt).slice(0, 10)}: ${cls.changedMonths ? `${cls.changedEntries} change(s) since then.` : 'no changes since.'}`);
+        for (const m of cls.months) L.push(`   - ${m.label}: ${m.added.length} new or edited, ${m.removed} removed or edited${m.accounts.length ? `; ${m.accounts.slice(0, 4).map((a) => `${a.account} ${a.diff > 0 ? '+' : ''}${fmtMoney(a.diff)}`).join(', ')}` : ''}`);
+      }
+      L.push('');
+    }
+    const jcs = result.jobCosts;
+    if (jcs && jcs.mode === 'tracked' && (jcs.items.length || jcs.jobs.length)) {
+      L.push('16. JOB COSTING GAPS');
+      L.push(thin);
+      L.push(`  ${fmtPct(jcs.taggedShare)} of job costs are assigned to a customer; ${fmtMoney(jcs.untaggedTotal)} is on no job.`);
+      for (const x of jcs.items.slice(0, 15)) L.push(`   - ${x.dateStr}  ${pad(x.vendor || 'No payee', 26)} ${padL(fmtMoney(x.cost), 11)}  ${x.account}${x.suggestion ? ` (likely ${x.suggestion})` : ''}`);
+      for (const x of jcs.jobs) L.push(`   - ${x.detail}`);
+      L.push('');
+    }
+
     L.push('RECOMMENDED NEXT STEPS');
     L.push(thin);
     const steps = nextSteps(result, opts);
@@ -3478,6 +3819,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, buildHtmlReport, unusualActivity, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, buildHtmlReport, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

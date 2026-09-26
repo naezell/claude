@@ -7,11 +7,11 @@
   const E = window.LedgerEngine;
   const { fmtMoney, fmtPct } = E;
   const UI = window.LedgerUI;
-  const { compactMoney, truncate, useTokens, Icon, Money, ChartTooltip, wholeMoney } = UI;
+  const { compactMoney, truncate, useTokens, Icon, Money, ChartTooltip, wholeMoney, ReviewSelect, clearedOf } = UI;
 
   // ------------------------------------------------------------ growth tab
 
-  function GrowthTab({ result, groupBy, setGroupBy }) {
+  function GrowthTab({ result, groupBy, setGroupBy, onReview }) {
     const { profit, subs } = result;
     const [mode, setMode] = useState('gross');
     const noun = groupBy === 'project' ? 'project' : 'customer';
@@ -42,12 +42,49 @@
             <${MarginChart} groups=${profit.groups} mode=${mode} noun=${noun} />
           </div>
           <${ProfitTable} profit=${profit} noun=${noun} />
+          ${result.jobCosts && result.jobCosts.mode !== 'none' && html`<${JobCostPanel} jc=${result.jobCosts} noun=${noun} onReview=${onReview} />`}
           <${CustomerRiskSection} risk=${result.customers} />`
         : html`<section class="panel"><div class="empty">No ${noun} tags found on income. Add the ${groupBy === 'project' ? 'Customer (with sub-customers/projects) or Class' : 'Customer'} column to the QuickBooks report before exporting.</div></section>`}
 
       <div class="section-title"><h2>Recurring software & subscriptions</h2></div>
       <${SubscriptionSection} subs=${subs} />
     `;
+  }
+
+  // Costs that never reached a job make every job look more profitable than it is.
+  function JobCostPanel({ jc, noun, onReview }) {
+    if (jc.mode === 'untracked') {
+      return html`<section class="panel"><div class="panel-head"><h2>Job costing</h2><span class="pill medium">Costs not tracked by ${noun}</span><p>${jc.reason}</p></div></section>`;
+    }
+    const clean = !jc.items.length && !jc.jobs.length;
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Job costing gaps</h2>
+        <span class=${`pill ${jc.open ? 'high' : 'good'}`}>${clean ? 'Every job cost is assigned' : `${jc.open} to fix`}</span>
+        <p>${fmtPct(jc.taggedShare)} of job costs are tagged to a ${noun}.${jc.untaggedTotal ? ` ${fmtMoney(jc.untaggedTotal)} sits on no job, so the ${noun} margins above look better than they are. Add the ${noun} to each of these in QuickBooks.` : ''}</p>
+      </div>
+      ${!clean && html`<div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Review</th><th>Issue</th><th>Date</th><th>Vendor</th><th>Likely job</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+          ${jc.items.map((r) => html`<tr key=${r.key} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td><strong style=${{ fontWeight: 500 }}>No ${noun}</strong><span class="sub">${r.account}${r.memo ? ` · ${r.memo}` : ''}</span></td>
+            <td class="nowrap num">${r.dateStr}</td>
+            <td>${r.vendor || html`<span class="sub">No payee</span>`}<span class="sub">${r.type}${r.num ? ` #${r.num}` : ''}</span></td>
+            <td>${r.suggestion || html`<span class="sub">Unknown</span>`}</td>
+            <td class="num"><${Money} v=${r.cost} /></td>
+          </tr>`)}
+          ${jc.jobs.map((r) => html`<tr key=${r.key} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td><strong style=${{ fontWeight: 500 }}>${r.kind}</strong><span class="sub">${r.detail}</span></td>
+            <td></td>
+            <td>${r.name}</td>
+            <td></td>
+            <td class="num"><${Money} v=${r.kind === 'Billing, no costs' ? r.revenue : r.cost} /></td>
+          </tr>`)}
+        </tbody>
+      </table></div></div>`}
+    </section>`;
   }
 
   function topN(groups, n) {

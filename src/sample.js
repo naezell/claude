@@ -26,7 +26,8 @@
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function build() {
-    return toCSV(buildEntries(), { [BANK]: OPENING_CASH, 'SBA Loan': LOAN_OPENING });
+    // Opening Balance Equity was never cleared out after the file was set up.
+    return toCSV(buildEntries(), { [BANK]: OPENING_CASH, 'SBA Loan': LOAN_OPENING, 'Opening Balance Equity': 2150 });
   }
 
   function buildEntries() {
@@ -164,6 +165,16 @@
     add({ date: d26(5, 21), type: 'Expense', num: '', name: 'Blue Door Cafe', customer: '', memo: 'Client lunch', pnl: 'Meals', bs: CARD, amount: 88.5 });
     add({ date: d26(5, 22), type: 'Expense', num: '', name: 'Blue Door Cafe', customer: '', memo: 'Client lunch', pnl: 'Meals', bs: CARD, amount: 88.5 });
 
+    // Job-costing gaps: material buys on the card with no job attached, and a new project
+    // whose first subcontractor bill arrived before anything was invoiced.
+    add({ date: d26(5, 19), type: 'Expense', num: '', name: 'PrintWorks Co.', customer: '', memo: 'Rush print run', pnl: 'Job Materials & Printing', bs: CARD, amount: 1240 });
+    add({ date: d26(6, 8), type: 'Expense', num: '', name: 'Metro Sign Fabricators', customer: '', memo: 'Vinyl and mounting hardware', pnl: 'Job Materials & Printing', bs: CARD, amount: 860 });
+    add({ date: d26(6, 17), type: 'Bill', num: 'LO-2206', name: 'Lena Ortiz Illustration', customer: 'Pinecrest Winery:Label Design', memo: 'Label concepts', pnl: 'Subcontractors', bs: 'Accounts Payable (A/P)', amount: 1800 });
+
+    // Balance sheet: a Summit Fitness check was recorded into Undeposited Funds and never
+    // deposited, while the same payment was also received straight into Checking.
+    add({ date: d26(6, 12), type: 'Payment', num: '', name: 'Summit Fitness', customer: 'Summit Fitness:Social Retainer', memo: 'Check received', pnl: null, bs: 'Undeposited Funds', bs2: AR, amount: 2400 });
+
     // Unusual: the internet provider bills for a year of equipment and install in one go.
     // ...and a trade-show booth lifts marketing well above a normal month.
     add({ date: d26(6, 16), type: 'Expense', num: '', name: 'Coastal Business Expo', customer: '', memo: 'Booth - fall expo', pnl: 'Advertising & Marketing', bs: CARD, amount: 1850 });
@@ -193,7 +204,9 @@
   // purchases raise expenses; a purchase coded to income (or a sale coded to an expense)
   // lowers that account instead.
   function pnlSign(e) {
-    if (!PNL_ACCOUNTS.test(e.pnl) || /loan|draw/i.test(e.pnl)) return 1;
+    // Paying down a loan or taking a draw lowers that account's balance.
+    if (/loan|draw/i.test(e.pnl)) return /check|expense|payment|transfer/i.test(e.type) ? -1 : 1;
+    if (!PNL_ACCOUNTS.test(e.pnl)) return 1;
     const incoming = /invoice|sales receipt|deposit/i.test(e.type);
     return INCOME_ACCOUNTS.test(e.pnl) === incoming ? 1 : -1;
   }
@@ -229,6 +242,8 @@
     }
 
     const order = [BANK, AR, CARD, 'Accounts Payable (A/P)', 'Design Services Income', 'Uncategorized Income'];
+    // An account with only an opening balance still gets its section.
+    for (const acct of Object.keys(openings || {})) if (!sections.has(acct)) sections.set(acct, []);
     const names = [...sections.keys()].sort((a, b) => {
       const ia = order.indexOf(a), ib = order.indexOf(b);
       if (ia !== -1 || ib !== -1) return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
@@ -338,7 +353,9 @@
       ['Chase Ink Card (4417)', 'Credit Card', 'Credit Card'],
       ['Accounts Payable (A/P)', 'Accounts payable (A/P)', 'Accounts Payable (A/P)'],
       ['SBA Loan', 'Long Term Liabilities', 'Notes Payable'],
+      ['Undeposited Funds', 'Other Current Assets', 'Undeposited Funds'],
       ["Owner's Draw", 'Equity', "Owner's Equity"],
+      ['Opening Balance Equity', 'Equity', 'Opening Balance Equity'],
       ['Design Services Income', 'Income', 'Service/Fee Income'],
       ['Uncategorized Income', 'Income', 'Service/Fee Income'],
       ['Subcontractors', 'Cost of Goods Sold', 'Cost of labor - COS'],

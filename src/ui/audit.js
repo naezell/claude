@@ -27,14 +27,14 @@
     </section>`;
   }
 
-  function AuditTab({ result, accountClass, setAccountClass, onReview }) {
+  function AuditTab({ result, accountClass, setAccountClass, onReview, onClose, canSave }) {
     const { audit } = result;
     const [showCleared, setShowCleared] = useState(false);
     const vis = (list) => (showCleared ? list : list.filter((x) => !clearedOf(x)));
     const score = audit.healthScore;
     const scoreColor = score >= 90 ? 'var(--good)' : score >= 75 ? 'var(--warn)' : 'var(--critical)';
     const scoreWord = score >= 90 ? 'Clean' : score >= 75 ? 'Needs cleanup' : 'Significant issues';
-    const asked = [...audit.uncategorized, ...audit.duplicates, ...audit.mismatches, ...(result.unusual ? [...result.unusual.flux, ...result.unusual.txns] : [])].filter((x) => x.review && x.review.status === 'asked').length;
+    const asked = [...audit.uncategorized, ...audit.duplicates, ...audit.mismatches, ...(result.unusual ? [...result.unusual.flux, ...result.unusual.txns] : []), ...((result.balanceSheet && result.balanceSheet.items) || [])].filter((x) => x.review && x.review.status === 'asked').length;
     return html`
       <section class="kpis" aria-label="Audit summary">
         <div class="kpi">
@@ -67,10 +67,12 @@
       </div>
 
       ${result.tieOut && html`<${TieOutPanel} tie=${result.tieOut} />`}
+      <${ClosedMonthsPanel} result=${result} onClose=${onClose} canSave=${canSave} />
       <${IssuesByMonth} audit=${audit} />
       <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
       <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
       <${MismatchPanel} rows=${vis(audit.mismatches)} open=${audit.open.mismatches} onReview=${onReview} />
+      ${result.balanceSheet && result.balanceSheet.available && html`<${BalanceSheetPanel} bs=${result.balanceSheet} vis=${vis} onReview=${onReview} />`}
       ${result.unusual && html`<${UnusualPanel} u=${result.unusual} vis=${vis} onReview=${onReview} />`}
       <${AccountMapping} accounts=${result.accounts} accountClass=${accountClass} setAccountClass=${setAccountClass} />
     `;
@@ -162,6 +164,81 @@
             <td class="num"><${Money} v=${r.amount} /></td>
           </tr>`)}</tbody></table></div>
         </div>`) : html`<div class="empty">${Icon.check}No open duplicates.</div>`}
+      </div>
+    </section>`;
+  }
+
+  const monthName = (key) => new Date(`${key}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+
+  // Money that should not be sitting where it is: things a P&L review never shows.
+  function BalanceSheetPanel({ bs, vis, onReview }) {
+    const items = vis(bs.items);
+    const [showBalances, setShowBalances] = useState(false);
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Balance sheet check</h2>
+        <span class=${`pill ${bs.open ? 'high' : 'good'}`}>${bs.open ? `${bs.open} to fix` : 'Looks clean'}</span>
+        <p>Problems a profit and loss review never shows, as of ${bs.asOf}: payments never deposited, Opening Balance Equity left from setup, accounts with the wrong sign, customer credits and vendor debits, and bills or invoices open long after they were probably settled.</p>
+        <button class="btn spacer" onClick=${() => setShowBalances(!showBalances)}>${showBalances ? 'Hide balances' : 'Show balances'}</button>
+      </div>
+      ${showBalances && html`<div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Account</th><th>Type</th><th class="num">Balance</th></tr></thead>
+        <tbody>${bs.balances.map((b) => html`<tr key=${b.account}><td>${b.account}</td><td>${BS_ROLE[b.role] || 'Other'}</td><td class="num"><${Money} v=${b.balance} /></td></tr>`)}</tbody>
+      </table></div></div>`}
+      <div class="panel-body flush">
+        ${items.length ? html`<div class="table-wrap"><table>
+          <thead><tr><th>Review</th><th>Severity</th><th>Issue</th><th>What to do</th><th class="num">Amount</th></tr></thead>
+          <tbody>${items.map((r) => html`<tr key=${r.key} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td><${Severity} level=${r.severity} /></td>
+            <td><strong style=${{ fontWeight: 500 }}>${r.kind}</strong><span class="sub">${r.detail}</span></td>
+            <td class="sub-cell">${r.fix}</td>
+            <td class="num"><${Money} v=${r.amount} /></td>
+          </tr>`)}</tbody>
+        </table></div>` : html`<div class="empty">${Icon.check}${bs.open ? 'All open items are hidden.' : 'No balance sheet problems found.'}</div>`}
+      </div>
+    </section>`;
+  }
+  const BS_ROLE = { cash: 'Bank', card: 'Credit card', ar: 'Receivables', ap: 'Payables', loan: 'Loan', equity: 'Equity', salestax: 'Sales tax', payrolltax: 'Payroll liabilities', otherbalance: 'Other asset or liability' };
+
+  // Once a month is closed, any later edit to it changes what was already reported.
+  function ClosedMonthsPanel({ result, onClose, canSave }) {
+    const c = result.closed;
+    const months = result.closableMonths || [];
+    const latest = months[months.length - 1];
+    const [pick, setPick] = useState(latest || '');
+    const [confirmReopen, setConfirmReopen] = useState(false);
+    if (!latest) return null;
+    const changed = c && c.changedMonths > 0;
+    const picker = html`<select class="select" style=${{ width: 'auto' }} aria-label="Close through" value=${pick} onChange=${(e) => setPick(e.target.value)}>
+      ${months.slice().reverse().map((m) => html`<option key=${m} value=${m}>${monthName(m)}</option>`)}
+    </select>`;
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Closed months</h2>
+        ${c ? html`<span class=${`pill ${changed ? 'high' : 'good'}`}>${changed ? `${c.changedEntries} change${c.changedEntries === 1 ? '' : 's'} since closing` : `Closed through ${monthName(c.through)}`}</span>` : html`<span class="pill low">Not closed yet</span>`}
+        <p>${c
+          ? `Books closed through ${monthName(c.through)} on ${String(c.takenAt).slice(0, 10)}. Each time a new export is loaded, those months are compared with what they looked like at closing, so edits, deletions and backdated entries show up here.${c.skippedMonths ? ` ${c.skippedMonths} closed month${c.skippedMonths === 1 ? ' is' : 's are'} not in this export and ${c.skippedMonths === 1 ? 'was' : 'were'} not checked.` : ''}`
+          : 'After reviewing and reporting a month, close it here. From then on, any change to those months in a later export (a recoded, edited, deleted or backdated transaction) is listed here, so reported numbers never shift unnoticed.'}${canSave ? '' : ' (With the sample data this is kept only until the page is reloaded; for a client it is saved with their settings.)'}</p>
+      </div>
+      ${changed && html`<div class="panel-body flush">
+        ${c.months.map((m) => html`<div class="closed-month" key=${m.month}>
+          <div class="closed-head"><strong>${monthName(m.month)}</strong>
+            <span class="sub">${[m.added.length ? `${m.added.length} new or edited` : '', m.removed ? `${m.removed} removed or edited` : ''].filter(Boolean).join(' · ')}</span></div>
+          ${m.accounts.length > 0 && html`<div class="chips" style=${{ padding: '0 18px 8px' }}>${m.accounts.slice(0, 8).map((a) => html`<span class="pill ${a.diff > 0 ? 'medium' : 'low'}" key=${a.account}>${a.account} ${a.diff > 0 ? '+' : '−'}${fmtMoney(Math.abs(a.diff))}</span>`)}</div>`}
+          ${m.added.length > 0 && html`<div class="table-wrap"><table>
+            <thead><tr><th>Date</th><th>Type</th><th>Payee</th><th>Account</th><th>Memo</th><th class="num">Amount</th></tr></thead>
+            <tbody>${m.added.map((t, i) => html`<tr key=${i}><td class="nowrap num">${t.dateStr}</td><td class="nowrap">${t.type}${t.num ? ` #${t.num}` : ''}</td><td>${t.name || html`<span class="sub">No payee</span>`}</td><td>${t.account}${t.split ? html`<span class="sub">${t.split}</span>` : ''}</td><td>${t.memo}</td><td class="num"><${Money} v=${t.amount} /></td></tr>`)}</tbody>
+          </table></div>`}
+        </div>`)}
+      </div>`}
+      <div class="panel-body closed-actions">
+        ${changed
+          ? html`<span class="hint">Correct the changes in QuickBooks, or accept them as the new closed numbers:</span><button class="btn primary" onClick=${() => onClose(c.through)}>Accept changes</button>`
+          : html`<span class="hint">${c ? 'Move the close forward after reviewing the next month:' : 'Close the books through'}</span>${picker}<button class="btn primary" disabled=${c && pick === c.through} onClick=${() => onClose(pick)}>${c ? 'Update close' : 'Close books'}</button>`}
+        ${c && (confirmReopen
+          ? html`<span class="confirm">Stop watching closed months? <button class="btn" onClick=${() => { onClose(null); setConfirmReopen(false); }}>Reopen</button><button class="btn" onClick=${() => setConfirmReopen(false)}>Cancel</button></span>`
+          : html`<button class="btn" onClick=${() => setConfirmReopen(true)}>Reopen</button>`)}
       </div>
     </section>`;
   }

@@ -33,6 +33,8 @@
     const [backupSnoozed, setBackupSnoozed] = useState(false);
     const [scenario, setScenario] = useState({ levers: [] });
     const [budgetPrefs, setBudgetPrefs] = useState({ mode: 'auto', revenueGrowth: '10', costGrowth: '5' });
+    // Snapshot of the months the bookkeeper closed, to catch later edits to them.
+    const [closed, setClosed] = useState(null);
     const [loanInputs, setLoanInputs] = useState({ amount: '', rate: '10.5', years: '10', addBacks: '' });
     const [taxInputs, setTaxInputs] = useState({ entity: 'sole', rate: '', salary: '', paid: '' });
     // Forecast inputs. Empty strings mean "use the value estimated from the export".
@@ -59,13 +61,13 @@
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
-      accountClass, groupBy, chart, pnl, reviewed, scenario: typed.scenario,
+      accountClass, groupBy, chart, pnl, reviewed, closed, scenario: typed.scenario,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, startingCash, cashInputs.includeDoubtful, typed]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, startingCash, cashInputs.includeDoubtful, typed]);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
@@ -73,6 +75,7 @@
       const saved = ClientStore.get(clientId);
       setAccountClass(saved ? saved.accountClass || {} : {});
       setReviewed(saved ? saved.reviewed || {} : {});
+      setClosed(saved && saved.closed ? saved.closed : null);
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
       setScenario({ levers: [] });
@@ -84,11 +87,11 @@
     // Save as the bookkeeper works.
     useEffect(() => {
       if (!clientId) return;
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs };
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs };
       const saved = ClientStore.get(clientId);
       if (emptyProfile(profile) && !saved) return;
       ClientStore.put(clientId, profile);
-    }, [clientId, accountClass, reviewed, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, accountClass, reviewed, closed, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     const setReview = useCallback((keys, status) => {
       setReviewed((prev) => {
         const next = { ...prev };
@@ -233,8 +236,8 @@
         </div>
 
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
-          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} />`
-            : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} />`
+          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => setClosed(through ? result.closeBooks(through) : null)} canSave=${!!clientId} />`
+            : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} onReview=${setReview} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
             : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`
             : tab === 'trends' ? html`<${TrendsTab} trend=${result.trend} />`

@@ -304,9 +304,9 @@ Checking
 ,06/17/2026,Bill Payment (Check),1144,PrintWorks Co.,,Pay B2606-1,Accounts Payable (A/P),-610.46,12056.59
 ,06/19/2026,Bill Payment (Check),1145,PrintWorks Co.,,Pay B2606-3,Accounts Payable (A/P),-2583.41,9473.18
 ,06/20/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Accounts Receivable (A/R),3058.12,12531.30
-,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-935.90,11595.40
-,06/27/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11712.69,23308.09
-Total for Checking,,,,,,,,"$23,308.09",
+,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Chase Ink Card (4417),-2175.90,10355.40
+,06/27/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Accounts Receivable (A/R),11712.69,22068.09
+Total for Checking,,,,,,,,"$22,068.09",
 Accounts Receivable (A/R)
 ,01/03/2025,Invoice,2001,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jan services,Design Services Income,10035.94,10035.94
 ,01/04/2025,Invoice,2002,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jan services,Design Services Income,4179.86,14215.80
@@ -485,11 +485,12 @@ Accounts Receivable (A/R)
 ,06/06/2026,Invoice,2091,Oakline Realty,Oakline Realty:Listing Collateral,Listing Collateral - Jun services,Design Services Income,2672.60,40444.87
 ,06/07/2026,Invoice,2092,Summit Fitness,Summit Fitness:Social Retainer,Social Retainer - Jun services,Design Services Income,2400.00,42844.87
 ,06/08/2026,Invoice,2093,Harborview Hotel,Harborview Hotel:Signage,Signage - Jun services,Design Services Income,7317.75,50162.62
-,06/13/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,47762.62
-,06/14/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-3278.99,44483.63
-,06/20/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-3058.12,41425.51
-,06/27/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-11712.69,29712.82
-Total for Accounts Receivable (A/R),,,,,,,,"$29,712.82",
+,06/12/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Check received,Undeposited Funds,-2400.00,47762.62
+,06/13/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Payment received,Checking,-2400.00,45362.62
+,06/14/2026,Payment,,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Payment received,Checking,-3278.99,42083.63
+,06/20/2026,Payment,,Oakline Realty,Oakline Realty:Listing Collateral,Payment received,Checking,-3058.12,39025.51
+,06/27/2026,Payment,,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Payment received,Checking,-11712.69,27312.82
+Total for Accounts Receivable (A/R),,,,,,,,"$27,312.82",
 Chase Ink Card (4417)
 ,01/02/2025,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Software & Subscriptions,79.99,79.99
 ,01/03/2025,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,99.99
@@ -761,35 +762,37 @@ Chase Ink Card (4417)
 ,05/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,1529.12
 ,05/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,1559.11
 ,05/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,1579.11
-,05/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,136.74,1715.85
-,05/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,1727.84
-,05/21/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,88.50,1816.34
-,05/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,1828.34
-,05/22/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,88.50,1916.84
-,05/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-980.94,935.90
-,06/02/2026,Expense,,ADOBE *CREATIVE CLD,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,1025.89
-,06/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,1045.89
-,06/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,1060.88
-,06/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,1104.63
-,06/05/2026,Expense,,Best Buy,,BESTBUY 00012,Uncategorized Expense,1499.99,2604.62
-,06/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,2620.61
-,06/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,2686.61
-,06/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,2758.61
-,06/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,2778.60
-,06/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,68.57,2847.17
-,06/09/2026,Expense,,AMZN Mktp US*9X11,,Printer paper and toner,Office Supplies,64.10,2911.27
-,06/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,2941.76
-,06/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,2977.76
-,06/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,3067.76
-,06/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,3097.75
-,06/16/2026,Expense,,Coastal Business Expo,,Booth - fall expo,Advertising & Marketing,1850.00,4947.75
-,06/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,4967.75
-,06/18/2026,Expense,,,,Card purchase,Office Supplies,58.20,5025.95
-,06/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,104.97,5130.92
-,06/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,5142.91
-,06/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,5154.91
-,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-935.90,4219.01
-Total for Chase Ink Card (4417),,,,,,,,"$4,219.01",
+,05/19/2026,Expense,,PrintWorks Co.,,Rush print run,Job Materials & Printing,1240.00,2819.11
+,05/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,136.74,2955.85
+,05/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,2967.84
+,05/21/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,88.50,3056.34
+,05/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,3068.34
+,05/22/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,88.50,3156.84
+,05/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-980.94,2175.90
+,06/02/2026,Expense,,ADOBE *CREATIVE CLD,,Adobe Creative Cloud subscription,Software & Subscriptions,89.99,2265.89
+,06/03/2026,Expense,,Notion Labs,,Notion Plus - workspace A,Software & Subscriptions,20.00,2285.89
+,06/04/2026,Expense,,Canva Pro,,Canva Pro subscription,Software & Subscriptions,14.99,2300.88
+,06/05/2026,Expense,,Slack Technologies,,Slack Technologies subscription,Software & Subscriptions,43.75,2344.63
+,06/05/2026,Expense,,Best Buy,,BESTBUY 00012,Uncategorized Expense,1499.99,3844.62
+,06/06/2026,Expense,,Zoom Video Communications,,Zoom Video Communications subscription,Software & Subscriptions,15.99,3860.61
+,06/06/2026,Expense,,Microsoft 365 Business,,Microsoft 365 Business subscription,Software & Subscriptions,66.00,3926.61
+,06/07/2026,Expense,,Google Workspace,,Google Workspace subscription,Software & Subscriptions,72.00,3998.61
+,06/08/2026,Expense,,Dropbox,,Dropbox subscription,Software & Subscriptions,19.99,4018.60
+,06/08/2026,Expense,,Metro Sign Fabricators,,Vinyl and mounting hardware,Job Materials & Printing,860.00,4878.60
+,06/09/2026,Expense,,Blue Door Cafe,,Client lunch,Meals,68.57,4947.17
+,06/09/2026,Expense,,AMZN Mktp US*9X11,,Printer paper and toner,Office Supplies,64.10,5011.27
+,06/10/2026,Expense,,Asana,,Asana subscription,Software & Subscriptions,30.49,5041.76
+,06/11/2026,Expense,,Monday.com,,Monday.com subscription,Software & Subscriptions,36.00,5077.76
+,06/14/2026,Expense,,QuickBooks Online,,QuickBooks Online subscription,Software & Subscriptions,90.00,5167.76
+,06/16/2026,Expense,,Zapier,,Zapier subscription,Software & Subscriptions,29.99,5197.75
+,06/16/2026,Expense,,Coastal Business Expo,,Booth - fall expo,Advertising & Marketing,1850.00,7047.75
+,06/17/2026,Expense,,Notion Labs,,Notion Plus - workspace B,Software & Subscriptions,20.00,7067.75
+,06/18/2026,Expense,,,,Card purchase,Office Supplies,58.20,7125.95
+,06/20/2026,Expense,,The Home Depot,,Studio supplies,Office Supplies,104.97,7230.92
+,06/21/2026,Expense,,Spotify,,Spotify subscription,Software & Subscriptions,11.99,7242.91
+,06/22/2026,Expense,,Calendly,,Calendly subscription,Software & Subscriptions,12.00,7254.91
+,06/25/2026,Credit Card Payment,,Chase Card Services,,Card autopay,Checking,-2175.90,5079.01
+Total for Chase Ink Card (4417),,,,,,,,"$5,079.01",
 Accounts Payable (A/P)
 ,01/10/2025,Bill,B2501-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Subcontractors,2871.33,2871.33
 ,01/11/2025,Bill,B2501-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Job Materials & Printing,708.99,3580.32
@@ -973,8 +976,9 @@ Accounts Payable (A/P)
 ,06/14/2026,Bill,B2606-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Subcontractors,324.54,10021.54
 ,06/15/2026,Bill,B2606-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Job Materials & Printing,4235.52,14257.06
 ,06/17/2026,Bill Payment (Check),1144,PrintWorks Co.,,Pay B2606-1,Checking,-610.46,13646.60
-,06/19/2026,Bill Payment (Check),1145,PrintWorks Co.,,Pay B2606-3,Checking,-2583.41,11063.19
-Total for Accounts Payable (A/P),,,,,,,,"$11,063.19",
+,06/17/2026,Bill,LO-2206,Lena Ortiz Illustration,Pinecrest Winery:Label Design,Label concepts,Subcontractors,1800.00,15446.60
+,06/19/2026,Bill Payment (Check),1145,PrintWorks Co.,,Pay B2606-3,Checking,-2583.41,12863.19
+Total for Accounts Payable (A/P),,,,,,,,"$12,863.19",
 Design Services Income
 ,01/03/2025,Invoice,2001,Northwind Outfitters,Northwind Outfitters:Spring Catalog,Spring Catalog - Jan services,Accounts Receivable (A/R),10035.94,10035.94
 ,01/04/2025,Invoice,2002,Bluebird Bakery,Bluebird Bakery:Brand Refresh,Brand Refresh - Jan services,Accounts Receivable (A/R),4179.86,14215.80
@@ -1144,10 +1148,12 @@ Job Materials & Printing
 ,05/11/2026,Bill,B2605-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),692.88,65077.56
 ,05/13/2026,Bill,B2605-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2406.40,67483.96
 ,05/15/2026,Bill,B2605-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Accounts Payable (A/P),4006.28,71490.24
-,06/11/2026,Bill,B2606-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),610.46,72100.70
-,06/13/2026,Bill,B2606-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2583.41,74684.11
-,06/15/2026,Bill,B2606-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Accounts Payable (A/P),4235.52,78919.63
-Total for Job Materials & Printing,,,,,,,,"$78,919.63",
+,05/19/2026,Expense,,PrintWorks Co.,,Rush print run,Chase Ink Card (4417),1240.00,72730.24
+,06/08/2026,Expense,,Metro Sign Fabricators,,Vinyl and mounting hardware,Chase Ink Card (4417),860.00,73590.24
+,06/11/2026,Bill,B2606-1,PrintWorks Co.,Bluebird Bakery:Brand Refresh,Brand Refresh production,Accounts Payable (A/P),610.46,74200.70
+,06/13/2026,Bill,B2606-3,PrintWorks Co.,Oakline Realty:Listing Collateral,Listing Collateral production,Accounts Payable (A/P),2583.41,76784.11
+,06/15/2026,Bill,B2606-5,Metro Sign Fabricators,Harborview Hotel:Signage,Signage production,Accounts Payable (A/P),4235.52,81019.63
+Total for Job Materials & Printing,,,,,,,,"$81,019.63",
 Meals
 ,01/09/2025,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),89.49,89.49
 ,02/09/2025,Expense,,Blue Door Cafe,,Client lunch,Chase Ink Card (4417),92.14,181.63
@@ -1193,13 +1199,16 @@ Office Supplies
 ,06/18/2026,Expense,,,,Card purchase,Chase Ink Card (4417),58.20,1750.26
 ,06/20/2026,Expense,,The Home Depot,,Studio supplies,Chase Ink Card (4417),104.97,1855.23
 Total for Office Supplies,,,,,,,,"$1,855.23",
+Opening Balance Equity
+,Beginning Balance,,,,,,,,2150.00
+Total for Opening Balance Equity,,,,,,,,"$2,150.00",
 Owner's Draw
-,03/28/2025,Check,1165,Jordan Pike,,Owner draw,Checking,5000.00,5000.00
-,06/28/2025,Check,1166,Jordan Pike,,Owner draw,Checking,6000.00,11000.00
-,09/28/2025,Check,1167,Jordan Pike,,Owner draw,Checking,7000.00,18000.00
-,12/28/2025,Check,1168,Jordan Pike,,Owner draw,Checking,11000.00,29000.00
-,03/28/2026,Check,1169,Jordan Pike,,Owner draw,Checking,3000.00,32000.00
-Total for Owner's Draw,,,,,,,,"$32,000.00",
+,03/28/2025,Check,1165,Jordan Pike,,Owner draw,Checking,-5000.00,-5000.00
+,06/28/2025,Check,1166,Jordan Pike,,Owner draw,Checking,-6000.00,-11000.00
+,09/28/2025,Check,1167,Jordan Pike,,Owner draw,Checking,-7000.00,-18000.00
+,12/28/2025,Check,1168,Jordan Pike,,Owner draw,Checking,-11000.00,-29000.00
+,03/28/2026,Check,1169,Jordan Pike,,Owner draw,Checking,-3000.00,-32000.00
+Total for Owner's Draw,,,,,,,,"$-32,000.00",
 Payroll Expenses:Wages
 ,01/15/2025,Expense,,Gusto,,Payroll,Checking,9281.70,9281.70
 ,02/15/2025,Expense,,Gusto,,Payroll,Checking,8973.31,18255.01
@@ -1243,25 +1252,25 @@ Rent & Lease
 Total for Rent & Lease,,,,,,,,"$58,400.00",
 SBA Loan
 ,Beginning Balance,,,,,,,,48000.00
-,01/05/2025,Check,1147,Columbia Bank,,SBA loan payment - principal,Checking,850.00,48850.00
-,02/05/2025,Check,1148,Columbia Bank,,SBA loan payment - principal,Checking,855.31,49705.31
-,03/05/2025,Check,1149,Columbia Bank,,SBA loan payment - principal,Checking,860.66,50565.97
-,04/05/2025,Check,1150,Columbia Bank,,SBA loan payment - principal,Checking,866.04,51432.01
-,05/05/2025,Check,1151,Columbia Bank,,SBA loan payment - principal,Checking,871.45,52303.46
-,06/05/2025,Check,1152,Columbia Bank,,SBA loan payment - principal,Checking,876.90,53180.36
-,07/05/2025,Check,1153,Columbia Bank,,SBA loan payment - principal,Checking,882.38,54062.74
-,08/05/2025,Check,1154,Columbia Bank,,SBA loan payment - principal,Checking,887.89,54950.63
-,09/05/2025,Check,1155,Columbia Bank,,SBA loan payment - principal,Checking,893.44,55844.07
-,10/05/2025,Check,1156,Columbia Bank,,SBA loan payment - principal,Checking,899.03,56743.10
-,11/05/2025,Check,1157,Columbia Bank,,SBA loan payment - principal,Checking,904.64,57647.74
-,12/05/2025,Check,1158,Columbia Bank,,SBA loan payment - principal,Checking,910.30,58558.04
-,01/05/2026,Check,1159,Columbia Bank,,SBA loan payment - principal,Checking,915.99,59474.03
-,02/05/2026,Check,1160,Columbia Bank,,SBA loan payment - principal,Checking,921.71,60395.74
-,03/05/2026,Check,1161,Columbia Bank,,SBA loan payment - principal,Checking,927.47,61323.21
-,04/05/2026,Check,1162,Columbia Bank,,SBA loan payment - principal,Checking,933.27,62256.48
-,05/05/2026,Check,1163,Columbia Bank,,SBA loan payment - principal,Checking,939.10,63195.58
-,06/05/2026,Check,1164,Columbia Bank,,SBA loan payment - principal,Checking,944.97,64140.55
-Total for SBA Loan,,,,,,,,"$64,140.55",
+,01/05/2025,Check,1147,Columbia Bank,,SBA loan payment - principal,Checking,-850.00,47150.00
+,02/05/2025,Check,1148,Columbia Bank,,SBA loan payment - principal,Checking,-855.31,46294.69
+,03/05/2025,Check,1149,Columbia Bank,,SBA loan payment - principal,Checking,-860.66,45434.03
+,04/05/2025,Check,1150,Columbia Bank,,SBA loan payment - principal,Checking,-866.04,44567.99
+,05/05/2025,Check,1151,Columbia Bank,,SBA loan payment - principal,Checking,-871.45,43696.54
+,06/05/2025,Check,1152,Columbia Bank,,SBA loan payment - principal,Checking,-876.90,42819.64
+,07/05/2025,Check,1153,Columbia Bank,,SBA loan payment - principal,Checking,-882.38,41937.26
+,08/05/2025,Check,1154,Columbia Bank,,SBA loan payment - principal,Checking,-887.89,41049.37
+,09/05/2025,Check,1155,Columbia Bank,,SBA loan payment - principal,Checking,-893.44,40155.93
+,10/05/2025,Check,1156,Columbia Bank,,SBA loan payment - principal,Checking,-899.03,39256.90
+,11/05/2025,Check,1157,Columbia Bank,,SBA loan payment - principal,Checking,-904.64,38352.26
+,12/05/2025,Check,1158,Columbia Bank,,SBA loan payment - principal,Checking,-910.30,37441.96
+,01/05/2026,Check,1159,Columbia Bank,,SBA loan payment - principal,Checking,-915.99,36525.97
+,02/05/2026,Check,1160,Columbia Bank,,SBA loan payment - principal,Checking,-921.71,35604.26
+,03/05/2026,Check,1161,Columbia Bank,,SBA loan payment - principal,Checking,-927.47,34676.79
+,04/05/2026,Check,1162,Columbia Bank,,SBA loan payment - principal,Checking,-933.27,33743.52
+,05/05/2026,Check,1163,Columbia Bank,,SBA loan payment - principal,Checking,-939.10,32804.42
+,06/05/2026,Check,1164,Columbia Bank,,SBA loan payment - principal,Checking,-944.97,31859.45
+Total for SBA Loan,,,,,,,,"$31,859.45",
 Software & Subscriptions
 ,01/02/2025,Expense,,Adobe Creative Cloud,,Adobe Creative Cloud subscription,Chase Ink Card (4417),79.99,79.99
 ,01/03/2025,Expense,,Notion Labs,,Notion Plus - workspace A,Chase Ink Card (4417),20.00,99.99
@@ -1553,7 +1562,8 @@ Subcontractors
 ,06/10/2026,Bill,B2606-0,Lena Ortiz Illustration,Northwind Outfitters:Spring Catalog,Spring Catalog production,Accounts Payable (A/P),3231.46,108267.32
 ,06/12/2026,Bill,B2606-2,Dev Studio Partners,Cedar Ridge Dental:Website Build,Website Build production,Accounts Payable (A/P),2690.59,110957.91
 ,06/14/2026,Bill,B2606-4,Lena Ortiz Illustration,Summit Fitness:Social Retainer,Social Retainer production,Accounts Payable (A/P),324.54,111282.45
-Total for Subcontractors,,,,,,,,"$111,282.45",
+,06/17/2026,Bill,LO-2206,Lena Ortiz Illustration,Pinecrest Winery:Label Design,Label concepts,Accounts Payable (A/P),1800.00,113082.45
+Total for Subcontractors,,,,,,,,"$113,082.45",
 Uncategorized Expense
 ,01/22/2026,Expense,,Amazon,,AMZN Mktp US*2K41,Chase Ink Card (4417),86.44,86.44
 ,02/07/2026,Expense,,,,POS DEBIT 4471 SQ *MAKERS,Checking,212.00,298.44
@@ -1564,6 +1574,9 @@ Uncategorized Expense
 ,05/13/2026,Expense,,Uber,,UBER *TRIP,Checking,64.18,2374.79
 ,06/05/2026,Expense,,Best Buy,,BESTBUY 00012,Chase Ink Card (4417),1499.99,3874.78
 Total for Uncategorized Expense,,,,,,,,"$3,874.78",
+Undeposited Funds
+,06/12/2026,Payment,,Summit Fitness,Summit Fitness:Social Retainer,Check received,Accounts Receivable (A/R),2400.00,2400.00
+Total for Undeposited Funds,,,,,,,,"$2,400.00",
 Utilities
 ,01/12/2025,Expense,,Comcast Business,,Internet,Checking,129.99,129.99
 ,02/12/2025,Expense,,Comcast Business,,Internet,Checking,129.99,259.98

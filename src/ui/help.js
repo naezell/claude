@@ -59,10 +59,12 @@
             <ol class="routine">
               <li><strong>Upload</strong> the latest exports. Uploading the full history each month is fine.</li>
               <li><strong>Diagnostic audit</strong>: if the P&L was added, check <em>Ties to QuickBooks</em> first. Then work through uncategorized items, possible duplicates and mismatches, and mark each one <em>Not an issue</em>, <em>Fixed in QuickBooks</em> or <em>Asked the client</em>. Cleared flags stay cleared next month.</li>
-              <li><strong>Unusual activity</strong>, at the bottom of the audit tab: confirm anything that looks out of line.</li>
+              <li><strong>Closed months</strong>: if anything changed in a month you already closed, it is listed at the top of the audit tab. Fix it in QuickBooks or accept it.</li>
+              <li><strong>Balance sheet check</strong> and <strong>Unusual activity</strong>, lower on the audit tab: clear money stuck in Undeposited Funds, Opening Balance Equity, credits and old open bills, and confirm anything out of line.</li>
+              <li><strong>Job costing gaps</strong>, on the Growth tab: add the customer to job costs that have none, and invoice jobs with costs but no billing.</li>
               <li><strong>Client questions</strong>: send the list, then press <em>Mark as asked</em>.</li>
               <li>Look over <strong>Cash forecast</strong>, <strong>Trends</strong> and <strong>Vendors</strong> for talking points: slow payers, rising costs, price increases, the tightest week ahead.</li>
-              <li>Send the <strong>client report</strong> (next step), then back up.</li>
+              <li>Send the <strong>client report</strong> (next step). Then <strong>close the month</strong> in the Closed months panel, and back up.</li>
             </ol>
           `)}
           ${part('send', html`

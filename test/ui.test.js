@@ -282,3 +282,49 @@ test('Google Drive is only offered on the registered address; elsewhere the app 
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('closed months: close the books, load an edited export, see the change, accept it', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Closed months' }) });
+  await panel.locator('select').selectOption('2026-05');
+  await panel.locator('button', { hasText: 'Close books' }).click();
+  await panel.locator('.pill', { hasText: 'Closed through May 2026' }).waitFor();
+  // The same client's next export has a March amount changed.
+  const edited = fs.readFileSync(SAMPLE, 'utf8').split('\n').map((l) => (l.includes('03/20/2026') && l.includes('Studio supplies') ? l.replace(',100.19,', ',150.19,') : l)).join('\n');
+  await page.setInputFiles('#csv-upload', { name: 'harbor-pine-july.csv', mimeType: 'text/csv', buffer: Buffer.from(edited) });
+  await panel.locator('.pill', { hasText: 'since closing' }).waitFor();
+  const text = await panel.innerText();
+  assert.match(text, /March 2026/);
+  assert.match(text, /Office Supplies \+\$50\.00/);
+  assert.match(text, /The Home Depot/);
+  await panel.locator('button', { hasText: 'Accept changes' }).click();
+  await panel.locator('.pill', { hasText: 'Closed through May 2026' }).waitFor();
+  // The close is saved with the client, so it survives a reload.
+  await page.reload();
+  await page.setInputFiles('#csv-upload', { name: 'harbor-pine-july.csv', mimeType: 'text/csv', buffer: Buffer.from(edited) });
+  await panel.locator('.pill', { hasText: 'Closed through May 2026' }).waitFor();
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('balance sheet check and job costing gaps show the seeded problems', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  const bs = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Balance sheet check' }) });
+  await bs.waitFor();
+  const bsText = await bs.innerText();
+  for (const s of ['Undeposited Funds', 'Opening Balance Equity', 'Customer credit', 'Old open bill']) assert.ok(bsText.includes(s), s);
+  await bs.locator('button', { hasText: 'Show balances' }).click();
+  assert.match(await bs.innerText(), /SBA Loan/);
+  await page.click('#tab-growth');
+  const jc = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Job costing gaps' }) });
+  await jc.waitFor();
+  const jcText = await jc.innerText();
+  assert.match(jcText, /Harborview Hotel/);
+  assert.match(jcText, /Pinecrest Winery/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

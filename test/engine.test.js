@@ -62,15 +62,15 @@ test('debit/credit columns and journal imbalance', () => {
 
 test('sample "by Account" export: every seeded issue is found once', () => {
   const r = E.analyze(E.parseTransactions(S.build()));
-  assert.equal(r.count, 1538);
-  assert.equal(r.entryCount, 769, 'each entry appears in two account sections');
+  assert.equal(r.count, 1546);
+  assert.equal(r.entryCount, 773, 'each entry appears in two account sections');
   assert.equal(r.audit.uncategorized.length, 11);
   assert.equal(r.audit.duplicates.length, 3);
   const kinds = r.audit.mismatches.map((m) => m.kind);
   assert.equal(kinds.filter((k) => k === 'Type / account conflict').length, 3);
   assert.equal(kinds.filter((k) => k === 'Inconsistent coding').length, 1);
   assert.deepEqual(r.profit.groups.map((g) => g.name).sort(), [
-    'Bluebird Bakery', 'Cedar Ridge Dental', 'Harborview Hotel', 'Lakeside Brewing', 'Northwind Outfitters', 'Oakline Realty', 'Summit Fitness',
+    'Bluebird Bakery', 'Cedar Ridge Dental', 'Harborview Hotel', 'Lakeside Brewing', 'Northwind Outfitters', 'Oakline Realty', 'Pinecrest Winery', 'Summit Fitness',
   ]);
   const oak = r.profit.groups.find((g) => g.name === 'Oakline Realty');
   assert.ok(oak.margin < 0.2, 'Oakline is the low-margin customer');
@@ -356,7 +356,7 @@ test('benchmarks: request arguments, payload reading and comparison', () => {
 
 test('chart of accounts: parsing, exact types and roles beat name guesses', () => {
   const chart = E.parseChartOfAccounts(S.chartOfAccounts());
-  assert.equal(chart.accounts.length, 21);
+  assert.equal(chart.accounts.length, 23);
   assert.equal(E.parseChartOfAccounts(S.build()), null, 'a transaction report is not a chart');
   // Names that fool the guesser: a card and a bank account with no telltale words.
   const coa = E.parseChartOfAccounts(['Account,Type,Detail type', 'Mercury 4471,Bank,Checking', 'Brex,Credit Card,Credit Card', 'Studio Revenue Share,Expenses,Other', 'Pike Capital,Equity,Owner draws'].join('\n'));
@@ -367,7 +367,7 @@ test('chart of accounts: parsing, exact types and roles beat name guesses', () =
   assert.equal(E.roleOf(accountClass, 'Pike Capital'), 'equity');
   assert.equal(accountClass.Rent, 'cogs', 'manual choice beats everything');
   const r = E.analyze(E.parseTransactions(S.build()), { chart });
-  assert.deepEqual(r.chart, { accounts: 21, matched: 21, of: 21 });
+  assert.deepEqual(r.chart, { accounts: 23, matched: 22, of: 22 });
   assert.ok(r.accounts.every((a) => a.source === 'chart'));
   assert.equal(r.accounts.find((a) => a.name === 'SBA Loan').role, 'loan');
 });
@@ -661,4 +661,75 @@ test('firm branding on reports: name, website, logo, and only inline images', ()
   assert.ok(text.includes('www.7dbusinesssolutions.com'));
   const q = E.clientQuestions(r, { firm });
   assert.ok(q.text.trim().endsWith('7D Business Solutions\nwww.7dbusinesssolutions.com'));
+});
+
+test('balance sheet check: undeposited funds, opening balance equity, credits, wrong signs, old bills', () => {
+  const p = E.parseTransactions(S.build());
+  const r = E.analyze(p, { chart: E.parseChartOfAccounts(S.chartOfAccounts()) });
+  const bs = r.balanceSheet;
+  assert.ok(bs.available);
+  const kinds = bs.items.map((i) => i.kind);
+  assert.deepEqual(kinds.slice(0, 2).sort(), ['Opening Balance Equity', 'Undeposited Funds']);
+  const uf = bs.items.find((i) => i.kind === 'Undeposited Funds');
+  assert.equal(uf.amount, 2400);
+  assert.match(uf.detail, /since Jun 12, 2026/);
+  assert.equal(bs.items.find((i) => i.kind === 'Opening Balance Equity').amount, 2150);
+  assert.ok(bs.items.some((i) => i.kind === 'Customer credit' && i.account === 'Summit Fitness' && i.amount === -2400));
+  assert.ok(bs.items.some((i) => i.kind === 'Old open bill' && /B2603-1/.test(i.detail)));
+  assert.ok(!kinds.includes('Wrong-sign balance'), "owner's draw runs negative by nature and is not flagged");
+  assert.equal(bs.balances.find((b) => b.account === 'SBA Loan').balance, 31859.45, 'loan paid down from 48,000');
+  // A wrong sign on a loan, and an export that is not grouped by account.
+  const csv = ['Co', 'Transaction Detail by Account', '', ',Date,Transaction Type,Num,Name,Memo/Description,Split,Amount,Balance',
+    'Equipment Loan', ',Beginning Balance,,,,,,,1000.00', ',01/05/2026,Check,101,Bank,Payment,Checking,-1500.00,-500.00', 'Total for Equipment Loan,,,,,,,-500.00',
+    'Checking', ',01/05/2026,Check,101,Bank,Payment,Equipment Loan,-1500.00,-1500.00', 'Total for Checking,,,,,,,-1500.00'].join('\n');
+  const loan = E.analyze(E.parseTransactions(csv)).balanceSheet;
+  assert.ok(loan.items.some((i) => i.kind === 'Wrong-sign balance' && i.account === 'Equipment Loan' && i.severity === 'High'));
+  const flat = E.analyze(E.parseTransactions(['Date,Transaction Type,Name,Account,Amount', '01/05/2026,Expense,Staples,Office Supplies,20.00'].join('\n'))).balanceSheet;
+  assert.equal(flat.available, false);
+  // Review marks carry through.
+  const again = E.analyze(p, { reviewed: { [uf.key]: { status: 'fixed' } } }).balanceSheet;
+  assert.equal(again.items.find((i) => i.key === uf.key).review.status, 'fixed');
+  assert.equal(again.open, bs.open - 1);
+});
+
+test('closed months: edits, deletions and backdated entries are caught; uncovered months are skipped', () => {
+  const csv = S.build();
+  const snap = E.analyze(E.parseTransactions(csv)).closeBooks('2026-05');
+  assert.equal(snap.through, '2026-05');
+  assert.equal(Object.keys(snap.months).length, 17);
+  assert.ok(JSON.stringify(snap).length < 40000, 'small enough to keep with the client');
+  assert.equal(E.analyze(E.parseTransactions(csv), { closed: snap }).closed.changedMonths, 0);
+  let lines = csv.split('\n');
+  lines = lines.map((l) => (l.includes('03/20/2026') && l.includes('Studio supplies') ? l.replace(',100.19,', ',150.19,') : l));
+  lines = lines.filter((l) => !(l.includes('04/09/2026') && l.includes('Client lunch')));
+  const c = E.analyze(E.parseTransactions(lines.join('\n')), { closed: snap }).closed;
+  assert.equal(c.changedMonths, 2);
+  const mar = c.months.find((m) => m.month === '2026-03');
+  assert.equal(mar.added.length, 1);
+  assert.equal(mar.added[0].amount, 150.19);
+  assert.deepEqual(mar.accounts, [{ account: 'Office Supplies', was: 100.19, now: 150.19, diff: 50 }]);
+  const apr = c.months.find((m) => m.month === '2026-04');
+  assert.equal(apr.removed, 1);
+  assert.equal(apr.added.length, 0);
+  // June is after the close and never compared.
+  assert.ok(!c.months.some((m) => m.month === '2026-06'));
+  const short = csv.split('\n').filter((l) => !/\/2025,/.test(l)).join('\n');
+  const s = E.analyze(E.parseTransactions(short), { closed: snap }).closed;
+  assert.equal(s.changedMonths, 0, 'a shorter export is not deleted history');
+  assert.equal(s.skippedMonths, 12);
+});
+
+test('job costing gaps: untagged job costs, costs never billed, with a suggested job', () => {
+  const r = E.analyze(E.parseTransactions(S.build()));
+  const j = r.jobCosts;
+  assert.equal(j.mode, 'tracked');
+  assert.equal(j.untaggedTotal, 2100);
+  assert.equal(j.items.length, 2);
+  const metro = j.items.find((i) => /Metro Sign/.test(i.vendor));
+  assert.equal(metro.suggestion, 'Harborview Hotel', 'this vendor only works on one job');
+  assert.equal(j.items.find((i) => /PrintWorks/.test(i.vendor)).suggestion, null, 'two jobs, no guess');
+  assert.ok(j.jobs.some((x) => x.kind === 'Costs, no billing' && x.name === 'Pinecrest Winery' && x.cost === 1800));
+  // A business that never tags costs gets a note instead of a list.
+  const csv = ['Date,Transaction Type,Name,Customer,Account,Amount', '01/05/2026,Invoice,Acme,Acme,Sales,5000.00', '01/06/2026,Bill,Supplier,,Cost of Goods Sold,2000.00'].join('\n');
+  assert.equal(E.analyze(E.parseTransactions(csv)).jobCosts.mode, 'untracked');
 });

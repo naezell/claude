@@ -86,7 +86,7 @@
     },
   };
   const Firm = window.LedgerFirm || {};
-  const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.cushion && !p.bench && !(p.loan && p.loan.amount) && !(p.tax && (p.tax.entity !== 'sole' || p.tax.rate || p.tax.salary || p.tax.paid)));
+  const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.closed && !p.cushion && !p.bench && !(p.loan && p.loan.amount) && !(p.tax && (p.tax.entity !== 'sole' || p.tax.rate || p.tax.salary || p.tax.paid)));
 
   // The Excel reader (SheetJS) is large, so it loads only when an Excel file is dropped in.
   const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';

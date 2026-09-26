@@ -382,6 +382,13 @@
 
   .drop-overlay { position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 14px; background: color-mix(in srgb, var(--surface) 88%, transparent); z-index: 30; display: grid; place-items: center; font: 600 20px var(--cond); color: var(--accent); pointer-events: none; }
 
+  /* Closed months and balance sheet */
+  .closed-month { border-bottom: 1px solid var(--hair); }
+  .closed-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 12px 18px 8px; }
+  .closed-head .sub { color: var(--muted); font-size: 12.5px; }
+  .closed-actions { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+  td.sub-cell { color: var(--ink-2); font-size: 12.5px; min-width: 200px; }
+
   /* Drawers with several sections scroll as one */
   .drawer-scroll { flex: 1; overflow: auto; min-height: 0; }
   .drawer-scroll .clients-list { flex: none; overflow: visible; }

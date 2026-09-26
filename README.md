@@ -6,12 +6,15 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 - **Uncategorized transactions**: anything in Uncategorized Income/Expense/Asset, Ask My Accountant, suspense, or with no account at all. Shows exact CSV row numbers.
 - **Potential duplicates**: same payee, same amount and same account within 3 days, or a reference number entered twice. Groups are ranked by dollars at risk.
 - **Mismatched entries**: transaction types that conflict with their account (an expense coded to income, a sales receipt coded to expense, a transfer touching the P&L), vendors coded to an unusual category, expenses with no payee, and journal entries whose debits and credits don't balance.
+- **Balance sheet check**: problems a P&L review never shows, from the account balances in a "by Account" export: money waiting in Undeposited Funds (and for how long), a leftover Opening Balance Equity, accounts with the wrong sign (overdrawn bank, overpaid card, negative A/R, A/P, loan or sales tax), customers with credits in receivables, vendors with debits in payables, bills open more than 90 days (often paid as a separate expense, so the cost counts twice) and invoices open more than 120 days. Each comes with what to do and can be marked reviewed. **Show balances** lists every balance sheet account.
+- **Closed months**: after reporting a month, close the books through it. The app keeps a small fingerprint of each closed month with the client's settings. Every later export is compared against it: edited, recoded, deleted and backdated entries are listed by month, with the accounts that moved. Fix them in QuickBooks or accept them as the new closed numbers. Months a shorter export does not cover are skipped, not reported as deleted.
 - **Unusual activity**: a month-end variance review. Accounts that moved sharply in the latest full month against the median of the six months before, single payments far above what a payee is usually paid (and above anything they have billed before), and large first payments to someone new. These can be marked reviewed like any flag but don't count against the health score, and the payments feed the client questions.
 - A books health score, an issues-by-month chart, and an **account mapping** panel for correcting how any account is classified. Every figure recalculates when you change it.
 
 **Growth & Profitability Insights**
 - Revenue, direct cost, gross margin and **net margin after overhead** per **customer** or **project** (sub-customer `Customer:Project`, a Project column, or Class).
 - **Customer concentration & risk**: each customer's share of the last 12 months' revenue, top-customer and top-3 share, and an HHI concentration rating. A per-customer risk table combines share, 3-month trend, gross margin, open receivables and days to pay, and flags concentration, slow payers, invoices over 90 days, shrinking or lost customers and low margins. It also shows what monthly profit would be if each customer left, since their job costs go away but overhead stays.
+- **Job costing gaps**: when the business tags job costs to customers or projects, lists cost of goods sold with no job attached (and suggests the job when that vendor's other costs all go to one), jobs with costs but nothing billed, and jobs billed with no costs when most jobs have them. When job costs are not tagged at all, it says so, since customer profit is then revenue only.
 - **Recurring SaaS & subscription detection**: finds steady weekly, monthly, quarterly and annual software charges, annualizes them, and flags overlapping tools (for example Asana + Monday.com), multiple charges per month (extra seats), price increases and consumer services on the business card. Estimates the annual savings.
 
 **Cash Forecast**
@@ -74,7 +77,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Client report** comes in three formats:
 - **Owner summary**: one or two printed pages with the key numbers, a revenue and cost chart, the 13-week cash chart, what changed, what we recommend and what we need from the client.
-- **Full review**: the summary plus detail tables (tie-out, customer profitability and concentration, break-even, vendors, price increases and 1099 review, subscriptions, loan readiness, tax set-aside, benchmarks).
+- **Full review**: the summary plus detail tables (tie-out, balance sheet check, changes to closed months, job costing gaps, customer profitability and concentration, break-even, vendors, price increases and 1099 review, subscriptions, loan readiness, tax set-aside, benchmarks).
 - **Plain text**, as before.
 
 The formatted versions download as a single self-contained HTML file with built-in charts; open it in any browser and print to PDF to send.
