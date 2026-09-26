@@ -72,7 +72,8 @@
     if (!Drive.enabled()) {
       return html`<div class="backup-block">
         <h3>${Icon.cloud}Google Drive</h3>
-        <p>If Google Drive for desktop is installed, choose your Google Drive folder when saving the backup file below, and pick it from there to restore. Direct saving to Google Drive switches on when the app runs from its own web address; see <em>docs/google-drive-setup.md</em>.</p>
+        <p><strong>Not set up yet.</strong> Saving straight to Google Drive needs a one-time Google sign-in key for this site; until it is added, the Connect button stays hidden.</p>
+        <p>Meanwhile, use <strong>Save backup file</strong> below. If Google Drive for desktop is installed, save the file into your Google Drive folder and it syncs like any other file; restore by picking it from there.</p>
       </div>`;
     }
     const restore = async () => {
