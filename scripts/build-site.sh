@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 rm -rf dist
 mkdir -p dist
 cp -r src assets dist/
+cp login.html dist/
 {
   printf '<!doctype html>\n<html lang="en">\n<meta charset="utf-8">\n'
   printf '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n'

@@ -96,6 +96,8 @@ All processing happens in the browser. The file is never uploaded anywhere.
 
 The live site is on Netlify (project `7d-ledger-lens`). `netlify.toml` tells Netlify to run `scripts/build-site.sh`, which copies the files into `dist/` and adds the page wrapper (doctype, viewport, favicon) a normal web host needs. Nothing is compiled. The same `index.html` also runs as-is as a claude.ai page.
 
+The Netlify site asks for sign-in: only Google accounts on an allowed list get in, checked on Netlify's servers before any of the app is sent (see [docs/sign-in-setup.md](docs/sign-in-setup.md)).
+
 Locally, open `index.html` in a browser, or serve the folder:
 
 ```sh
@@ -131,6 +133,9 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `src/app.js` | Top-level app: file loading, state, tabs; mounts the page |
 | `test/engine.test.js` | Engine tests |
 | `test/ui.test.js` | Interface tests in headless Chromium |
+| `test/auth.test.js` | Sign-in checks and the Netlify edge functions |
+| `netlify/edge-functions/` | Sign-in gate, sign-in and sign-out (Netlify only) |
+| `login.html` | Sign-in page |
 
 There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `shared.js` first, the tabs and drawers, then `app.js`.
 

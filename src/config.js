@@ -6,4 +6,7 @@
 window.LedgerConfig = Object.assign({
   googleClientId: '795017600161-h48rob5ov82tnedqr42kh8h63kduqa9e.apps.googleusercontent.com',
   googleOrigins: ['https://7d-ledger-lens.netlify.app'],
+  // The Netlify site asks visitors to sign in with Google (netlify/edge-functions); this only
+  // adds the Sign out link there. See docs/sign-in-setup.md.
+  signIn: true,
 }, window.LedgerConfig);

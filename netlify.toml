@@ -16,3 +16,9 @@
   for = "/src/*"
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
+
+# The sign-in page is never cached; the app itself is marked private by the edge function.
+[[headers]]
+  for = "/login*"
+  [headers.values]
+    Cache-Control = "no-store"

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="assets/7d-mark.png">
+<title>Sign in · 7D Business Solutions</title>
+<style>
+  :root { --page: #f3f5f2; --surface: #fcfcfb; --ink: #15201b; --ink-2: #4b5751; --hair: #dde2dd; --accent: #2b4c1c; --bad: #b02a2a; --bad-wash: #fbeaea; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #0e1311; --surface: #161c19; --ink: #eef2ef; --ink-2: #b9c3bd; --hair: #29322d; --accent: #8cc063; --bad: #f07a7a; --bad-wash: #3a1d1d; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px; }
+  main { width: min(400px, 100%); background: var(--surface); border: 1px solid var(--hair); border-radius: 14px; padding: 32px 28px; text-align: center; }
+  .logo { width: 120px; height: auto; background: #fff; border-radius: 12px; padding: 8px; }
+  h1 { font-size: 20px; margin: 18px 0 6px; }
+  p { color: var(--ink-2); margin: 0 0 20px; }
+  #button { display: flex; justify-content: center; min-height: 44px; }
+  .msg { margin-top: 18px; font-size: 14px; }
+  .msg.error { color: var(--bad); background: var(--bad-wash); border-radius: 8px; padding: 10px 12px; }
+  small { display: block; margin-top: 22px; color: var(--ink-2); font-size: 12px; }
+</style>
+<main>
+  <img class="logo" src="assets/7d-logo.png" alt="7D Business Solutions">
+  <h1>Ledger Lens</h1>
+  <p>Sign in with the Google account that has been given access.</p>
+  <div id="button"></div>
+  <div id="msg" class="msg" role="status"></div>
+  <small>Client files are read in your browser and never uploaded.</small>
+</main>
+<script src="src/config.js"></script>
+<script>
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var next = params.get('next') || '/';
+    if (!/^\/(?![\/\\])/.test(next)) next = '/';
+    var msg = document.getElementById('msg');
+    var show = function (text, error) { msg.textContent = text; msg.className = 'msg' + (error ? ' error' : ''); };
+    if (params.get('signedout')) show('You are signed out.');
+    var clientId = (window.LedgerConfig || {}).googleClientId;
+    function start() {
+      if (params.get('signedout')) google.accounts.id.disableAutoSelect();
+      google.accounts.id.initialize({
+        client_id: clientId,
+        auto_select: !params.get('signedout'),
+        callback: function (resp) {
+          show('Checking…');
+          fetch('/auth/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential: resp.credential }), credentials: 'same-origin' })
+            .then(function (r) { return r.json().then(function (body) { return { ok: r.ok, body: body }; }); })
+            .then(function (r) {
+              if (r.ok) { show('Signed in as ' + r.body.email + '.'); location.replace(next); }
+              else show(r.body.error || 'Sign-in failed.', true);
+            })
+            .catch(function () { show('Could not reach the sign-in service. Check the connection and try again.', true); });
+        },
+      });
+      google.accounts.id.renderButton(document.getElementById('button'), { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' });
+    }
+    var s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true;
+    s.onload = start;
+    s.onerror = function () { show('Google sign-in could not load. Check the connection or any ad blocker, then reload.', true); };
+    document.head.appendChild(s);
+  })();
+</script>
+</html>
