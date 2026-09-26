@@ -136,6 +136,9 @@
   .btn:hover { background: var(--surface-2); }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .btn.primary:hover { filter: brightness(1.08); }
+  .btn:disabled, .btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .btn:disabled:hover { background: var(--surface); filter: none; }
+  .btn.primary:disabled:hover { background: var(--accent); }
   .btn svg { width: 16px; height: 16px; flex: none; }
   .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 

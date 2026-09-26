@@ -191,6 +191,7 @@
     const attention = list.filter((x) => x.st.level === 'high').length;
     const closedCount = list.filter((x) => x.st.level === 'good').length;
     const doExport = async () => {
+      if (!list.length) { setStatus('Nothing to back up yet. A client is saved once you upload their export; the sample data is not saved.'); return; }
       const msg = await saveTextFile(`ledger-lens-backup-${new Date().toISOString().slice(0, 10)}.json`, Backup.build());
       if (/^(Saved|Downloaded)/.test(msg)) Backup.mark('file');
       setStatus(msg);
@@ -246,7 +247,7 @@
               <h3>${Icon.download}Download a backup file</h3>
               <p>A one-off copy of everything in a file you can keep anywhere (a USB drive, Dropbox, or email it to yourself) and load on another computer. Works in every browser.${last ? ` Last backup: ${fmtWhen(last.at)}${last.where === 'Google Drive' ? ' to Google Drive' : last.where === 'computer' ? ' to the file on this computer' : ''}.` : ' No backup yet.'}</p>
               <div class="backup-actions">
-                <button class="btn" disabled=${!list.length} onClick=${doExport}>${Icon.download}Save backup file</button>
+                <button class="btn" onClick=${doExport}>${Icon.download}Save backup file</button>
                 <label class="btn" for="clients-import">${Icon.upload}Restore from file</label>
                 <input id="clients-import" class="file-input" type="file" accept=".json,application/json" onChange=${(e) => { doImport(e.target.files[0]); e.target.value = ''; }} />
               </div>

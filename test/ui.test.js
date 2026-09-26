@@ -438,3 +438,22 @@ test('without a file picker (Safari, Firefox) the panel explains and offers the 
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('Save backup file: explains when there is nothing yet, downloads once a client is saved', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.click('button:has-text("Clients")');
+  await page.click('button:has-text("Save backup file")');
+  await page.locator('.backup-status', { hasText: 'Nothing to back up yet' }).waitFor();
+  await page.click('.drawer-head button');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.click('button:has-text("Clients")');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Save backup file")')]);
+  assert.match(download.suggestedFilename(), /^ledger-lens-backup-\d{4}-\d{2}-\d{2}\.json$/);
+  const data = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+  assert.equal(data.format, 'ledger-lens-clients');
+  assert.ok(Object.values(data.clients).some((c) => c.name === 'Harbor & Pine Design Co.'));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
