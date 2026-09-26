@@ -162,7 +162,7 @@ node -e "const fs=require('fs'),u=(f)=>'data:image/png;base64,'+fs.readFileSync(
 
 ### Saved clients
 
-Each client's settings and reviews are one record in the browser's IndexedDB database (`src/store.js`), which has far more room than localStorage. Clients saved by earlier versions in localStorage are moved over on first load. If a save fails, a red banner says so and points to a backup. Records carry a schema version: when the shape of a saved client changes, raise `SCHEMA` and add a conversion step to `upgrade` there.
+Each client's settings and reviews are one record in the browser's IndexedDB database (`src/store.js`), which has far more room than localStorage. A copy of each client's latest files is kept there too (`FileStore`), so **Open** in the Clients panel reloads them in one click; the bookkeeper can turn that off, and forgetting a client deletes its files. Files are not part of backups. Clients saved by earlier versions in localStorage are moved over on first load. If a save fails, a red banner says so and points to a backup. Records carry a schema version: when the shape of a saved client changes, raise `SCHEMA` and add a conversion step to `upgrade` there.
 
 ### Libraries
 

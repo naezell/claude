@@ -18,7 +18,8 @@
   };
 
   const DB_NAME = 'ledger-lens';
-  const DB_VERSION = 1;
+  // 1: clients and meta. 2: adds files (each client's exports, for one-click Open).
+  const DB_VERSION = 2;
   // Version of the saved client records. Raise it, and add a step to `upgrade`, whenever the
   // shape of a saved client changes in a way older data needs converting for.
   const SCHEMA = 1;
@@ -51,12 +52,17 @@
         const db = r.result;
         if (!db.objectStoreNames.contains('clients')) db.createObjectStore('clients');
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
+        if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
       };
       r.onsuccess = () => {
         clearTimeout(timer);
         const db = r.result;
-        // Another tab loading a newer version of the page closes this connection cleanly.
-        db.onversionchange = () => db.close();
+        // Another tab loading a newer version of the page needs this connection closed. This tab
+        // then can no longer save, so it says so.
+        db.onversionchange = () => {
+          db.close();
+          ClientStore.setStatus({ error: 'Ledger Lens was updated in another tab. Reload this page to keep saving' });
+        };
         if (settled) db.close(); else finish(resolve, db);
       };
       r.onerror = () => { clearTimeout(timer); finish(reject, r.error || new Error('IndexedDB did not open')); };
@@ -106,6 +112,7 @@
       if (!id || !(id in cache)) return;
       delete cache[id];
       this.write({ [id]: null });
+      FileStore.remove(id);
       this.changed();
     },
     // Import keeps whichever copy of each client was updated more recently.
@@ -170,6 +177,66 @@
     nearlyFull() { const { usage, quota } = this.status; return !!(quota && usage / quota > 0.8); },
   };
 
+  // Each client's exports as uploaded (the text of each file), so a client can be reopened
+  // without finding the files again. Kept only in IndexedDB; a small index of what is saved is
+  // kept in memory so the Clients panel can show it right away.
+  let fileIndex = {};
+  const FileStore = {
+    listeners: new Set(),
+    available() { return ClientStore.status.where === 'indexeddb' && !!db && !ClientStore.status.error; },
+    // The bookkeeper can turn keeping files off in the Clients panel.
+    enabled() { return safeStore.get('ll.keepFiles') !== 'off'; },
+    setEnabled(on) { safeStore.set('ll.keepFiles', on ? 'on' : 'off'); if (!on) this.clear(); else this.changed(true); },
+    // { names, savedAt, bytes } for a client, or null.
+    info(id) { return (id && fileIndex[id]) || null; },
+    changed(remote) {
+      if (!remote && channel) { try { channel.postMessage({ fileIndex }); } catch (e) { /* ignore */ } }
+      this.listeners.forEach((fn) => { try { fn(); } catch (e) { /* ignore */ } });
+    },
+    // files: [{ name, text }]. Resolves true once saved.
+    put(id, files) {
+      if (!id || !this.available() || !this.enabled() || !files.length) return Promise.resolve(false);
+      const info = { names: files.map((f) => f.name), savedAt: new Date().toISOString(), bytes: files.reduce((n, f) => n + f.text.length, 0) };
+      // Reopening a client saves the same files again; skip that.
+      const had = fileIndex[id];
+      if (had && had.bytes === info.bytes && had.names.join('\n') === info.names.join('\n')) return Promise.resolve(true);
+      const next = { ...fileIndex, [id]: info };
+      try {
+        const tx = db.transaction(['files', 'meta'], 'readwrite');
+        tx.objectStore('files').put({ files }, id);
+        tx.objectStore('meta').put(next, 'fileIndex');
+        return done(tx).then(() => { fileIndex = next; this.changed(); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
+      } catch (e) { ClientStore.setStatus({ error: describe(e) }); return Promise.resolve(false); }
+    },
+    // Resolves with [{ name, text }], or null when nothing is saved.
+    get(id) {
+      if (!id || !db || !fileIndex[id]) return Promise.resolve(null);
+      try {
+        return req(db.transaction('files', 'readonly').objectStore('files').get(id)).then((r) => (r && r.files) || null, () => null);
+      } catch (e) { return Promise.resolve(null); }
+    },
+    remove(id) {
+      if (!id || !db || !fileIndex[id]) return Promise.resolve(false);
+      const next = { ...fileIndex };
+      delete next[id];
+      try {
+        const tx = db.transaction(['files', 'meta'], 'readwrite');
+        tx.objectStore('files').delete(id);
+        tx.objectStore('meta').put(next, 'fileIndex');
+        return done(tx).then(() => { fileIndex = next; this.changed(); ClientStore.estimate(); return true; }, () => false);
+      } catch (e) { return Promise.resolve(false); }
+    },
+    clear() {
+      if (!db) return Promise.resolve(false);
+      try {
+        const tx = db.transaction(['files', 'meta'], 'readwrite');
+        tx.objectStore('files').clear();
+        tx.objectStore('meta').put({}, 'fileIndex');
+        return done(tx).then(() => { fileIndex = {}; this.changed(); ClientStore.estimate(); return true; }, () => false);
+      } catch (e) { return Promise.resolve(false); }
+    },
+  };
+
   function legacyClients() {
     try { return JSON.parse(safeStore.get(LEGACY_KEY) || 'null') || null; } catch (e) { return null; }
   }
@@ -177,11 +244,13 @@
   async function loadFromDb() {
     db = await openDb();
     const tx = db.transaction(['clients', 'meta'], 'readonly');
-    const [keys, values, schema] = await Promise.all([
+    const [keys, values, schema, index] = await Promise.all([
       req(tx.objectStore('clients').getAllKeys()),
       req(tx.objectStore('clients').getAll()),
       req(tx.objectStore('meta').get('schema')),
+      req(tx.objectStore('meta').get('fileIndex')),
     ]);
+    fileIndex = index || {};
     const from = typeof schema === 'number' ? schema : SCHEMA;
     keys.forEach((k, i) => { cache[k] = upgrade(values[i], from); });
     ClientStore.status.where = 'indexeddb';
@@ -205,6 +274,7 @@
     if (typeof BroadcastChannel !== 'undefined') {
       channel = new BroadcastChannel('ledger-lens-clients');
       channel.onmessage = (ev) => {
+        if (ev.data && ev.data.fileIndex) { fileIndex = ev.data.fileIndex; FileStore.changed(true); return; }
         const ids = (ev.data && ev.data.ids) || [];
         if (!ids.length || !db) return;
         const rtx = db.transaction('clients', 'readonly');
@@ -230,5 +300,5 @@
     if (ClientStore.count()) ClientStore.askToKeep(); else ClientStore.estimate();
   });
 
-  window.LedgerStore = { ClientStore, safeStore };
+  window.LedgerStore = { ClientStore, FileStore, safeStore };
 })();

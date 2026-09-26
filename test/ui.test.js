@@ -598,3 +598,81 @@ test('if the page cannot start, a plain message offers the report', async (t) =>
   assert.match(pre, /did not load: vendor\/react-dom\.production\.min\.js/);
   await page.close();
 });
+
+test('Open reloads a client from the files kept in this browser, even after a reload', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  const D = path.join(ROOT, 'sample-data', 'test-clients');
+  await page.setInputFiles('#csv-upload', ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments'].map((f) => path.join(D, `riverbend-${f}.csv`)));
+  await page.locator('.banner', { hasText: '4 files uploaded' }).waitFor();
+  await page.waitForFunction(() => window.LedgerStore.FileStore.info('riverbend plumbing & heating llc') || Object.keys(window.LedgerStore.ClientStore.all()).some((id) => window.LedgerStore.FileStore.info(id)));
+  // Switch away to the sample, then come back with one click.
+  await page.click('button:has-text("Load sample")');
+  await page.reload();
+  await page.waitForSelector('#tab-audit');
+  await page.click('button:has-text("Clients")');
+  const row = page.locator('.dash-row', { hasText: 'Riverbend' });
+  assert.equal(await row.locator('button', { hasText: 'Open' }).count(), 1);
+  await row.locator('button', { hasText: 'Open' }).click();
+  await page.locator('.banner', { hasText: 'Opened Riverbend' }).waitFor();
+  const src = await page.locator('.source').innerText();
+  for (const s of ['riverbend-transaction-detail.csv', 'Chart of accounts', 'Ties to QuickBooks P&L', 'Expense list (receipts)']) assert.ok(src.includes(s), s);
+  // The client shows as open now, with no Open button for itself.
+  await page.click('button:has-text("Clients")');
+  assert.equal(await page.locator('.dash-row', { hasText: 'Riverbend' }).locator('button', { hasText: 'Open' }).count(), 0);
+  // Turning the option off deletes the copies.
+  await page.locator('.keep-files input').uncheck();
+  await page.waitForFunction(() => !Object.keys(window.LedgerStore.ClientStore.all()).some((id) => window.LedgerStore.FileStore.info(id)));
+  assert.equal(await page.locator('.dash-row button:has-text("Open")').count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('forgetting a client deletes its saved files too', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.waitForFunction(() => Object.keys(window.LedgerStore.ClientStore.all()).some((id) => window.LedgerStore.FileStore.info(id)));
+  await page.click('button:has-text("Load sample")');
+  await page.click('button:has-text("Clients")');
+  const row = page.locator('.dash-row', { hasText: 'Harbor' });
+  await row.locator('button', { hasText: 'Forget' }).click();
+  await row.locator('.confirm button', { hasText: 'Forget' }).click();
+  await page.waitForFunction(() => !Object.keys(window.LedgerStore.ClientStore.all()).length);
+  const left = await page.evaluate(() => new Promise((resolve) => {
+    const r = indexedDB.open('ledger-lens');
+    r.onsuccess = () => { const q = r.result.transaction('files').objectStore('files').count(); q.onsuccess = () => resolve(q.result); };
+  }));
+  assert.equal(left, 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a browser database from the previous version is upgraded with clients intact', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  // Replace the database with a version-1 one holding a client, as the live site had it.
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    const del = indexedDB.deleteDatabase('ledger-lens');
+    del.onsuccess = () => {
+      const r = indexedDB.open('ledger-lens', 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore('clients'); r.result.createObjectStore('meta'); };
+      r.onsuccess = () => {
+        const tx = r.result.transaction(['clients', 'meta'], 'readwrite');
+        tx.objectStore('clients').put({ name: 'Earlier Co', updatedAt: '2026-09-01T00:00:00.000Z' }, 'earlier co');
+        tx.objectStore('meta').put(1, 'schema');
+        tx.oncomplete = () => { r.result.close(); resolve(); };
+      };
+    };
+    del.onerror = () => reject(del.error);
+  }));
+  await page.reload();
+  await page.waitForSelector('#tab-audit');
+  assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'indexeddb');
+  await page.click('button:has-text("Clients")');
+  await page.waitForSelector('.dash-row:has-text("Earlier Co")');
+  assert.equal(await page.locator('.keep-files input').isChecked(), true);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

@@ -8,6 +8,7 @@
   const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary } = UI;
 
   const Work = window.LedgerWork;
+  const { FileStore } = window.LedgerStore;
 
   // The analysis for the loaded transactions. Small exports are analyzed right away; large ones
   // in the background, keeping the last result on screen (for the same data) until the new one
@@ -150,6 +151,13 @@
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
     }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
+    useEffect(() => {
+      if (!clientId || source.kind !== 'upload') return;
+      const list = [...source.files, source.chart, source.pnl, source.budget, source.attachments].filter(Boolean);
+      if (!list.every((f) => typeof f.text === 'string')) return;
+      FileStore.put(clientId, list.map((f) => ({ name: f.name, text: f.text })));
+    }, [clientId, source]);
     // Match a returned questions spreadsheet to the current questions and keep the answers.
     const applyAnswers = useCallback((file) => {
       if (!result) return '';
@@ -201,16 +209,13 @@
       if (excel) reader.readAsArrayBuffer(file); else reader.readAsText(file);
     });
 
-    // Loads one or more exports. With `append`, adds them to the files already loaded
-    // (a file with the same name replaces the earlier copy).
-    const loadFiles = useCallback(async (fileList, append) => {
-      const files = [...(fileList || [])];
-      if (!files.length) return;
-      setReading(files.length);
-      const results = await Promise.all(files.map(readFile)).finally(() => setReading(0));
+    // Uses files that have been read (see readFile). With `append`, adds them to the files already
+    // loaded (a file with the same name replaces the earlier copy). `opened` names the client
+    // when the files came from the copies saved in this browser.
+    const ingest = useCallback((results, append, opened) => {
       const bad = results.filter((r) => r.error);
       const good = results.filter((r) => r.parsed);
-      const lastOf = (key) => { const hits = results.filter((r) => r[key]); return hits.length ? { name: hits[hits.length - 1].name, parsed: hits[hits.length - 1][key] } : null; };
+      const lastOf = (key) => { const hits = results.filter((r) => r[key]); return hits.length ? { name: hits[hits.length - 1].name, parsed: hits[hits.length - 1][key], text: hits[hits.length - 1].text } : null; };
       const chartFile = lastOf('chart');
       const pnlFile = lastOf('pnl');
       const budgetFile = lastOf('budget');
@@ -220,7 +225,7 @@
       const errors = bad.map((b) => `${b.name} ${b.error}`);
       const KIND = { parsed: 'transactions', chart: 'chart of accounts', pnl: 'Profit and Loss', budget: 'budget', attachments: 'expense list with attachments', answers: "client's answers" };
       const seen = results.filter((r) => !r.error).map((r) => `${r.name} (${KIND[Object.keys(KIND).find((k) => r[k])] || 'file'})`);
-      setUploadNote(files.length ? { count: files.length, seen, skipped: bad.length } : null);
+      setUploadNote(results.length ? { count: results.length, seen, skipped: bad.length, opened } : null);
       const prev = sourceRef.current;
       if (!good.length) {
         // A chart or P&L on its own attaches to the transactions already loaded.
@@ -234,6 +239,23 @@
       }
       setError(errors.join(' '));
     }, []);
+
+    const loadFiles = useCallback(async (fileList, append) => {
+      const files = [...(fileList || [])];
+      if (!files.length) return;
+      setReading(files.length);
+      const results = await Promise.all(files.map(readFile)).finally(() => setReading(0));
+      ingest(results, append);
+    }, [ingest]);
+
+    // Reopens a client from the copies of their files saved in this browser.
+    const openClient = useCallback(async (id) => {
+      const saved = await FileStore.get(id);
+      if (!saved || !saved.length) { setError('The saved files for this client could not be found. Upload their exports again.'); return; }
+      setReading(saved.length);
+      const results = await Promise.all(saved.map((f) => Work.read({ text: f.text }).then((r) => ({ name: f.name, text: r.text, [r.kind]: r.data }), (e) => ({ name: f.name, error: e.message })))).finally(() => setReading(0));
+      ingest(results, false, (ClientStore.get(id) || {}).name || id);
+    }, [ingest]);
 
     useEffect(() => {
       let depth = 0;
@@ -309,7 +331,7 @@
         </div>
         ${(reading > 0 || analyzing) && html`<div class="working" role="status"><span class="spinner" aria-hidden="true"></span>${reading > 0 ? `Reading ${reading} file${reading === 1 ? '' : 's'}…` : `Analyzing ${parsed.ok ? parsed.ok.transactions.length.toLocaleString() : ''} rows… The page stays usable meanwhile.`}</div>`}
         ${error && html`<div class="error" role="alert">${error}</div>`}
-        ${uploadNote && html`<${Banner} level=${uploadNote.skipped ? 'medium' : 'good'} label=${`${uploadNote.count} file${uploadNote.count === 1 ? '' : 's'} uploaded`}>${uploadNote.seen.length ? `Read: ${uploadNote.seen.join(', ')}.` : ''}${uploadNote.skipped ? ` ${uploadNote.skipped} could not be read (see the message above).` : ''}${uploadNote.count === 1 && source.kind === 'upload' && !source.chart && !source.pnl ? ' To add the chart of accounts, Profit and Loss or expense list, select them together with the transactions, or use Add export.' : ''} <button class="linkish" onClick=${() => setUploadNote(null)}>Dismiss</button></${Banner}>`}
+        ${uploadNote && html`<${Banner} level=${uploadNote.skipped ? 'medium' : 'good'} label=${uploadNote.opened ? `Opened ${uploadNote.opened}` : `${uploadNote.count} file${uploadNote.count === 1 ? '' : 's'} uploaded`}>${uploadNote.seen.length ? `Read: ${uploadNote.seen.join(', ')}.` : ''}${uploadNote.skipped ? ` ${uploadNote.skipped} could not be read (see the message above).` : ''}${uploadNote.count === 1 && source.kind === 'upload' && !source.chart && !source.pnl ? ' To add the chart of accounts, Profit and Loss or expense list, select them together with the transactions, or use Add export.' : ''} <button class="linkish" onClick=${() => setUploadNote(null)}>Dismiss</button></${Banner}>`}
         ${notice && html`<${Banner} level="good" label="Client answers">${notice} <button class="linkish" onClick=${() => setNotice(null)}>Dismiss</button></${Banner}>`}
         ${welcome && html`<${Banner} level="good" label="Welcome">New here? The getting-started guide covers which QuickBooks reports to export, a monthly routine and how to send reports. <button class="linkish" onClick=${() => { dismissWelcome(); setHelpOpen(true); }}>Open the guide</button> · <button class="linkish" onClick=${dismissWelcome}>Dismiss</button></${Banner}>`}
         ${storage.error && html`<${Banner} level="high" label="Not saving">Your reviews and settings are not being saved in this browser: ${storage.error}. Download a backup file now so nothing is lost. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button></${Banner}>`}
@@ -349,7 +371,7 @@
       ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} answers=${answers} onLoadAnswers=${(file) => applyAnswers(file)} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
       ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} onReport=${() => setProblemOpen(true)} />`}
       ${problemOpen && html`<${ProblemDrawer} context=${problemContext} onClose=${() => setProblemOpen(false)} />`}
-      ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
+      ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onOpen=${(id) => { setClientsOpen(false); openClient(id); }} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
       ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} benchmarks=${benchmarks} onClose=${() => setReportOpen(false)} />`}
       ${dragging && html`<div class="drop-overlay">Drop the QuickBooks CSV to analyze it</div>`}
     `;

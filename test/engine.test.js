@@ -2,6 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const E = require('../src/engine.js');
 const S = require('../src/sample.js');
+const fs = require('fs');
+const path = require('path');
 
 test('parseAmount handles QuickBooks number formats', () => {
   assert.equal(E.parseAmount('$1,234.56'), 1234.56);
@@ -827,4 +829,14 @@ test('client answers: spreadsheet out, answers back, matched by reference', () =
   assert.equal(E.clientQuestions(after, { answers }).rows.length, q.rows.length - 2, 'answered questions are not asked again');
   // A reference from another file does not match.
   assert.deepEqual(E.matchAnswers(r, { answers: [{ ref: 'Q-ZZZZZZ', answer: 'x', receipt: false }] }).unmatched, ['Q-ZZZZZZ']);
+});
+
+test('readExport recognizes each QuickBooks report', () => {
+  const read = (f) => E.readExport(fs.readFileSync(path.join(__dirname, '..', 'sample-data', f), 'utf8')).kind;
+  assert.equal(read('harbor-pine-transaction-detail.csv'), 'parsed');
+  assert.equal(read('harbor-pine-chart-of-accounts.csv'), 'chart');
+  assert.equal(read('harbor-pine-profit-and-loss.csv'), 'pnl');
+  assert.equal(read('harbor-pine-budget-2026.csv'), 'budget');
+  assert.equal(read('harbor-pine-expenses-with-attachments.csv'), 'attachments');
+  assert.throws(() => E.readExport('Date,Amount\n'), /no dated transactions/);
 });
