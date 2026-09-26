@@ -122,7 +122,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | Path | Purpose |
 | --- | --- |
 | `index.html` | Page shell, styles, library loading |
-| `vendor/` | The site's own copies of React, Recharts, htm, the Excel reader and the IBM Plex fonts (refresh with `npm run vendor`) |
+| `vendor/` | The site's own copies of React, Recharts 3, htm, the Excel reader and the IBM Plex fonts (refresh with `npm run vendor`) |
 | `src/diagnostics.js` | Recent errors and the "Report a problem" text; loads first, and shows a plain message if the app never starts |
 | `src/store.js` | Where saved clients are kept: IndexedDB, falling back to localStorage, with save errors reported |
 | `src/version.js` | Which build this is (replaced by the site build) |
