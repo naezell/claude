@@ -7,6 +7,33 @@
   const UI = window.LedgerUI;
   const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary } = UI;
 
+  const Work = window.LedgerWork;
+
+  // The analysis for the loaded transactions. Small exports are analyzed right away; large ones
+  // in the background, keeping the last result on screen (for the same data) until the new one
+  // arrives. `analyzing` is true while background work is under way.
+  function useAnalysis(parsedOk, opts) {
+    const background = Work.background(parsedOk);
+    const now = useMemo(() => (parsedOk && opts && !background ? E.analyze(parsedOk, opts) : null), [parsedOk, opts, background]);
+    const [later, setLater] = useState({ result: null, of: null, busy: false });
+    useEffect(() => {
+      if (!background || !opts) return undefined;
+      let live = true;
+      setLater((prev) => ({ ...prev, busy: true }));
+      Work.analyze(parsedOk, opts).then((result) => {
+        if (live && result) setLater({ result, of: parsedOk, busy: false });
+      }, (e) => {
+        if (!live) return;
+        if (window.LedgerProblem) window.LedgerProblem.note('error', `analysis: ${e.message}`);
+        // Last resort: do it on the page.
+        setLater({ result: E.analyze(parsedOk, opts), of: parsedOk, busy: false });
+      });
+      return () => { live = false; };
+    }, [parsedOk, opts, background]);
+    if (!background) return { result: now, analyzing: false };
+    return { result: later.of === parsedOk ? later.result : null, analyzing: later.busy || later.of !== parsedOk };
+  }
+
   // ------------------------------------------------------------ top-level app
 
   function App() {
@@ -27,6 +54,8 @@
     const [clientsOpen, setClientsOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
     const [problemOpen, setProblemOpen] = useState(false);
+    // Number of files being read, for the progress note.
+    const [reading, setReading] = useState(0);
     const [welcome, setWelcome] = useState(() => !safeStore.get('ll.welcomed'));
     const dismissWelcome = () => { safeStore.set('ll.welcomed', '1'); setWelcome(false); };
     // Checked when the page opens and whenever the backup drawer closes.
@@ -78,7 +107,7 @@
     const typedNow = useMemo(() => ({ cash: cashInputs, loan: loanInputs, tax: taxInputs, scenario, budget: budgetPrefs }), [cashInputs, loanInputs, taxInputs, scenario, budgetPrefs]);
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
-    const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
+    const analyzeOpts = useMemo(() => (parsed.ok ? ({
       accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
@@ -86,6 +115,8 @@
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
     }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed]);
+    // Large exports are analyzed in the background so the page stays responsive (src/work.js).
+    const { result, analyzing } = useAnalysis(parsed.ok, analyzeOpts);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
@@ -160,27 +191,10 @@
       if (!excel && !/\.(csv|txt)$/i.test(file.name)) { resolve({ name: file.name, error: 'is not a CSV or Excel file. In QuickBooks, open the report and choose Export.' }); return; }
       const reader = new FileReader();
       reader.onload = async () => {
-        let text;
         try {
-          text = excel ? await excelToCsv(reader.result) : String(reader.result || '');
-        } catch (e) { resolve({ name: file.name, error: e.message }); return; }
-        try {
-          // A chart of accounts has Account and Type columns and no dates.
-          const coa = E.parseChartOfAccounts(text);
-          if (coa) { resolve({ name: file.name, chart: coa }); return; }
-          const bud = E.parseBudget(text);
-          if (bud) { resolve({ name: file.name, budget: bud }); return; }
-          // A Profit and Loss report has a Net Income line and no dates.
-          const pl = E.parseProfitAndLoss(text);
-          if (pl) { resolve({ name: file.name, pnl: pl }); return; }
-          // The client's filled-in questions spreadsheet, and an expense list with attachments.
-          const ans = E.parseAnswers(text);
-          if (ans) { resolve({ name: file.name, answers: ans }); return; }
-          const att = E.parseAttachmentList(text);
-          if (att) { resolve({ name: file.name, attachments: att }); return; }
-          const p = E.parseTransactions(text);
-          if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
-          resolve({ name: file.name, parsed: p });
+          // Recognizes the report and parses it, in the background where possible.
+          const r = await Work.read(excel ? { buffer: reader.result, excelToCsv } : { text: String(reader.result || '') });
+          resolve({ name: file.name, text: r.text, [r.kind]: r.data });
         } catch (e) { resolve({ name: file.name, error: e.message }); }
       };
       reader.onerror = () => resolve({ name: file.name, error: 'could not be read.' });
@@ -192,7 +206,8 @@
     const loadFiles = useCallback(async (fileList, append) => {
       const files = [...(fileList || [])];
       if (!files.length) return;
-      const results = await Promise.all(files.map(readFile));
+      setReading(files.length);
+      const results = await Promise.all(files.map(readFile)).finally(() => setReading(0));
       const bad = results.filter((r) => r.error);
       const good = results.filter((r) => r.parsed);
       const lastOf = (key) => { const hits = results.filter((r) => r[key]); return hits.length ? { name: hits[hits.length - 1].name, parsed: hits[hits.length - 1][key] } : null; };
@@ -292,6 +307,7 @@
             : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
+        ${(reading > 0 || analyzing) && html`<div class="working" role="status"><span class="spinner" aria-hidden="true"></span>${reading > 0 ? `Reading ${reading} file${reading === 1 ? '' : 's'}…` : `Analyzing ${parsed.ok ? parsed.ok.transactions.length.toLocaleString() : ''} rows… The page stays usable meanwhile.`}</div>`}
         ${error && html`<div class="error" role="alert">${error}</div>`}
         ${uploadNote && html`<${Banner} level=${uploadNote.skipped ? 'medium' : 'good'} label=${`${uploadNote.count} file${uploadNote.count === 1 ? '' : 's'} uploaded`}>${uploadNote.seen.length ? `Read: ${uploadNote.seen.join(', ')}.` : ''}${uploadNote.skipped ? ` ${uploadNote.skipped} could not be read (see the message above).` : ''}${uploadNote.count === 1 && source.kind === 'upload' && !source.chart && !source.pnl ? ' To add the chart of accounts, Profit and Loss or expense list, select them together with the transactions, or use Add export.' : ''} <button class="linkish" onClick=${() => setUploadNote(null)}>Dismiss</button></${Banner}>`}
         ${notice && html`<${Banner} level="good" label="Client answers">${notice} <button class="linkish" onClick=${() => setNotice(null)}>Dismiss</button></${Banner}>`}
@@ -314,8 +330,9 @@
           <button class="tab" role="tab" id="tab-advisory" aria-selected=${tab === 'advisory'} onClick=${() => setTab('advisory')}>Tax & lending</button>
         </div>
 
-        ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
-          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => setClosed(through ? result.closeBooks(through) : null)} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; delete n[key]; return n; })} />`
+        ${!result && analyzing && html`<div class="empty">Working through a large export. The results appear here in a moment.</div>`}
+        ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`} class=${analyzing ? 'stale' : ''} aria-busy=${analyzing ? 'true' : 'false'}>
+          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => { if (!through) setClosed(null); else Promise.resolve(result.closeBooks(through)).then(setClosed); }} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; delete n[key]; return n; })} />`
             : tab === 'close' ? html`<${CloseTab} result=${result} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${setTab} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} onReview=${setReview} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`

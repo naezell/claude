@@ -42,10 +42,11 @@ after(async () => { if (browser) await browser.close(); if (server) server.close
 
 // Opens a page with violations of the policy recorded in window.__csp. Requests to Google are
 // answered by `google` (or refused).
-async function open(pathname, google) {
+async function open(pathname, google, config) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  if (config) await page.addInitScript((c) => { window.LedgerConfig = c; }, config);
   await page.addInitScript(() => {
     window.__csp = [];
     document.addEventListener('securitypolicyviolation', (e) => window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`));
@@ -99,6 +100,56 @@ test('the sign-in page works under the policy', async (t) => {
   await page.waitForSelector('#button button:has-text("Sign in with Google")');
   assert.equal(await page.locator('img.logo').evaluate((img) => img.naturalWidth > 0), true);
   assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+const kpi = (page, label) => page.locator('.kpi', { has: page.locator('.kpi-label', { hasText: label }) }).locator('.kpi-value').first().innerText();
+
+test('large exports are read and analyzed in the background worker', async (t) => {
+  if (skip) return t.skip(skip);
+  // Treat anything over 100 rows as large, so the sample goes through the worker.
+  const { page, errors } = await open('/', null, { backgroundRows: 100 });
+  await page.waitForSelector('#tab-audit');
+  assert.equal(await page.evaluate(() => window.LedgerWork.available()), true);
+  // Count messages to the worker to prove the work happens there.
+  await page.evaluate(() => {
+    window.__toWorker = [];
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (m, ...rest) { window.__toWorker.push(m.op); return post.call(this, m, ...rest); };
+  });
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.waitForFunction(() => !document.querySelector('.working'));
+  assert.equal(await kpi(page, 'Uncategorized'), '11');
+  const ops = await page.evaluate(() => window.__toWorker);
+  assert.ok(ops.includes('read') && ops.includes('data') && ops.includes('analyze'), ops.join(','));
+  // A review updates the figures through the worker without resending the data.
+  const before = ops.filter((o) => o === 'data').length;
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Uncategorized transactions' }) });
+  await panel.locator('select.review-select').first().selectOption('ok');
+  await page.waitForFunction(() => [...document.querySelectorAll('.kpi')].some((k) => k.querySelector('.kpi-label').textContent === 'Uncategorized' && k.querySelector('.kpi-value').innerText === '10'));
+  assert.equal((await page.evaluate(() => window.__toWorker)).filter((o) => o === 'data').length, before);
+  // Closing the books asks the worker for the snapshot.
+  const closed = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Closed months' }) });
+  await closed.locator('button', { hasText: 'Close books' }).click();
+  await page.waitForFunction(() => window.__toWorker.includes('closeBooks'));
+  await closed.locator('text=Closed through').first().waitFor();
+  assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('if the worker cannot start, the page does the work itself', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await open('/', null, { backgroundRows: 100 });
+  await page.route('**/src/worker.js', (route) => route.fulfill({ status: 404, body: '' }));
+  await page.waitForSelector('#tab-audit');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.waitForFunction(() => !document.querySelector('.working'));
+  assert.equal(await kpi(page, 'Uncategorized'), '11');
+  assert.equal(await page.evaluate(() => window.LedgerWork.available()), false);
   assert.deepEqual(errors, []);
   await page.close();
 });

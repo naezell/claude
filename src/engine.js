@@ -2179,6 +2179,28 @@
 
   // Combines several parsed exports (for example two years exported separately).
   // Rows repeated in a later file, as happens when date ranges overlap, are dropped.
+  // Works out which QuickBooks report a file is and parses it: { kind, data } with kind one of
+  // chart, budget, pnl, answers, attachments or parsed (transactions). Throws with a message
+  // that follows the file name ("has a header row but no dated transactions.").
+  function readExport(text) {
+    // A chart of accounts has Account and Type columns and no dates.
+    const coa = parseChartOfAccounts(text);
+    if (coa) return { kind: 'chart', data: coa };
+    const bud = parseBudget(text);
+    if (bud) return { kind: 'budget', data: bud };
+    // A Profit and Loss report has a Net Income line and no dates.
+    const pl = parseProfitAndLoss(text);
+    if (pl) return { kind: 'pnl', data: pl };
+    // The client's filled-in questions spreadsheet, and an expense list with attachments.
+    const ans = parseAnswers(text);
+    if (ans) return { kind: 'answers', data: ans };
+    const att = parseAttachmentList(text);
+    if (att) return { kind: 'attachments', data: att };
+    const p = parseTransactions(text);
+    if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
+    return { kind: 'parsed', data: p };
+  }
+
   function mergeParsed(list) {
     if (list.length === 1) return list[0];
     const ordered = [...list].sort((a, b) => {
@@ -4174,7 +4196,7 @@
   }
 
   return {
-    parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
+    parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
     analyze, buildReport, buildHtmlReport, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };

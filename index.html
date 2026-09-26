@@ -151,6 +151,11 @@
   .pill.good { background: var(--good-wash); color: var(--good-ink); }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 
+  .working { display: flex; align-items: center; gap: 10px; margin-block: 12px; padding: 10px 14px; border-radius: 8px; background: var(--accent-wash); color: var(--ink); font-size: 14px; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hair); border-top-color: var(--accent); animation: spin 0.8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+  main.stale { opacity: 0.6; transition: opacity 0.2s; }
   .error { margin-block: 12px; padding: 12px 14px; border-radius: 8px; background: var(--critical-wash); color: var(--critical-ink); }
 
   /* Tabs */
@@ -467,6 +472,7 @@
 <script src="src/engine.js"></script>
 <script src="src/sample.js"></script>
 <script src="src/store.js"></script>
+<script src="src/work.js"></script>
 <script src="src/ui/shared.js"></script>
 <script src="src/ui/drive.js"></script>
 <script src="src/ui/localfile.js"></script>

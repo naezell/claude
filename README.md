@@ -125,6 +125,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `vendor/` | The site's own copies of React, Recharts 3, htm, the Excel reader and the IBM Plex fonts (refresh with `npm run vendor`) |
 | `src/diagnostics.js` | Recent errors and the "Report a problem" text; loads first, and shows a plain message if the app never starts |
 | `src/store.js` | Where saved clients are kept: IndexedDB, falling back to localStorage, with save errors reported |
+| `src/work.js`, `src/worker.js` | Reading files and analyzing large exports in a background worker, with the same work done on the page where workers are unavailable |
 | `src/version.js` | Which build this is (replaced by the site build) |
 | `src/engine.js` | CSV parsing and all analysis (pure JS, runs in Node too) |
 | `src/sample.js` | Deterministic sample export generator |
@@ -147,7 +148,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `netlify/edge-functions/` | Sign-in gate, sign-in and sign-out (Netlify only) |
 | `login.html`, `login.js` | Sign-in page |
 
-There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `diagnostics.js` first, the libraries from `vendor/`, `store.js`, `shared.js`, the tabs and drawers, then `app.js`.
+There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `diagnostics.js` first, the libraries from `vendor/`, `store.js`, `work.js`, `shared.js`, the tabs and drawers, then `app.js`.
 
 To change the logo, replace `assets/7d-logo.png` (full logo, used on reports) and `assets/7d-mark.png` (square mark, used in the header), then rebuild the embedded copies in `src/firm.js`:
 
@@ -166,6 +167,10 @@ Each client's settings and reviews are one record in the browser's IndexedDB dat
 ### Libraries
 
 The page loads nothing from other servers except Google (sign-in and Drive). To update a library, change its version in `package.json`, run `npm install` and `npm run vendor`, and commit `vendor/`. A test fails if the two drift apart.
+
+### Large files
+
+Files are recognized and parsed in a background worker (`src/worker.js`), and exports with 8,000 rows or more (`backgroundRows` in `src/config.js`) are analyzed there too, so the page stays responsive and shows progress. On a 108,000-row export the longest freeze drops from about 2 seconds to 0.3, and a review click from 0.5 to 0.1. Pages opened straight from a file (`file://`) cannot start workers and do the same work on the page.
 
 ### Security headers
 
