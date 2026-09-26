@@ -73,10 +73,11 @@
     root.innerHTML = '<div style="max-width:560px;margin:15vh auto;padding:24px;font:15px/1.5 system-ui,sans-serif">'
       + '<h1 style="font-size:20px">Ledger Lens did not load</h1>'
       + '<p>Try reloading the page. If it still does not load, send the report below so it can be fixed. Your saved clients are not affected.</p>'
-      + '<p><button type="button" onclick="location.reload()">Reload</button> '
+      + '<p><button type="button" id="ll-reload">Reload</button> '
       + (mailto ? '<a id="ll-mail">Email the report</a>' : '') + '</p>'
       + '<pre style="white-space:pre-wrap;font-size:12px;background:#eef1ed;padding:12px;border-radius:8px"></pre></div>';
     root.querySelector('pre').textContent = `${subject}\n\n${body}`;
+    document.getElementById('ll-reload').addEventListener('click', () => location.reload());
     const a = document.getElementById('ll-mail');
     if (a) a.href = mailto;
   }, 15000);

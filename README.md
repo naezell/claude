@@ -141,10 +141,11 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `test/engine.test.js` | Engine tests |
 | `test/ui.test.js` | Interface tests in headless Chromium |
 | `test/auth.test.js` | Sign-in checks and the Netlify edge functions |
+| `test/site.test.js` | The built site over HTTP with Netlify's headers: nothing blocked by the security policy |
 | `test/vendor.test.js` | `vendor/` matches `package.json`, and the page loads nothing from other servers |
 | `test/test-clients.test.js` | The two test clients: files match the generator, planted problems are found |
 | `netlify/edge-functions/` | Sign-in gate, sign-in and sign-out (Netlify only) |
-| `login.html` | Sign-in page |
+| `login.html`, `login.js` | Sign-in page |
 
 There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `diagnostics.js` first, the libraries from `vendor/`, `store.js`, `shared.js`, the tabs and drawers, then `app.js`.
 
@@ -165,6 +166,10 @@ Each client's settings and reviews are one record in the browser's IndexedDB dat
 ### Libraries
 
 The page loads nothing from other servers except Google (sign-in and Drive). To update a library, change its version in `package.json`, run `npm install` and `npm run vendor`, and commit `vendor/`. A test fails if the two drift apart.
+
+### Security headers
+
+`netlify.toml` sends a Content-Security-Policy: the browser runs only this site's own scripts, plus Google's sign-in script, and the page may only talk to this site and Google (sign-in and Drive). Nothing on the site may use inline scripts or `eval`, which is why the sign-in page's code is in `login.js`. `test/site.test.js` serves the built site with these headers and fails if anything is blocked. If you add an outside service, add its address to the policy.
 
 ### Problem reports
 
