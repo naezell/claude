@@ -18,7 +18,7 @@ The site at https://7d-ledger-lens.netlify.app only opens for people on an allow
 | `GOOGLE_CLIENT_ID` | The OAuth client ID from Google Cloud (same as in `src/config.js`). |
 | `SESSION_SECRET` | A long random value (at least 32 characters). Changing it signs everyone out. |
 
-Changes to the variables apply from the next deploy.
+Changes to the variables apply from the next deploy. Add them as ordinary variables with all scopes: on the free plan a value marked **Contains secret values** is not saved or not passed to edge functions, and sign-in then reports "not configured".
 
 ## Adding or removing someone
 
