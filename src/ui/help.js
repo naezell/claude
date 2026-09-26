@@ -52,12 +52,13 @@
               <li>If QuickBooks limits the date range, export each year separately and upload them together. Rows that appear in both are only counted once.</li>
               <li>To add a file later (say the P&L), use <strong>Add export</strong>.</li>
               <li>Settings are remembered per client by the company name at the top of the export, and come back the next time that client's file is loaded.</li>
+              <li>The <strong>Clients</strong> button shows every client loaded so far, most urgent first: open flags, balance sheet issues, changes to closed months, cash, and how far the month-end close has got.</li>
             </ul>
           `)}
           ${part('monthly', html`
             <h3>3. Monthly routine</h3>
             <ol class="routine">
-              <li><strong>Upload</strong> the latest exports. Uploading the full history each month is fine.</li>
+              <li><strong>Upload</strong> the latest exports. Uploading the full history each month is fine. The <strong>Month-end close</strong> tab lists every step below and ticks off the ones the app can check.</li>
               <li><strong>Diagnostic audit</strong>: if the P&L was added, check <em>Ties to QuickBooks</em> first. Then work through uncategorized items, possible duplicates and mismatches, and mark each one <em>Not an issue</em>, <em>Fixed in QuickBooks</em> or <em>Asked the client</em>. Cleared flags stay cleared next month.</li>
               <li><strong>Closed months</strong>: if anything changed in a month you already closed, it is listed at the top of the audit tab. Fix it in QuickBooks or accept it.</li>
               <li><strong>Balance sheet check</strong> and <strong>Unusual activity</strong>, lower on the audit tab: clear money stuck in Undeposited Funds, Opening Balance Equity, credits and old open bills, and confirm anything out of line.</li>
@@ -81,9 +82,9 @@
             <ul>
               <li>Client files are read in your browser and never uploaded anywhere.</li>
               <li>Your reviews and settings are saved in this browser on this computer. Clearing browser data, or switching browsers or computers, starts fresh.</li>
-              <li>So back up: <strong>Saved clients & backup</strong> saves to Google Drive (when set up) or to a backup file. Once a month is enough; the page reminds you.</li>
+              <li>So back up: the <strong>Clients</strong> panel saves to Google Drive (when set up) or to a backup file. Once a month is enough; the page reminds you.</li>
             </ul>
-            <p><button class="btn" onClick=${() => { onClose(); onOpenClients(); }}>${Icon.cloud}Open Saved clients & backup</button></p>
+            <p><button class="btn" onClick=${() => { onClose(); onOpenClients(); }}>${Icon.cloud}Open Clients & backup</button></p>
           `)}
         </div>
       </aside>

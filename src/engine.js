@@ -2983,6 +2983,117 @@
     return out;
   }
 
+  // ---------------------------------------------------------------- month-end close
+
+  // The standard monthly close. Steps with `auto` read their status from the analysis;
+  // the rest are ticked by hand.
+  const CLOSE_STEPS = [
+    { id: 'feeds', label: 'Bank and card feeds reviewed and categorized in QuickBooks' },
+    { id: 'reconcile', label: 'Bank accounts reconciled to the statements' },
+    { id: 'cards', label: 'Credit cards and loans reconciled to the statements' },
+    { id: 'uncategorized', label: 'Uncategorized transactions coded', auto: true },
+    { id: 'duplicates', label: 'Possible duplicates resolved', auto: true },
+    { id: 'coding', label: 'Miscoded entries corrected', auto: true },
+    { id: 'balance', label: 'Balance sheet check cleared', auto: true },
+    { id: 'unusual', label: 'Unusual activity reviewed', auto: true },
+    { id: 'jobs', label: 'Job costs assigned to jobs', auto: true },
+    { id: 'payroll', label: 'Payroll recorded and payroll liabilities checked' },
+    { id: 'salestax', label: 'Sales tax reviewed and filed' },
+    { id: 'tieout', label: 'Numbers tie to the QuickBooks Profit and Loss', auto: true },
+    { id: 'questions', label: 'Client questions sent' },
+    { id: 'report', label: 'Client report sent' },
+    { id: 'closed', label: 'Month closed in Ledger Lens', auto: true },
+  ];
+
+  function autoStatus(result, id, month) {
+    const open = (list) => (list || []).filter((x) => !isCleared(x.review)).length;
+    const count = (n, what) => (n ? { status: 'open', note: `${n} ${what}` } : { status: 'clear', note: 'Nothing open' });
+    const a = result.audit;
+    switch (id) {
+      case 'uncategorized': return count(a.open.uncategorized, 'still open');
+      case 'duplicates': return count(a.open.duplicates, 'still open');
+      case 'coding': return count(a.open.mismatches, 'still open');
+      case 'balance':
+        if (!result.balanceSheet || !result.balanceSheet.available) return { status: 'na', note: 'Needs a Transaction Detail by Account export' };
+        return count(result.balanceSheet.open, 'to fix');
+      case 'unusual':
+        if (!result.unusual) return { status: 'na', note: 'Needs four or more full months' };
+        return count(open([...result.unusual.flux, ...result.unusual.txns]), 'to look at');
+      case 'jobs':
+        if (!result.jobCosts || result.jobCosts.mode !== 'tracked') return { status: 'na', note: 'Job costs are not tracked by customer' };
+        return count(result.jobCosts.open, 'to fix');
+      case 'tieout':
+        if (!result.tieOut) return { status: 'open', note: 'Add the P&L export to check' };
+        return result.tieOut.ties ? { status: 'clear', note: `Ties for ${result.tieOut.period}` } : { status: 'open', note: 'Differences found' };
+      case 'closed': {
+        const c = result.closed;
+        if (!c || c.through < month) return { status: 'open', note: c ? `Closed through ${monthLabel(c.through)}` : 'Not closed yet' };
+        if (c.changedMonths) return { status: 'open', note: `${c.changedEntries} change(s) since closing` };
+        return { status: 'clear', note: `Closed through ${monthLabel(c.through)}` };
+      }
+      default: return null;
+    }
+  }
+
+  // The checklist for one month: the standard steps (minus ones that do not apply), the
+  // client's own extra steps, and what is done. An automatic step counts as done while the
+  // analysis shows it clear; any step can also be ticked by hand.
+  function closeChecklist(result, month, state, custom) {
+    const done = (state && state.done) || {};
+    const hasSalesTax = result.balanceSheet && result.balanceSheet.balances && result.balanceSheet.balances.some((b) => b.role === 'salestax');
+    const items = [];
+    for (const s of CLOSE_STEPS) {
+      if (s.id === 'salestax' && !hasSalesTax && !done.salestax) continue;
+      const auto = s.auto ? autoStatus(result, s.id, month) : null;
+      if (auto && auto.status === 'na') continue;
+      const doneAt = done[s.id] || null;
+      items.push({ id: s.id, label: s.label, auto, doneAt, done: !!doneAt || (auto && auto.status === 'clear') });
+    }
+    for (const c of custom || []) {
+      if (!c || !c.id || !c.label) continue;
+      const doneAt = done[c.id] || null;
+      items.push({ id: c.id, label: c.label, custom: true, auto: null, doneAt, done: !!doneAt });
+    }
+    const n = items.filter((i) => i.done).length;
+    return { month, label: monthLabel(month), items, done: n, total: items.length, complete: n === items.length, notes: (state && state.notes) || '' };
+  }
+
+  // A short summary saved with each client, for the all-clients dashboard.
+  function clientSummary(result, checklistState, custom) {
+    const open = (list) => (list || []).filter((x) => !isCleared(x.review)).length;
+    const a = result.audit;
+    const months = result.closableMonths || [];
+    const month = months[months.length - 1] || null;
+    const cl = month ? closeChecklist(result, month, checklistState && checklistState[month], custom) : null;
+    const tr = result.trend;
+    const last12 = tr ? tr.months.filter((m) => !m.partial).slice(-12) : [];
+    const counts = {
+      uncategorized: a.open.uncategorized,
+      duplicates: a.open.duplicates,
+      mismatches: a.open.mismatches,
+      balance: result.balanceSheet && result.balanceSheet.available ? result.balanceSheet.open : 0,
+      unusual: result.unusual ? open([...result.unusual.flux, ...result.unusual.txns]) : 0,
+      jobs: result.jobCosts && result.jobCosts.mode === 'tracked' ? result.jobCosts.open : 0,
+    };
+    return {
+      periodStart: result.period.start,
+      periodEnd: result.period.end,
+      health: a.healthScore,
+      open: counts,
+      openTotal: Object.values(counts).reduce((s, n) => s + n, 0),
+      closedThrough: result.closed ? result.closed.through : null,
+      closedChanges: result.closed ? result.closed.changedEntries : 0,
+      ties: result.tieOut ? result.tieOut.ties : null,
+      cash: result.cash ? result.cash.startingCash : null,
+      lowestCash: result.cash ? result.cash.lowest.ending : null,
+      lowestWeek: result.cash ? result.cash.lowest.start : null,
+      revenue12: last12.length ? round2(last12.reduce((s, m) => s + m.revenue, 0)) : result.profit.totals.revenue,
+      netIncome12: last12.length ? round2(last12.reduce((s, m) => s + m.netIncome, 0)) : result.profit.totals.netIncome,
+      months12: last12.length,
+      close: cl ? { month: cl.month, done: cl.done, total: cl.total } : null,
+    };
+  }
+
   // ---------------------------------------------------------------- review state & client questions
 
   // Keys that survive re-exporting: no line numbers or ids, only what the entry is.
@@ -3819,6 +3930,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, buildHtmlReport, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, buildHtmlReport, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

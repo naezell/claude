@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab } = UI;
 
   // ------------------------------------------------------------ top-level app
 
@@ -35,6 +35,10 @@
     const [budgetPrefs, setBudgetPrefs] = useState({ mode: 'auto', revenueGrowth: '10', costGrowth: '5' });
     // Snapshot of the months the bookkeeper closed, to catch later edits to them.
     const [closed, setClosed] = useState(null);
+    // Month-end checklist ticks by month, plus steps this client needs beyond the standard ones.
+    const [checklist, setChecklist] = useState({});
+    const [customSteps, setCustomSteps] = useState([]);
+    const loadedAtRef = useRef(null);
     const [loanInputs, setLoanInputs] = useState({ amount: '', rate: '10.5', years: '10', addBacks: '' });
     const [taxInputs, setTaxInputs] = useState({ entity: 'sole', rate: '', salary: '', paid: '' });
     // Forecast inputs. Empty strings mean "use the value estimated from the export".
@@ -76,6 +80,9 @@
       setAccountClass(saved ? saved.accountClass || {} : {});
       setReviewed(saved ? saved.reviewed || {} : {});
       setClosed(saved && saved.closed ? saved.closed : null);
+      loadedAtRef.current = clientId ? new Date().toISOString() : null;
+      setChecklist(saved && saved.checklist ? saved.checklist : {});
+      setCustomSteps(saved && saved.customSteps ? saved.customSteps : []);
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
       setScenario({ levers: [] });
@@ -84,14 +91,18 @@
       setTaxInputs(saved && saved.tax ? saved.tax : { entity: 'sole', rate: '', salary: '', paid: '' });
       setRestored(saved && !emptyProfile(saved) ? { name: saved.name, updatedAt: saved.updatedAt, corrections: Object.keys(saved.accountClass || {}).length, reviews: Object.keys(saved.reviewed || {}).length } : null);
     }, [source, clientId]);
-    // Save as the bookkeeper works.
+    // A short summary of where this client stands, for the all-clients dashboard. Compared as
+    // text so it only saves when something in it actually changed.
+    const summaryJson = useMemo(() => (clientId && result ? JSON.stringify(E.clientSummary(result, checklist, customSteps)) : ''), [clientId, result, checklist, customSteps]);
+    // Save as the bookkeeper works. Every client whose export is loaded is kept, so they
+    // show on the dashboard even before anything is reviewed.
     useEffect(() => {
-      if (!clientId) return;
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs };
+      if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      if (emptyProfile(profile) && !saved) return;
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+        summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, accountClass, reviewed, closed, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     const setReview = useCallback((keys, status) => {
       setReviewed((prev) => {
         const next = { ...prev };
@@ -177,6 +188,12 @@
       };
     }, [loadFiles, dragging]);
 
+    const closeProgress = useMemo(() => {
+      if (!result || !result.closableMonths || !result.closableMonths.length) return '';
+      const m = result.closableMonths[result.closableMonths.length - 1];
+      const c = E.closeChecklist(result, m, checklist[m], customSteps);
+      return `${c.done}/${c.total}`;
+    }, [result, checklist, customSteps]);
     const auditCount = result ? result.audit.open.uncategorized + result.audit.open.duplicates + result.audit.open.mismatches : 0;
 
     return html`
@@ -196,7 +213,7 @@
             ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
               <input id="csv-add" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
             ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
-            <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.cloud}Saved clients</button>
+            <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.cloud}Clients</button>
             <button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
             <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>
             <button class="btn" onClick=${() => setHelpOpen(true)}>${Icon.help}Help</button>
@@ -225,6 +242,7 @@
 
         <div class="tabs" role="tablist">
           <button class="tab" role="tab" id="tab-audit" aria-selected=${tab === 'audit'} onClick=${() => setTab('audit')}>Diagnostic audit<span class="count">${auditCount}</span></button>
+          <button class="tab" role="tab" id="tab-close" aria-selected=${tab === 'close'} onClick=${() => setTab('close')}>Month-end close${closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>
           <button class="tab" role="tab" id="tab-growth" aria-selected=${tab === 'growth'} onClick=${() => setTab('growth')}>Growth & profitability insights</button>
           <button class="tab" role="tab" id="tab-cash" aria-selected=${tab === 'cash'} onClick=${() => setTab('cash')}>Cash forecast</button>
           <button class="tab" role="tab" id="tab-breakeven" aria-selected=${tab === 'breakeven'} onClick=${() => setTab('breakeven')}>Break-even</button>
@@ -237,6 +255,7 @@
 
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
           ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => setClosed(through ? result.closeBooks(through) : null)} canSave=${!!clientId} />`
+            : tab === 'close' ? html`<${CloseTab} result=${result} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${setTab} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} onReview=${setReview} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
             : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`
@@ -246,7 +265,7 @@
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
             : html`<${AdvisoryTab} result=${result} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
         </main>`}
-        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Saved clients. Flags are leads for review, not confirmed errors.${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
+        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
       </div>
 
       ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}

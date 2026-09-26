@@ -62,10 +62,14 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Payee names**: bank-feed spellings of the same business ("AMZN Mktp US*2K41", "Amazon.com") are merged for vendor spend, subscriptions, the 1099 review and the duplicate and coding checks. When the Name field is blank, a cleaned bank memo names the payee.
 
+**Month-end close**: a checklist tab for each client and month: feeds reviewed, bank and card reconciliations, uncategorized items, duplicates, miscoded entries, the balance sheet check, unusual activity, job costs, payroll, sales tax (when the client has a sales tax account), the tie-out to the QuickBooks P&L, client questions, the client report, and closing the month. Steps the app can check tick themselves when the export shows them clear, with a link to the place to fix them; the rest are ticked by hand with the date. Add steps a client needs every month, and keep notes per month. Earlier closes are listed below.
+
+**All-clients dashboard**: the **Clients** button lists every client whose export has been loaded, most urgent first: status (a closed month changed, needs attention, due for review, in progress, closed), month-end close progress, open items by kind, closed-through month, cash today and the lowest point ahead, and revenue and net income for the last 12 months. The figures are a short summary saved when each client's export was last analyzed; load a client's latest export to refresh them. Backups live in the same panel.
+
 **Monthly review workflow**
 - Mark each audit flag as *Not an issue*, *Fixed in QuickBooks* or *Asked the client*. Cleared flags drop out of the counts and health score and stay cleared when next month's export is loaded (flags are matched on what the entry is, not on row numbers).
 - **Client questions**: turns open uncategorized items, possible double charges, entries needing context, unusual payments, invoices over 90 days old and W-9 requests into a friendly, numbered question list ready to email. One click marks the included flags as asked.
-- **Saved clients**: account type corrections, reviewed flags, the cash cushion, benchmark industry and state, and loan and tax inputs are saved per client (matched on the company name in the report header) and restored when their file is loaded again. They are kept in this browser only; export a JSON backup to move them to another computer or share them with a colleague.
+- **Saved clients** (in the **Clients** panel): account type corrections, reviewed flags, the cash cushion, benchmark industry and state, and loan and tax inputs are saved per client (matched on the company name in the report header) and restored when their file is loaded again. They are kept in this browser only; export a JSON backup to move them to another computer or share them with a colleague.
 
 **Firm branding**: the app header, client reports, client questions and plain-text report carry the bookkeeping firm's name, logo, colors and website, set in `src/firm.js`. The logo is embedded in each downloaded report, so reports stay self-contained.
 
@@ -119,6 +123,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `src/ui/shared.js` | Helpers and small components shared by the tabs (storage, downloads, chart tokens, inputs) |
 | `src/ui/drive.js` | Google Drive backup (sign-in, save, restore, automatic saving) |
 | `src/ui/help.js` | Getting-started guide |
+| `src/ui/close.js` | Month-end close checklist |
 | `src/ui/*.js` | One file per tab (`audit`, `growth`, `cash`, `breakeven`, `trends`, `budget`, `vendors`, `benchmarks`, `advisory`) and `drawers.js` for the report, client questions and saved clients |
 | `src/app.js` | Top-level app: file loading, state, tabs; mounts the page |
 | `test/engine.test.js` | Engine tests |

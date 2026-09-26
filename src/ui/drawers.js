@@ -103,14 +103,34 @@
     </div>`;
   }
 
+  const monthLong = (key) => (key ? new Date(`${key}-01T00:00:00Z`).toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+  const daysSince = (iso) => (iso ? Math.floor((Date.now() - Date.parse(iso)) / 864e5) : null);
+  const money0 = (n) => (n == null ? '-' : `${n < 0 ? '-' : ''}$${Math.round(Math.abs(n)).toLocaleString('en-US')}`);
+
+  // Where each client stands, from the summary saved when their export was last analyzed.
+  function clientStatus(c) {
+    const s = c.summary;
+    if (!s) return { label: 'No summary yet', level: 'low', score: 0 };
+    const stale = daysSince(c.loadedAt) > 35;
+    const closeDone = s.close && s.close.done === s.close.total;
+    if (s.closedChanges) return { label: 'Closed month changed', level: 'high', score: 1000 + s.closedChanges };
+    if (s.open.balance || (s.lowestCash != null && s.lowestCash < 0)) return { label: 'Needs attention', level: 'high', score: 500 + s.openTotal };
+    if (stale) return { label: 'Due for review', level: 'medium', score: 300 + daysSince(c.loadedAt) };
+    if (closeDone) return { label: `${monthLong(s.close.month)} closed`, level: 'good', score: 0 };
+    return { label: 'In progress', level: 'medium', score: 100 + s.openTotal };
+  }
+
   function ClientsDrawer({ currentId, onClose, onForget }) {
     const [clients, setClients] = useState(() => ClientStore.all());
     const [confirm, setConfirm] = useState(null);
     const [status, setStatus] = useState('');
     useEscape(onClose);
-    const list = Object.entries(clients).sort((a, b) => String(b[1].updatedAt || '').localeCompare(String(a[1].updatedAt || '')));
+    const list = Object.entries(clients).map(([id, c]) => ({ id, c, st: clientStatus(c) }))
+      .sort((a, b) => b.st.score - a.st.score || String(b.c.loadedAt || b.c.updatedAt || '').localeCompare(String(a.c.loadedAt || a.c.updatedAt || '')));
     const refresh = () => setClients(ClientStore.all());
     const last = Backup.last();
+    const attention = list.filter((x) => x.st.level === 'high').length;
+    const closedCount = list.filter((x) => x.st.level === 'good').length;
     const doExport = async () => {
       const msg = await saveTextFile(`ledger-lens-backup-${new Date().toISOString().slice(0, 10)}.json`, Backup.build());
       if (/^(Saved|Downloaded)/.test(msg)) Backup.mark('file');
@@ -128,20 +148,38 @@
       };
       reader.readAsText(file);
     };
+    const chip = (n, label) => (n ? html`<span class="pill medium" key=${label}>${n} ${label}</span>` : null);
     return html`<div class="scrim" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="clients-title">
-        <div class="drawer-head"><h2 id="clients-title">Saved clients & backup</h2><button class="btn" onClick=${onClose}>Close</button></div>
+      <aside class="drawer wide" role="dialog" aria-modal="true" aria-labelledby="clients-title">
+        <div class="drawer-head"><h2 id="clients-title">Clients</h2><button class="btn" onClick=${onClose}>Close</button></div>
         <div class="drawer-scroll">
-          <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Account type corrections, reviewed flags, the cash cushion and loan, tax and benchmark settings are saved per client as you work, matched by the company name in the report header. They are kept in this browser, so back them up.</p></div>
-          <div class="clients-list">
-            ${list.length ? list.map(([id, c]) => html`<div class="client-row" key=${id}>
-              <div><strong>${c.name || id}</strong>${id === currentId ? html` <span class="pill good">Open now</span>` : ''}
-                <span class="sub">${Object.keys(c.accountClass || {}).length} account corrections · ${Object.keys(c.reviewed || {}).length} reviewed flags · saved ${String(c.updatedAt || '').slice(0, 10)}</span></div>
-              ${confirm === id
-                ? html`<span class="confirm">Forget this client? <button class="btn" onClick=${() => { ClientStore.remove(id); onForget(id); setConfirm(null); refresh(); }}>Forget</button><button class="btn" onClick=${() => setConfirm(null)}>Keep</button></span>`
-                : html`<button class="btn" onClick=${() => setConfirm(id)}>Forget</button>`}
-            </div>`) : html`<div class="empty">No saved clients yet. Upload a client's export and start reviewing; settings save as you go.</div>`}
-          </div>
+          ${list.length > 0 && html`<section class="kpis dash-kpis" aria-label="Practice summary">
+            <div class="kpi"><span class="kpi-label">Clients</span><span class="kpi-value">${list.length}</span><span class="kpi-sub">saved in this browser</span></div>
+            <div class=${`kpi ${attention ? 'alert' : 'okay'}`}><span class="kpi-label">Need attention</span><span class="kpi-value">${attention}</span><span class="kpi-sub">closed-month changes, balance sheet or cash</span></div>
+            <div class="kpi"><span class="kpi-label">Closes complete</span><span class="kpi-value">${closedCount}</span><span class="kpi-sub">latest month fully ticked off</span></div>
+            <div class=${`kpi ${!last || daysSince(last.at) > 30 ? 'alert' : ''}`}><span class="kpi-label">Last backup</span><span class="kpi-value">${last ? `${daysSince(last.at)}d ago` : 'Never'}</span><span class="kpi-sub">${last ? (last.where === 'Google Drive' ? 'to Google Drive' : 'to a file') : 'see Backup below'}</span></div>
+          </section>`}
+          <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Every client whose export has been loaded, most urgent first. Figures are from the last time their export was analyzed; load a client's latest export to update them and work on the books. Settings and reviews are kept in this browser, so back them up.</p></div>
+          ${list.length ? html`<div class="table-wrap"><table class="dash-table">
+            <thead><tr><th>Client</th><th>Status</th><th>Month-end close</th><th>To review</th><th>Closed through</th><th class="num">Cash / lowest ahead</th><th class="num">Revenue / net, 12 mo</th><th></th></tr></thead>
+            <tbody>${list.map(({ id, c, st }) => {
+              const s = c.summary;
+              const ago = daysSince(c.loadedAt || c.updatedAt);
+              return html`<tr key=${id} class="dash-row">
+                <td><span class="client-name">${c.name || id}</span>${id === currentId ? html` <span class="pill good">Open now</span>` : ''}
+                  <span class="sub">${s ? `Books to ${s.periodEnd}` : 'Load their export'}${ago != null ? ` · loaded ${ago === 0 ? 'today' : `${ago}d ago`}` : ''}</span></td>
+                <td><span class=${`pill ${st.level}`}><span class="dot"></span>${st.label}</span></td>
+                <td>${s && s.close ? html`<div class="meter" style=${{ width: '110px' }}><span style=${{ width: `${Math.round((s.close.done / s.close.total) * 100)}%`, background: s.close.done === s.close.total ? 'var(--good)' : 'var(--accent)' }}></span></div><span class="sub">${monthLong(s.close.month)}: ${s.close.done}/${s.close.total}</span>` : html`<span class="sub">-</span>`}</td>
+                <td>${s ? (s.openTotal ? html`<div class="dash-stats">${[chip(s.open.uncategorized, 'uncategorized'), chip(s.open.duplicates, 'duplicates'), chip(s.open.mismatches, 'miscoded'), chip(s.open.balance, 'balance sheet'), chip(s.open.jobs, 'job costing'), chip(s.open.unusual, 'unusual')]}</div>` : html`<span class="pill good">All clear</span>`) : html`<span class="sub">-</span>`}</td>
+                <td>${s && s.closedThrough ? html`${monthLong(s.closedThrough)}${s.closedChanges ? html`<span class="sub neg">${s.closedChanges} change${s.closedChanges === 1 ? '' : 's'} since</span>` : ''}` : html`<span class="sub">Not closed</span>`}</td>
+                <td class="num">${s ? html`${money0(s.cash)}<span class=${`sub ${s.lowestCash != null && s.lowestCash < 0 ? 'neg' : ''}`}>${money0(s.lowestCash)}${s.lowestWeek ? ` wk of ${s.lowestWeek.slice(5)}` : ''}</span>` : '-'}</td>
+                <td class="num">${s ? html`${money0(s.revenue12)}<span class=${`sub ${s.netIncome12 < 0 ? 'neg' : ''}`}>${money0(s.netIncome12)}</span>` : '-'}</td>
+                <td>${confirm === id
+                  ? html`<span class="confirm">Forget? <button class="btn" onClick=${() => { ClientStore.remove(id); onForget(id); setConfirm(null); refresh(); }}>Forget</button><button class="btn" onClick=${() => setConfirm(null)}>Keep</button></span>`
+                  : html`<button class="btn" onClick=${() => setConfirm(id)}>Forget</button>`}</td>
+              </tr>`;
+            })}</tbody>
+          </table></div>` : html`<div class="empty">No clients yet. Upload a client's export; it shows up here with where their books stand.</div>`}
           <div class="backup">
             <${DriveBackup} onRestored=${refresh} />
             <div class="backup-block">

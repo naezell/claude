@@ -733,3 +733,29 @@ test('job costing gaps: untagged job costs, costs never billed, with a suggested
   const csv = ['Date,Transaction Type,Name,Customer,Account,Amount', '01/05/2026,Invoice,Acme,Acme,Sales,5000.00', '01/06/2026,Bill,Supplier,,Cost of Goods Sold,2000.00'].join('\n');
   assert.equal(E.analyze(E.parseTransactions(csv)).jobCosts.mode, 'untracked');
 });
+
+test('month-end checklist: automatic steps, hand ticks, custom steps, and the client summary', () => {
+  const r = E.analyze(E.parseTransactions(S.build()), { pnl: E.parseProfitAndLoss(S.profitAndLoss()) });
+  const c = E.closeChecklist(r, '2026-06', { done: { feeds: '2026-07-02', uncategorized: '2026-07-03' } }, [{ id: 'c1', label: 'Reconcile PayPal' }]);
+  const by = Object.fromEntries(c.items.map((i) => [i.id, i]));
+  assert.equal(by.tieout.done, true, 'ties, so it ticks itself');
+  assert.equal(by.balance.done, false);
+  assert.match(by.balance.auto.note, /4 to fix/);
+  assert.equal(by.uncategorized.done, true, 'a hand tick overrides open items');
+  assert.equal(by.c1.custom, true);
+  assert.ok(!by.salestax, 'no sales tax account, no sales tax step');
+  assert.equal(c.done, 3);
+  assert.equal(c.total, c.items.length);
+  // Closing the books through the month ticks the "closed" step.
+  const snap = r.closeBooks('2026-06');
+  const closed = E.analyze(E.parseTransactions(S.build()), { closed: snap });
+  assert.equal(E.closeChecklist(closed, '2026-06', {}).items.find((i) => i.id === 'closed').done, true);
+  const s = E.clientSummary(r, { '2026-06': { done: { feeds: '2026-07-02' } } }, []);
+  assert.equal(s.periodEnd, '2026-06-30');
+  assert.equal(s.open.uncategorized, 11);
+  assert.equal(s.open.balance, 4);
+  assert.equal(s.close.month, '2026-06');
+  assert.equal(s.close.done, 2);
+  assert.equal(s.months12, 12);
+  assert.ok(JSON.stringify(s).length < 1000, 'small enough to keep per client');
+});

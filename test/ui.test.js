@@ -17,7 +17,7 @@ const CDN = {
   'Recharts.js': 'recharts/umd/Recharts.js',
   'htm.umd.js': 'htm/dist/htm.umd.js',
 };
-const TABS = ['audit', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory'];
+const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory'];
 
 let chromium = null;
 try { ({ chromium } = require('playwright-core')); } catch (e) { /* not installed */ }
@@ -237,7 +237,7 @@ test('Google Drive: connect, save, save automatically after a change, and restor
   if (skip) return t.skip(skip);
   const g = fakeGoogle();
   const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com', googleOrigins: [] }; }), g.serve);
-  await page.click('button:has-text("Saved clients")');
+  await page.click('button:has-text("Clients")');
   await page.click('button:has-text("Connect Google Drive")');
   await page.waitForSelector('button:has-text("Save to Drive now")');
   await page.click('button:has-text("Save to Drive now")');
@@ -265,9 +265,9 @@ test('Google Drive: connect, save, save automatically after a change, and restor
   const data = JSON.parse(g.files.get(id).body);
   data.clients['other co'] = { name: 'Other Co', accountClass: {}, reviewed: { a: { status: 'ok' } }, updatedAt: '2030-01-01T00:00:00.000Z' };
   g.files.get(id).body = JSON.stringify(data);
-  await page.click('button:has-text("Saved clients")');
+  await page.click('button:has-text("Clients")');
   await page.click('button:has-text("Restore from Drive")');
-  await page.waitForSelector('.client-row:has-text("Other Co")');
+  await page.waitForSelector('.dash-row:has-text("Other Co")');
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -275,7 +275,7 @@ test('Google Drive: connect, save, save automatically after a change, and restor
 test('Google Drive is only offered on the registered address; elsewhere the app points there', async (t) => {
   if (skip) return t.skip(skip);
   const { page, errors } = await openPage();
-  await page.click('button:has-text("Saved clients")');
+  await page.click('button:has-text("Clients")');
   const text = await page.locator('.drawer').innerText();
   assert.match(text, /7d-ledger-lens\.netlify\.app/);
   assert.equal(await page.locator('button:has-text("Connect Google Drive")').count(), 0);
@@ -325,6 +325,42 @@ test('balance sheet check and job costing gaps show the seeded problems', async 
   const jcText = await jc.innerText();
   assert.match(jcText, /Harborview Hotel/);
   assert.match(jcText, /Pinecrest Winery/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('month-end close checklist and the all-clients dashboard', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.click('#tab-close');
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Month-end close' }) });
+  await panel.waitFor();
+  assert.match(await panel.innerText(), /11 still open/, 'automatic steps read the analysis');
+  await page.click('#step-feeds');
+  await page.fill('#new-step', 'Reconcile the PayPal account');
+  await page.click('button:has-text("Add step")');
+  await page.fill('#close-notes', 'Waiting on May statement');
+  await panel.locator('.pill', { hasText: '1 of 15 done' }).waitFor();
+  // Everything is saved with the client and comes back after a reload.
+  await page.waitForTimeout(400);
+  await page.reload();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.click('#tab-close');
+  await panel.locator('.pill', { hasText: '1 of 15 done' }).waitFor();
+  assert.equal(await page.locator('#step-feeds').isChecked(), true);
+  assert.match(await panel.innerText(), /Reconcile the PayPal account/);
+  assert.equal(await page.inputValue('#close-notes'), 'Waiting on May statement');
+  // The dashboard lists the client with its open items and close progress.
+  await page.click('button:has-text("Clients")');
+  const row = page.locator('.dash-row', { hasText: 'Harbor & Pine Design Co.' });
+  await row.waitFor();
+  const text = await row.innerText();
+  assert.match(text, /Needs attention/);
+  assert.match(text, /11 uncategorized/);
+  assert.match(text, /4 balance sheet/);
+  assert.match(text, /Jun 2026: 1\/15/);
   assert.deepEqual(errors, []);
   await page.close();
 });
