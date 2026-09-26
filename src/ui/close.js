@@ -11,7 +11,7 @@
   const shortDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
   // Where to go to work on an automatic step.
-  const STEP_TAB = { uncategorized: 'audit', duplicates: 'audit', coding: 'audit', balance: 'audit', unusual: 'audit', closed: 'audit', tieout: 'audit', jobs: 'growth' };
+  const STEP_TAB = { uncategorized: 'audit', duplicates: 'audit', coding: 'audit', balance: 'audit', unusual: 'audit', closed: 'audit', tieout: 'audit', jobs: 'growth', receipts: 'audit' };
 
   function CloseTab({ result, checklist, setChecklist, customSteps, setCustomSteps, canSave, goTo }) {
     const months = result.closableMonths || [];

@@ -381,5 +381,20 @@
       .concat(rows.map((r) => [...r, '', ''].map(q).join(','))).join('\n');
   }
 
-  return { build, chartOfAccounts, profitAndLoss, budgetOverview };
+  // QuickBooks' Expenses page exported with the Attachments column: which purchases have a
+  // receipt attached. Most do; a few client lunches and the misfiled shelving do not.
+  function expenseList() {
+    const missing = new Set(['04/09/2026|Blue Door Cafe', '05/21/2026|Blue Door Cafe', '05/22/2026|Blue Door Cafe', '04/20/2026|The Home Depot']);
+    const lines = ['Date,Type,No.,Payee,Category,Total,Attachments'];
+    const q = (v) => (/[",]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    for (const e of buildEntries()) {
+      if (!/^(Expense|Check)$/.test(e.type) || !e.pnl) continue;
+      const [m, d, y] = e.date.split('/');
+      if (`${y}-${m}` < '2025-07') continue;
+      lines.push([e.date, e.type, e.num, e.name, e.pnl, e.amount.toFixed(2), missing.has(`${e.date}|${e.name}`) ? 0 : 1].map(q).join(','));
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
+  return { build, chartOfAccounts, profitAndLoss, budgetOverview, expenseList };
 });

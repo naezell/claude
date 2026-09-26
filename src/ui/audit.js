@@ -27,7 +27,7 @@
     </section>`;
   }
 
-  function AuditTab({ result, accountClass, setAccountClass, onReview, onClose, canSave }) {
+  function AuditTab({ result, accountClass, setAccountClass, onReview, onClose, canSave, receiptLimit, setReceiptLimit, onRemoveAnswer }) {
     const { audit } = result;
     const [showCleared, setShowCleared] = useState(false);
     const vis = (list) => (showCleared ? list : list.filter((x) => !clearedOf(x)));
@@ -68,11 +68,13 @@
 
       ${result.tieOut && html`<${TieOutPanel} tie=${result.tieOut} />`}
       <${ClosedMonthsPanel} result=${result} onClose=${onClose} canSave=${canSave} />
+      ${result.answers && result.answers.length > 0 && html`<${AnswersPanel} answers=${result.answers} onReview=${onReview} onRemove=${onRemoveAnswer} />`}
       <${IssuesByMonth} audit=${audit} />
       <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
       <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
       <${MismatchPanel} rows=${vis(audit.mismatches)} open=${audit.open.mismatches} onReview=${onReview} />
       ${result.balanceSheet && result.balanceSheet.available && html`<${BalanceSheetPanel} bs=${result.balanceSheet} vis=${vis} onReview=${onReview} />`}
+      ${result.receipts && html`<${ReceiptsPanel} rc=${result.receipts} vis=${vis} onReview=${onReview} limit=${receiptLimit} setLimit=${setReceiptLimit} />`}
       ${result.unusual && html`<${UnusualPanel} u=${result.unusual} vis=${vis} onReview=${onReview} />`}
       <${AccountMapping} accounts=${result.accounts} accountClass=${accountClass} setAccountClass=${setAccountClass} />
     `;
@@ -239,6 +241,65 @@
         ${c && (confirmReopen
           ? html`<span class="confirm">Stop watching closed months? <button class="btn" onClick=${() => { onClose(null); setConfirmReopen(false); }}>Reopen</button><button class="btn" onClick=${() => setConfirmReopen(false)}>Cancel</button></span>`
           : html`<button class="btn" onClick=${() => setConfirmReopen(true)}>Reopen</button>`)}
+      </div>
+    </section>`;
+  }
+
+  // What the client wrote back in the questions spreadsheet.
+  function AnswersPanel({ answers, onReview, onRemove }) {
+    const open = answers.filter((a) => !clearedOf(a)).length;
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Client answers</h2>
+        <span class=${`pill ${open ? 'medium' : 'good'}`}>${open ? `${open} to act on` : 'All handled'}</span>
+        <p>Answers from the questions spreadsheet the client sent back. Make the change in QuickBooks, then mark each one <em>Fixed in QuickBooks</em> or <em>Not an issue</em>; answered questions are left out of the next question list.</p>
+      </div>
+      <div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Review</th><th>Question</th><th>Client's answer</th><th>Received</th><th></th></tr></thead>
+        <tbody>${answers.map((a) => html`<tr key=${a.key} class=${clearedOf(a) ? 'cleared' : ''}>
+          <td><${ReviewSelect} item=${a} onReview=${onReview} /></td>
+          <td><span class="sub">${a.ref} · ${a.topic}</span>${a.question}</td>
+          <td><strong style=${{ fontWeight: 500 }}>${a.answer || html`<span class="sub">No written answer</span>`}</strong>${a.receipt ? html`<span class="pill good" style=${{ marginTop: '4px' }}>Receipt sent</span>` : ''}</td>
+          <td class="nowrap num">${a.at || ''}</td>
+          <td><button class="btn" onClick=${() => onRemove(a.key)}>Remove</button></td>
+        </tr>`)}</tbody>
+      </table></div></div>
+    </section>`;
+  }
+
+  const RECEIPT_STATUS = { Attached: 'good', 'Client sent': 'good', Missing: 'high', Unknown: 'low' };
+
+  // Expenses that need a receipt, and whether one is attached in QuickBooks.
+  function ReceiptsPanel({ rc, vis, onReview, limit, setLimit }) {
+    const [showAll, setShowAll] = useState(false);
+    const rows = vis(showAll ? rc.items : rc.items.filter((x) => x.status !== 'Attached'));
+    const c = rc.counts;
+    const source = rc.source === 'export' ? 'the Attachments column in the export'
+      : rc.source === 'list' ? 'the expense list with attachments' : null;
+    return html`<section class="panel">
+      <div class="panel-head">
+        <h2>Receipts</h2>
+        <span class=${`pill ${rc.open ? (c.missing ? 'high' : 'medium') : 'good'}`}>${rc.open ? `${rc.open} needed` : 'All in hand'}</span>
+        <p>Expenses since ${rc.since} that need a receipt: lodging and gifts at any amount, meals, entertainment and travel of $75 or more (IRS rules), one-off purchases of $2,500 or more${rc.limit ? `, and anything over ${fmtWhole(rc.limit)}` : ''}. ${source
+          ? `Receipt status comes from ${source}: ${c.attached} attached, ${c.missing} missing${c.sent ? `, ${c.sent} sent by the client` : ''}.`
+          : 'To see which already have a receipt attached, add the export from QuickBooks\u2019 Expenses page with the Attachments column turned on (gear icon on the list, tick Attachments, then Export).'}</p>
+      </div>
+      <div class="panel-body receipt-bar">
+        <label class="field" for="receipt-limit">Also flag any expense over<div class="money-input"><span>$</span><input id="receipt-limit" inputmode="decimal" value=${limit} placeholder="off" onInput=${(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ''))} /></div></label>
+        ${c.attached > 0 && html`<label class="check" for="receipts-all" style=${{ paddingTop: 0 }}><input id="receipts-all" type="checkbox" checked=${showAll} onChange=${(e) => setShowAll(e.target.checked)} />Show ones with receipts too</label>`}
+      </div>
+      <div class="panel-body flush">
+        ${rows.length ? html`<div class="table-wrap scroll-y"><table>
+          <thead><tr><th>Review</th><th>Date</th><th>Payee</th><th>Why a receipt</th><th>Receipt</th><th class="num">Amount</th></tr></thead>
+          <tbody>${rows.map((r) => html`<tr key=${r.key} class=${clearedOf(r) ? 'cleared' : ''}>
+            <td><${ReviewSelect} item=${r} onReview=${onReview} /></td>
+            <td class="nowrap num">${r.dateStr}</td>
+            <td>${counterpartyOf(r) || html`<span class="sub">No payee</span>`}<span class="sub">${r.account}${r.memo ? ` · ${r.memo}` : ''}</span></td>
+            <td><strong style=${{ fontWeight: 500 }}>${r.rule}</strong><span class="sub">${r.why}</span></td>
+            <td><span class=${`pill ${RECEIPT_STATUS[r.status]}`}>${r.status === 'Unknown' ? 'Not known' : r.status}</span></td>
+            <td class="num"><${Money} v=${r.amount} /></td>
+          </tr>`)}</tbody>
+        </table></div>` : html`<div class="empty">${Icon.check}${rc.items.length ? 'Every receipt needed is attached or cleared.' : 'No expenses in the last 12 months need a receipt under these rules.'}</div>`}
       </div>
     </section>`;
   }

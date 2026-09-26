@@ -342,13 +342,13 @@ test('month-end close checklist and the all-clients dashboard', async (t) => {
   await page.fill('#new-step', 'Reconcile the PayPal account');
   await page.click('button:has-text("Add step")');
   await page.fill('#close-notes', 'Waiting on May statement');
-  await panel.locator('.pill', { hasText: '1 of 15 done' }).waitFor();
+  await panel.locator('.pill', { hasText: '1 of 16 done' }).waitFor();
   // Everything is saved with the client and comes back after a reload.
   await page.waitForTimeout(400);
   await page.reload();
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.click('#tab-close');
-  await panel.locator('.pill', { hasText: '1 of 15 done' }).waitFor();
+  await panel.locator('.pill', { hasText: '1 of 16 done' }).waitFor();
   assert.equal(await page.locator('#step-feeds').isChecked(), true);
   assert.match(await panel.innerText(), /Reconcile the PayPal account/);
   assert.equal(await page.inputValue('#close-notes'), 'Waiting on May statement');
@@ -360,7 +360,33 @@ test('month-end close checklist and the all-clients dashboard', async (t) => {
   assert.match(text, /Needs attention/);
   assert.match(text, /11 uncategorized/);
   assert.match(text, /4 balance sheet/);
-  assert.match(text, /Jun 2026: 1\/15/);
+  assert.match(text, /Jun 2026: 1\/16/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('receipts panel and the client answers round trip', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  const rc = page.locator('section.panel', { has: page.locator('h2', { hasText: /^Receipts$/ }) });
+  await rc.waitFor();
+  assert.match(await rc.innerText(), /4 missing/);
+  // Download the spreadsheet (captured from the page), fill it in, load it back.
+  await page.click('button:has-text("Client questions")');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Spreadsheet for the client")')]);
+  const sheet = fs.readFileSync(await download.path(), 'utf8');
+  const lines = sheet.replace(/^﻿/, '').trim().split('\r\n');
+  const i = lines.findIndex((l) => l.includes('Receipts we need'));
+  lines[1] = lines[1].replace(/,,$/, ',Office printer,');
+  lines[i] = lines[i].replace(/,,$/, ',,Yes');
+  await page.setInputFiles('#answers-file', { name: 'answers.csv', mimeType: 'text/csv', buffer: Buffer.from(lines.join('\n')) });
+  await page.locator('.drawer .status', { hasText: 'Loaded 2 answers' }).waitFor();
+  await page.click('.drawer-head button');
+  const ans = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Client answers' }) });
+  await ans.waitFor();
+  assert.match(await ans.innerText(), /Office printer/);
+  assert.match(await ans.innerText(), /Receipt sent/);
+  assert.match(await rc.innerText(), /1 sent by the client/);
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -41,6 +41,7 @@
               <li><strong>Account List</strong> (Reports → Account List): exact account types instead of guesses from the names.</li>
               <li><strong>Profit and Loss</strong> for the same dates: the audit tab checks the numbers tie to QuickBooks.</li>
               <li><strong>Budget Overview</strong>, if the client keeps a budget: fills in the Budget tab.</li>
+              <li><strong>Expenses list with attachments</strong>: on the <strong>Expenses</strong> page, click the gear icon above the list, tick <strong>Attachments</strong>, then Export. Tells the Receipts check which expenses already have a receipt attached.</li>
             </ul>
             <h4>QuickBooks Desktop</h4>
             <p>Reports → Accountant & Taxes → <strong>Transaction Detail by Account</strong>. Use Customize Report to add the same columns, then <strong>Excel</strong> → Create New Worksheet, or save as a CSV file.</p>
@@ -63,7 +64,8 @@
               <li><strong>Closed months</strong>: if anything changed in a month you already closed, it is listed at the top of the audit tab. Fix it in QuickBooks or accept it.</li>
               <li><strong>Balance sheet check</strong> and <strong>Unusual activity</strong>, lower on the audit tab: clear money stuck in Undeposited Funds, Opening Balance Equity, credits and old open bills, and confirm anything out of line.</li>
               <li><strong>Job costing gaps</strong>, on the Growth tab: add the customer to job costs that have none, and invoice jobs with costs but no billing.</li>
-              <li><strong>Client questions</strong>: send the list, then press <em>Mark as asked</em>.</li>
+              <li><strong>Client questions</strong>: send the list, or press <em>Spreadsheet for the client</em> for a file they fill in (answers in the last two columns). When it comes back, upload it or press <em>Load client's answers</em>; answers appear under <strong>Client answers</strong> on the audit tab. Press <em>Mark as asked</em> once sent.</li>
+              <li><strong>Receipts</strong>: missing receipts for meals, travel, lodging, gifts and large purchases are listed on the audit tab and included in the questions. To see which already have a receipt attached, also upload the list from QuickBooks' <em>Expenses</em> page with the Attachments column turned on.</li>
               <li>Look over <strong>Cash forecast</strong>, <strong>Trends</strong> and <strong>Vendors</strong> for talking points: slow payers, rising costs, price increases, the tightest week ahead.</li>
               <li>Send the <strong>client report</strong> (next step). Then <strong>close the month</strong> in the Closed months panel, and back up.</li>
             </ol>

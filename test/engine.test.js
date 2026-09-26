@@ -420,7 +420,7 @@ test('client questions: one per open item, no repeats, cleared items left out', 
   const cleared = E.analyze(p, { reviewed: { [r.audit.uncategorized[0].key]: { status: 'ok' } } });
   assert.equal(E.clientQuestions(cleared).count, q.count - 1);
   // Nothing open gives a short all-clear note.
-  const none = E.clientQuestions(r, { include: { uncategorized: false, duplicates: false, coding: false, receivables: false, w9: false, unusual: false } });
+  const none = E.clientQuestions(r, { include: { uncategorized: false, duplicates: false, coding: false, receivables: false, w9: false, unusual: false, receipts: false } });
   assert.equal(none.count, 0);
   assert.ok(/no questions this time/.test(none.text));
 });
@@ -526,6 +526,7 @@ test('saved sample files match the generator', () => {
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-chart-of-accounts.csv'), 'utf8'), S.chartOfAccounts());
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-profit-and-loss.csv'), 'utf8'), S.profitAndLoss());
   assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-budget-2026.csv'), 'utf8'), S.budgetOverview());
+  assert.equal(fs.readFileSync(path.join(dir, 'harbor-pine-expenses-with-attachments.csv'), 'utf8'), S.expenseList());
 });
 
 test('formatted report: owner and full versions, charts, escaping', () => {
@@ -758,4 +759,62 @@ test('month-end checklist: automatic steps, hand ticks, custom steps, and the cl
   assert.equal(s.close.done, 2);
   assert.equal(s.months12, 12);
   assert.ok(JSON.stringify(s).length < 1000, 'small enough to keep per client');
+});
+
+test('receipts: IRS categories, one-off large purchases, firm limit, attachment status', () => {
+  const p = E.parseTransactions(S.build());
+  const plain = E.analyze(p).receipts;
+  assert.equal(plain.hasAttachmentData, false);
+  assert.ok(plain.items.length > 0 && plain.items.every((i) => i.rule === 'Meals' && i.amount >= 75), 'meals of $75 or more');
+  assert.ok(plain.items.every((i) => i.status === 'Unknown'));
+  assert.ok(!plain.items.some((i) => /Brightline/.test(i.name)), 'rent repeats every month: no receipt each time');
+  assert.ok(!plain.items.some((i) => i.type === 'Bill'), 'bills are entered from the vendor invoice');
+  // The Expenses page export tells which have a receipt attached.
+  const att = E.parseAttachmentList(S.expenseList());
+  assert.equal(E.parseAttachmentList(S.build()), null, 'a transaction report is not an attachment list');
+  const r = E.analyze(p, { attachments: att.entries });
+  assert.equal(r.receipts.source, 'list');
+  assert.equal(r.receipts.counts.missing, 4);
+  assert.equal(r.receipts.open, 4);
+  // A firm limit adds one-off purchases over it.
+  assert.ok(E.analyze(p, { receiptLimit: 500 }).receipts.items.some((i) => i.rule === 'Over your limit'));
+  // An Attachments column in the transaction export itself is read directly.
+  const csv = ['Date,Transaction Type,Name,Account,Amount,Attachments', '03/02/2026,Expense,Marriott,Travel - Lodging,48.00,0', '03/03/2026,Expense,Delta,Travel,420.00,1', '03/04/2026,Expense,Cafe,Meals,40.00,'].join('\n');
+  const col = E.analyze(E.parseTransactions(csv)).receipts;
+  assert.equal(col.source, 'export');
+  assert.deepEqual(col.items.map((i) => [i.name, i.rule, i.status]).sort(), [['Delta', 'Travel', 'Attached'], ['Marriott', 'Lodging', 'Missing']]);
+  // Missing receipts become client questions.
+  assert.ok(E.clientQuestions(r).sections.some((x) => x.title === 'Receipts we need' && x.items.length === 4));
+});
+
+test('client answers: spreadsheet out, answers back, matched by reference', () => {
+  const p = E.parseTransactions(S.build());
+  const att = E.parseAttachmentList(S.expenseList()).entries;
+  const r = E.analyze(p, { attachments: att });
+  const q = E.clientQuestions(r);
+  const sheet = E.questionsSheet(q);
+  const lines = sheet.replace(/^﻿/, '').trim().split('\r\n');
+  assert.equal(lines[0], 'Ref,Topic,Date,Payee,Amount,Question,Your answer,Receipt sent? (Yes/No)');
+  assert.equal(lines.length - 1, q.rows.length);
+  assert.equal(new Set(q.rows.map((x) => x.ref)).size, q.rows.length, 'every reference is unique');
+  assert.equal(E.clientQuestions(E.analyze(p, { attachments: att })).rows[0].ref, q.rows[0].ref, 'references are stable');
+  // The client fills in two rows (one with a comma and quotes) and marks a receipt sent.
+  const iUnc = 1, iRec = lines.findIndex((l) => l.includes('Receipts we need'));
+  lines[iUnc] = lines[iUnc].replace(/,,$/, ',"Printer, for the ""studio""",');
+  lines[iRec] = lines[iRec].replace(/,,$/, ',,Yes');
+  const parsed = E.parseAnswers(lines.join('\n'));
+  assert.equal(parsed.answers.length, 2);
+  assert.equal(parsed.answers[0].answer, 'Printer, for the "studio"');
+  assert.equal(E.parseAnswers(S.build()), null);
+  const m = E.matchAnswers(r, parsed);
+  assert.equal(m.matched.length, 2);
+  assert.deepEqual(m.unmatched, []);
+  const answers = Object.fromEntries(m.matched.map((a) => [a.key, { ...a, at: '2026-07-05' }]));
+  const after = E.analyze(p, { attachments: att, answers });
+  assert.equal(after.receipts.counts.sent, 1);
+  assert.equal(after.receipts.open, 3);
+  assert.equal(after.answers.length, 2);
+  assert.equal(E.clientQuestions(after, { answers }).rows.length, q.rows.length - 2, 'answered questions are not asked again');
+  // A reference from another file does not match.
+  assert.deepEqual(E.matchAnswers(r, { answers: [{ ref: 'Q-ZZZZZZ', answer: 'x', receipt: false }] }).unmatched, ['Q-ZZZZZZ']);
 });

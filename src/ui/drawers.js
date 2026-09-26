@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive } = UI;
+  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive, excelToCsv } = UI;
 
   // ------------------------------------------------------------ client questions drawer
 
@@ -14,22 +14,23 @@
     ['duplicates', 'Possible double charges'],
     ['coding', 'Entries to confirm'],
     ['unusual', 'Unusual payments'],
+    ['receipts', 'Receipts'],
     ['receivables', 'Invoices over 90 days'],
     ['w9', 'W-9 requests'],
   ];
 
-  function QuestionsDrawer({ result, onClose, onMarkAsked }) {
+  function QuestionsDrawer({ result, answers, onLoadAnswers, onClose, onMarkAsked }) {
     const [greeting, setGreeting] = useState('');
     const [preparer, setPreparer] = useState(() => safeStore.get('ll.preparer') || '');
-    const [include, setInclude] = useState({ uncategorized: true, duplicates: true, coding: true, unusual: true, receivables: true, w9: true });
+    const [include, setInclude] = useState({ uncategorized: true, duplicates: true, coding: true, unusual: true, receipts: true, receivables: true, w9: true });
     const [status, setStatus] = useState('');
     const preRef = useRef(null);
-    const q = useMemo(() => E.clientQuestions(result, { greeting: greeting.trim() || undefined, preparer, include, firm: Firm }), [result, greeting, preparer, include]);
+    const q = useMemo(() => E.clientQuestions(result, { greeting: greeting.trim() || undefined, preparer, include, firm: Firm, answers }), [result, greeting, preparer, include, answers]);
     const filename = `${slug(result.meta.company)}-questions-${result.period.end}.txt`;
     useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
     useEscape(onClose);
     const toMark = q.keys.filter((k) => {
-      const all = [...result.audit.uncategorized, ...result.audit.duplicates, ...result.audit.mismatches, ...(result.unusual ? result.unusual.txns : [])];
+      const all = [...result.audit.uncategorized, ...result.audit.duplicates, ...result.audit.mismatches, ...(result.unusual ? result.unusual.txns : []), ...(result.receipts ? result.receipts.items : [])];
       const item = all.find((x) => x.key === k);
       return item && !(item.review && item.review.status === 'asked');
     });
@@ -47,8 +48,20 @@
         <div class="drawer-foot">
           <button class="btn primary" onClick=${async () => setStatus(await copyText(q.text, preRef.current))}>${Icon.copy}Copy text</button>
           <button class="btn" onClick=${async () => setStatus(await saveTextFile(filename, q.text))}>${Icon.download}Download .txt</button>
+          <button class="btn" disabled=${!q.rows.length} title="A spreadsheet the client fills in and sends back" onClick=${async () => setStatus(`${await saveTextFile(filename.replace(/\.txt$/, '.csv'), E.questionsSheet(q))}. The client types answers in the last two columns and sends it back.`)}>${Icon.download}Spreadsheet for the client</button>
+          <label class="btn" for="answers-file">${Icon.upload}Load client's answers</label>
+          <input id="answers-file" class="file-input" type="file" accept=".csv,.xlsx,.xls,text/csv" onChange=${async (e) => {
+            const f = e.target.files[0];
+            e.target.value = '';
+            if (!f) return;
+            try {
+              const text = /\.xlsx?$/i.test(f.name) ? await excelToCsv(await f.arrayBuffer()) : await f.text();
+              const parsed = E.parseAnswers(text);
+              setStatus(parsed ? onLoadAnswers({ name: f.name, parsed }) : `${f.name} is not a returned questions spreadsheet (it needs the Ref and Your answer columns).`);
+            } catch (err) { setStatus(`${f.name} could not be read: ${err.message}`); }
+          }} />
           ${toMark.length > 0 && html`<button class="btn" onClick=${() => { onMarkAsked(toMark); setStatus(`Marked ${toMark.length} flag${toMark.length === 1 ? '' : 's'} as asked.`); }}>Mark ${toMark.length} as asked</button>`}
-          <span class="status" role="status">${status || `${q.count} question${q.count === 1 ? '' : 's'}; cleared flags are left out.`}</span>
+          <span class="status" role="status">${status || `${q.count} question${q.count === 1 ? '' : 's'}; cleared flags${Object.keys(answers || {}).length ? ' and answered questions' : ''} are left out.`}</span>
         </div>
       </aside>
     </div>`;
@@ -170,7 +183,7 @@
                   <span class="sub">${s ? `Books to ${s.periodEnd}` : 'Load their export'}${ago != null ? ` · loaded ${ago === 0 ? 'today' : `${ago}d ago`}` : ''}</span></td>
                 <td><span class=${`pill ${st.level}`}><span class="dot"></span>${st.label}</span></td>
                 <td>${s && s.close ? html`<div class="meter" style=${{ width: '110px' }}><span style=${{ width: `${Math.round((s.close.done / s.close.total) * 100)}%`, background: s.close.done === s.close.total ? 'var(--good)' : 'var(--accent)' }}></span></div><span class="sub">${monthLong(s.close.month)}: ${s.close.done}/${s.close.total}</span>` : html`<span class="sub">-</span>`}</td>
-                <td>${s ? (s.openTotal ? html`<div class="dash-stats">${[chip(s.open.uncategorized, 'uncategorized'), chip(s.open.duplicates, 'duplicates'), chip(s.open.mismatches, 'miscoded'), chip(s.open.balance, 'balance sheet'), chip(s.open.jobs, 'job costing'), chip(s.open.unusual, 'unusual')]}</div>` : html`<span class="pill good">All clear</span>`) : html`<span class="sub">-</span>`}</td>
+                <td>${s ? (s.openTotal ? html`<div class="dash-stats">${[chip(s.open.uncategorized, 'uncategorized'), chip(s.open.duplicates, 'duplicates'), chip(s.open.mismatches, 'miscoded'), chip(s.open.balance, 'balance sheet'), chip(s.open.jobs, 'job costing'), chip(s.open.unusual, 'unusual'), chip(s.open.receipts, 'receipts'), chip(s.open.answers, 'answers to act on')]}</div>` : html`<span class="pill good">All clear</span>`) : html`<span class="sub">-</span>`}</td>
                 <td>${s && s.closedThrough ? html`${monthLong(s.closedThrough)}${s.closedChanges ? html`<span class="sub neg">${s.closedChanges} change${s.closedChanges === 1 ? '' : 's'} since</span>` : ''}` : html`<span class="sub">Not closed</span>`}</td>
                 <td class="num">${s ? html`${money0(s.cash)}<span class=${`sub ${s.lowestCash != null && s.lowestCash < 0 ? 'neg' : ''}`}>${money0(s.lowestCash)}${s.lowestWeek ? ` wk of ${s.lowestWeek.slice(5)}` : ''}</span>` : '-'}</td>
                 <td class="num">${s ? html`${money0(s.revenue12)}<span class=${`sub ${s.netIncome12 < 0 ? 'neg' : ''}`}>${money0(s.netIncome12)}</span>` : '-'}</td>

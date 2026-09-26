@@ -140,6 +140,14 @@
     debit: ['debit'],
     credit: ['credit'],
     balance: ['balance', 'running balance'],
+    attachments: ['attachments', 'attachment', '# of attachments', 'attachment count', 'no. of attachments'],
+  };
+  // QuickBooks shows a count of attached files; some exports say Yes/No.
+  const attachCount = (v) => {
+    const s = lower(v).trim();
+    if (!s || s === 'no' || s === 'false' || s === '-') return 0;
+    if (/^\d+$/.test(s)) return +s;
+    return s === 'yes' || s === 'true' ? 1 : 0;
   };
 
   function mapHeader(cells) {
@@ -382,6 +390,7 @@
         debit: hasDC ? debit || 0 : null,
         credit: hasDC ? credit || 0 : null,
         amountFromDC: map.amount == null && hasDC,
+        attachments: map.attachments != null ? attachCount(get(r, 'attachments')) : null,
       });
     }
     return {
@@ -2997,6 +3006,7 @@
     { id: 'balance', label: 'Balance sheet check cleared', auto: true },
     { id: 'unusual', label: 'Unusual activity reviewed', auto: true },
     { id: 'jobs', label: 'Job costs assigned to jobs', auto: true },
+    { id: 'receipts', label: 'Receipts collected for meals, travel and large purchases', auto: true },
     { id: 'payroll', label: 'Payroll recorded and payroll liabilities checked' },
     { id: 'salestax', label: 'Sales tax reviewed and filed' },
     { id: 'tieout', label: 'Numbers tie to the QuickBooks Profit and Loss', auto: true },
@@ -3022,6 +3032,9 @@
       case 'jobs':
         if (!result.jobCosts || result.jobCosts.mode !== 'tracked') return { status: 'na', note: 'Job costs are not tracked by customer' };
         return count(result.jobCosts.open, 'to fix');
+      case 'receipts':
+        if (!result.receipts || !result.receipts.items.length) return { status: 'na', note: 'No expenses need a receipt' };
+        return count(result.receipts.open, 'still needed');
       case 'tieout':
         if (!result.tieOut) return { status: 'open', note: 'Add the P&L export to check' };
         return result.tieOut.ties ? { status: 'clear', note: `Ties for ${result.tieOut.period}` } : { status: 'open', note: 'Differences found' };
@@ -3074,6 +3087,8 @@
       balance: result.balanceSheet && result.balanceSheet.available ? result.balanceSheet.open : 0,
       unusual: result.unusual ? open([...result.unusual.flux, ...result.unusual.txns]) : 0,
       jobs: result.jobCosts && result.jobCosts.mode === 'tracked' ? result.jobCosts.open : 0,
+      receipts: result.receipts ? result.receipts.open : 0,
+      answers: open(result.answers),
     };
     return {
       periodStart: result.period.start,
@@ -3092,6 +3107,156 @@
       months12: last12.length,
       close: cl ? { month: cl.month, done: cl.done, total: cl.total } : null,
     };
+  }
+
+  // ---------------------------------------------------------------- receipts
+
+  // A list export with an Attachments column but no accounts (QuickBooks' Expenses page),
+  // used only to tell which transactions have a receipt attached.
+  function parseAttachmentList(text) {
+    const rows = parseCSV(text);
+    for (let i = 0; i < Math.min(rows.length, 30); i++) {
+      const lc = rows[i].map(lower);
+      const col = (names) => names.map((n) => lc.indexOf(n)).find((x) => x !== -1);
+      const att = col(['attachments', 'attachment', '# of attachments', 'attachment count', 'no. of attachments']);
+      const date = col(['date', 'transaction date', 'txn date']);
+      const total = col(['total', 'amount', 'total amount']);
+      if (att == null || date == null || total == null) continue;
+      if (col(['split', 'account', 'account full name', 'distribution account']) != null) return null;
+      const payee = col(['payee', 'name', 'vendor']);
+      const entries = [];
+      for (const r of rows.slice(i + 1)) {
+        const d = parseDate(r[date]);
+        const amt = parseAmount(r[total]);
+        if (!d || amt == null) continue;
+        entries.push({ dateStr: isoDate(d), amount: Math.abs(amt), payee: payee != null ? norm(r[payee]) : '', count: attachCount(r[att]) });
+      }
+      return entries.length ? { entries } : null;
+    }
+    return null;
+  }
+
+  // Which expenses need a receipt, by rule, first match wins:
+  // lodging and gifts at any amount, meals and travel at $75 or more (IRS rules for
+  // substantiation), any purchase of $2,500 or more, and anything over the firm's own limit.
+  const RECEIPT_RULES = [
+    { rule: 'Lodging', rx: /lodging|hotel|motel|airbnb|\binn\b/i, min: 0, why: 'Lodging needs a receipt at any amount.' },
+    { rule: 'Gift', rx: /\bgifts?\b/i, min: 0, why: 'Business gifts need a receipt and the recipient\'s name.' },
+    { rule: 'Meals', rx: /meal|entertain|dining|restaurant|\bcafe\b/i, min: 75, why: 'Meals and entertainment of $75 or more need a receipt, who attended and the business purpose.' },
+    { rule: 'Travel', rx: /travel|airfare|airline|flight|\buber\b|\blyft\b|taxi|parking|car rental|rental car|mileage/i, min: 75, why: 'Travel costs of $75 or more need a receipt.' },
+  ];
+  const NO_RECEIPT = /payroll|wages|salar|bank (fee|charge|service)|service charge|interest|depreciation|amortization|merchant fee|finance charge/i;
+
+  function receiptCheckUncached(txns, accountClass, meta, opts) {
+    const limit = +opts.limit > 0 ? +opts.limit : 0;
+    const range = dateRange(txns, meta);
+    const since = isoDate(new Date(range.last.getTime() - 365 * DAY));
+    const index = new Map();
+    for (const e of opts.attachments || []) {
+      const k = `${e.dateStr}|${e.amount.toFixed(2)}`;
+      index.set(k, Math.max(index.get(k) || 0, e.count));
+    }
+    const hasColumn = txns.some((t) => t.attachments != null);
+    // Repeating payments of the same amount (rent, retainers) are covered by the agreement,
+    // not a receipt each month, so the amount rules skip them.
+    const postings = toPostings(txns, accountClass);
+    const repeats = new Map();
+    for (const p of postings) {
+      if (p.cls === 'income' || p.value <= 0) continue;
+      const k = `${payeeOf(p.t).key}|${Math.round(p.value)}`;
+      repeats.set(k, (repeats.get(k) || 0) + 1);
+    }
+    const items = [];
+    for (const p of postings) {
+      if (p.cls === 'income' || p.value <= 0 || p.t.dateStr < since) continue;
+      if (RX.uncategorized.test(p.category) || NO_RECEIPT.test(p.category) || REVERSING_TYPES.test(p.t.type)) continue;
+      if (/journal|transfer|deposit|payment$/i.test(p.t.type) && !/bill payment/i.test(p.t.type)) continue;
+      const text = `${p.category} ${p.t.memo || ''} ${counterpartyOf(p.t)}`;
+      let hit = RECEIPT_RULES.find((r) => r.rx.test(text) && p.value >= r.min);
+      // Bills are entered from the vendor's own invoice; the amount rules cover purchases
+      // paid directly by check, card or bank.
+      const oneOff = !/^bill$/i.test(p.t.type) && (repeats.get(`${payeeOf(p.t).key}|${Math.round(p.value)}`) || 0) < 3;
+      if (!hit && oneOff && p.value >= 2500) hit = { rule: 'Large purchase', why: 'Keep the invoice for purchases of $2,500 or more, and check whether it should be recorded as equipment rather than an expense.' };
+      if (!hit && oneOff && limit && p.value >= limit) hit = { rule: 'Over your limit', why: `Your firm keeps receipts for expenses of ${fmtWhole(limit)} or more.` };
+      if (!hit) continue;
+      const fromList = index.get(`${p.t.dateStr}|${p.value.toFixed(2)}`);
+      const count = p.t.attachments != null ? p.t.attachments : fromList != null ? fromList : null;
+      items.push({ ...p.t, amount: round2(p.value), account: leafAccount(p.category), rule: hit.rule, why: hit.why, attachments: count, key: `r|${rowKey(p.t)}` });
+    }
+    items.sort((a, b) => b.date - a.date);
+    return { hasAttachmentData: hasColumn || index.size > 0, source: hasColumn ? 'export' : index.size ? 'list' : null, since, limit, items };
+  }
+
+  function receiptCheck(txns, accountClass, meta, opts, reviewed, answers) {
+    opts = opts || {};
+    const raw = memo(`receipts:${opts.limit || 0}:${opts.attachments ? opts.attachments.length : 0}`, txns, accountClass || EMPTY,
+      () => receiptCheckUncached(txns, accountClass, meta, opts));
+    const items = raw.items.map((r) => {
+      const a = answers && answers[r.key];
+      const status = r.attachments > 0 ? 'Attached' : a && a.receipt ? 'Client sent' : r.attachments === 0 ? 'Missing' : 'Unknown';
+      return { ...r, status, review: (reviewed && reviewed[r.key]) || null };
+    });
+    const count = (st) => items.filter((x) => x.status === st).length;
+    // A receipt the client says they sent is no longer owed by them; it shows as sent until attached.
+    const needed = items.filter((x) => x.status !== 'Attached' && x.status !== 'Client sent' && !isCleared(x.review));
+    return { ...raw, items, counts: { attached: count('Attached'), missing: count('Missing'), unknown: count('Unknown'), sent: count('Client sent') }, open: needed.length };
+  }
+
+  // ---------------------------------------------------------------- client answers
+
+  // The questions as a spreadsheet the client fills in: one row per question, with a
+  // reference that maps each answer back. CSV opens in Excel, Numbers and Google Sheets.
+  const ANSWER_HEADERS = ['Ref', 'Topic', 'Date', 'Payee', 'Amount', 'Question', 'Your answer', 'Receipt sent? (Yes/No)'];
+  function questionsSheet(q) {
+    const cell = (v) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [ANSWER_HEADERS.join(',')];
+    for (const r of q.rows) lines.push([r.ref, r.section, r.date, r.payee, r.amount != null ? r.amount.toFixed(2) : '', r.question, '', ''].map(cell).join(','));
+    return `﻿${lines.join('\r\n')}\r\n`;
+  }
+
+  // Reads a returned questions spreadsheet: rows with a reference and an answer or a
+  // receipt marked as sent. Returns null for anything else.
+  function parseAnswers(text) {
+    const rows = parseCSV(String(text || '').replace(/^﻿/, ''));
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const lc = rows[i].map((c) => lower(c).trim());
+      const ref = lc.indexOf('ref');
+      const ans = lc.findIndex((c) => c.startsWith('your answer') || c === 'answer');
+      if (ref === -1 || ans === -1) continue;
+      const rec = lc.findIndex((c) => c.startsWith('receipt sent'));
+      const out = [];
+      for (const r of rows.slice(i + 1)) {
+        const id = norm(r[ref]).toUpperCase();
+        if (!/^Q-[0-9A-Z]{1,8}$/.test(id)) continue;
+        const answer = norm(r[ans]);
+        const receipt = rec !== -1 && /^(y|yes|sent|true|x|✓)$/i.test(norm(r[rec]));
+        if (answer || receipt) out.push({ ref: id, answer, receipt });
+      }
+      return { answers: out };
+    }
+    return null;
+  }
+
+  // Matches returned answers to the current questions by reference.
+  function matchAnswers(result, parsed) {
+    const q = clientQuestions(result, { include: { uncategorized: true, duplicates: true, coding: true, receivables: true, w9: true, unusual: true, receipts: true } });
+    const byRef = new Map(q.rows.map((r) => [r.ref, r]));
+    const matched = [], unmatched = [];
+    for (const a of (parsed && parsed.answers) || []) {
+      const row = byRef.get(a.ref);
+      if (row) matched.push({ key: row.key, ref: a.ref, topic: row.section, question: row.question, answer: a.answer, receipt: a.receipt });
+      else unmatched.push(a.ref);
+    }
+    return { matched, unmatched };
+  }
+
+  // Saved answers, with the review status of the item each one is about.
+  function answersView(answers, reviewed) {
+    return Object.entries(answers || {}).map(([key, a]) => ({ key, ...a, review: (reviewed && reviewed[key]) || null }))
+      .sort((x, y) => String(y.at || '').localeCompare(String(x.at || '')));
   }
 
   // ---------------------------------------------------------------- review state & client questions
@@ -3125,40 +3290,55 @@
   };
 
   // A plain-language question list for the client, built from what is still open.
+  // The reference printed next to each question in the client spreadsheet; it maps a
+  // returned answer back to its question.
+  const questionRef = (key) => `Q-${fnv(key).slice(0, 6).toUpperCase()}`;
+
   function clientQuestions(result, opts) {
     opts = opts || {};
-    const inc = Object.assign({ uncategorized: true, duplicates: true, coding: true, receivables: true, w9: true, unusual: true }, opts.include || {});
-    const open = (item) => !isCleared(item.review);
+    const inc = Object.assign({ uncategorized: true, duplicates: true, coding: true, receivables: true, w9: true, unusual: true, receipts: true }, opts.include || {});
+    const answered = opts.answers || {};
+    const open = (item) => !isCleared(item.review) && !answered[item.key];
     const sections = [];
     const keys = [];
+    const rows = [];
     const who = (t) => counterpartyOf(t) || (t.memo ? `"${t.memo}"` : 'no payee recorded');
     const money = (n) => fmtMoney(Math.abs(n));
+    // One question: its text for the letter, and a row for the spreadsheet. `markable` keys
+    // belong to audit flags that "Mark as asked" can update.
+    const section = (title) => ({ title, items: [] });
+    const ask = (sec, key, text, t, markable) => {
+      sec.items.push(text);
+      if (markable) keys.push(key);
+      rows.push({ key, ref: questionRef(key), section: sec.title, date: t && t.dateStr ? t.dateStr : '', payee: t ? counterpartyOf(t) || t.memo || '' : '', amount: t && t.amount != null ? Math.abs(t.amount) : null, question: text });
+    };
+    const done = (sec) => { if (sec.items.length) sections.push(sec); };
 
     const asked = new Set();
     if (inc.uncategorized) {
-      const items = result.audit.uncategorized.filter(open).sort((a, b) => a.date - b.date).map((t) => {
+      const sec = section('Transactions we could not categorize');
+      for (const t of result.audit.uncategorized.filter(open).sort((a, b) => a.date - b.date)) {
         asked.add(rowKey(t));
-        keys.push(t.key);
         const incoming = classOf(null, t.account) === 'income' || /deposit|sales receipt/i.test(t.type);
-        return incoming
+        ask(sec, t.key, incoming
           ? `${niceDate(t.dateStr)}: a deposit of ${money(t.amount)} (${who(t)}). Who paid this, and what was it for?`
-          : `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}${t.memo && counterpartyOf(t) ? ` (${t.memo})` : ''}. What was this for?`;
-      });
-      if (items.length) sections.push({ title: 'Transactions we could not categorize', items });
+          : `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}${t.memo && counterpartyOf(t) ? ` (${t.memo})` : ''}. What was this for?`, t, true);
+      }
+      done(sec);
     }
     if (inc.duplicates) {
-      const items = result.audit.duplicates.filter(open).sort((a, b) => a.rows[0].date - b.rows[0].date).map((g) => {
-        keys.push(g.key);
+      const sec = section('Possible double charges');
+      for (const g of result.audit.duplicates.filter(open).sort((a, b) => a.rows[0].date - b.rows[0].date)) {
         const r = g.rows[0];
         const dates = g.rows.map((x) => niceDate(x.dateStr)).join(' and ');
-        return /bill/i.test(r.type)
+        ask(sec, g.key, /bill/i.test(r.type)
           ? `Bill${r.num ? ` #${r.num}` : ''} from ${who(r)} for ${money(r.amount)} is entered ${g.rows.length} times (${dates}). Did you receive ${g.rows.length} separate bills?`
-          : `${who(r)} shows ${g.rows.length} charges of ${money(r.amount)} (${dates}). Were you charged ${g.rows.length === 2 ? 'twice' : `${g.rows.length} times`}, or is one of these a duplicate entry?`;
-      });
-      if (items.length) sections.push({ title: 'Possible double charges', items });
+          : `${who(r)} shows ${g.rows.length} charges of ${money(r.amount)} (${dates}). Were you charged ${g.rows.length === 2 ? 'twice' : `${g.rows.length} times`}, or is one of these a duplicate entry?`, r, true);
+      }
+      done(sec);
     }
     if (inc.coding) {
-      const items = [];
+      const sec = section('Entries we want to confirm');
       for (const t of result.audit.mismatches.filter(open).sort((a, b) => a.date - b.date)) {
         // Already asked about as uncategorized: one question per transaction.
         if (asked.has(rowKey(t))) continue;
@@ -3166,28 +3346,47 @@
         if (t.kind === 'Missing payee') q = `${niceDate(t.dateStr)}: ${money(t.amount)}${t.memo ? ` ("${t.memo}")` : ''}. Who was this paid to?`;
         else if (t.kind === 'Type / account conflict' && /transfer/i.test(t.type)) q = `${niceDate(t.dateStr)}: a ${money(t.amount)} transfer${t.memo ? ` ("${t.memo}")` : ''}. Was this a move to another account of yours, or a payment to someone?`;
         else if (t.kind === 'Type / account conflict') q = `${niceDate(t.dateStr)}: ${money(t.amount)} with ${who(t)}${t.memo ? ` ("${t.memo}")` : ''}. Can you tell us what this was, so we can record it correctly?`;
-        if (q) { items.push(q); keys.push(t.key); }
+        if (q) ask(sec, t.key, q, t, true);
       }
-      if (items.length) sections.push({ title: 'Entries we want to confirm', items });
+      done(sec);
     }
     if (inc.unusual && result.unusual) {
-      const items = result.unusual.txns.filter(open).filter((t) => !asked.has(rowKey(t))).sort((a, b) => a.date - b.date).map((t) => {
-        keys.push(t.key);
-        return t.kind === 'New payee'
+      const sec = section('Unusual payments');
+      for (const t of result.unusual.txns.filter(open).filter((x) => !asked.has(rowKey(x))).sort((a, b) => a.date - b.date)) {
+        asked.add(rowKey(t));
+        ask(sec, t.key, t.kind === 'New payee'
           ? `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}, a payee we have not seen before. What was this for?`
-          : `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}, well above what you usually pay them. Is this amount right, and what did it cover?`;
-      });
-      if (items.length) sections.push({ title: 'Unusual payments', items });
+          : `${niceDate(t.dateStr)}: ${money(t.amount)} to ${who(t)}, well above what you usually pay them. Is this amount right, and what did it cover?`, t, true);
+      }
+      done(sec);
+    }
+    if (inc.receipts && result.receipts) {
+      const sec = section('Receipts we need');
+      for (const r of result.receipts.items.filter((x) => x.status !== 'Attached' && open(x))) {
+        ask(sec, r.key, `${niceDate(r.dateStr)}: ${money(r.amount)} to ${who(r)}${r.memo && counterpartyOf(r) ? ` (${r.memo})` : ''}. Please send the receipt${r.rule === 'Meals' ? ', and note who attended and the business purpose' : r.rule === 'Gift' ? ' and who the gift was for' : ''}.`, r, true);
+      }
+      done(sec);
     }
     if (inc.receivables && result.cash) {
-      const items = result.cash.ar.openInvoices.filter((i) => i.age > 90).map((i) => `Invoice${i.num ? ` #${i.num}` : ''} to ${i.party} for ${money(i.open)} from ${niceDate(i.dateStr)} is still unpaid after ${i.age} days. Do you still expect payment, or should we write it off?`);
-      if (items.length) sections.push({ title: 'Old unpaid invoices', items });
+      const sec = section('Old unpaid invoices');
+      for (const i of result.cash.ar.openInvoices.filter((x) => x.age > 90)) {
+        const key = `q|ar|${lower(i.party)}|${i.num}|${i.dateStr}`;
+        if (answered[key]) continue;
+        sec.items.push(`Invoice${i.num ? ` #${i.num}` : ''} to ${i.party} for ${money(i.open)} from ${niceDate(i.dateStr)} is still unpaid after ${i.age} days. Do you still expect payment, or should we write it off?`);
+        rows.push({ key, ref: questionRef(key), section: sec.title, date: i.dateStr, payee: i.party, amount: i.open, question: sec.items[sec.items.length - 1] });
+      }
+      done(sec);
     }
     if (inc.w9 && result.vendors) {
       const names = [];
       for (const y of result.vendors.tax) for (const v of y.vendors) if (v.status === 'Review' && !names.includes(v.vendor)) names.push(v.vendor);
       const years = result.vendors.tax.filter((y) => y.reviewCount).map((y) => y.year);
-      if (names.length) sections.push({ title: 'W-9 forms for contractors', items: [`Please send W-9 forms for ${names.join(', ')} (paid enough in ${years.join(' or ')} to need a 1099), or tell us which ones you already have on file.`] });
+      const key = `q|w9|${years.join('-')}`;
+      if (names.length && !answered[key]) {
+        const text = `Please send W-9 forms for ${names.join(', ')} (paid enough in ${years.join(' or ')} to need a 1099), or tell us which ones you already have on file.`;
+        sections.push({ title: 'W-9 forms for contractors', items: [text] });
+        rows.push({ key, ref: questionRef(key), section: 'W-9 forms for contractors', date: '', payee: names.join(', '), amount: null, question: text });
+      }
     }
 
     const count = sections.reduce((t, x) => t + x.items.length, 0);
@@ -3214,7 +3413,7 @@
     if (sig) L.push(sig);
     const site = firmOf(opts).website;
     if (site) L.push(site);
-    return { text: L.join('\n'), count, sections, keys };
+    return { text: L.join('\n'), count, sections, keys, rows };
   }
 
   // ---------------------------------------------------------------- orchestration
@@ -3321,6 +3520,8 @@
     out.balanceSheet = balanceSheetCheck(txns, accountClass, parsed.meta, cash, opts.reviewed);
     out.jobCosts = jobCostGaps(txns, accountClass, profit, opts.reviewed, opts.groupBy);
     out.closed = closedPeriodChanges(txns, accountClass, parsed.meta, opts.closed);
+    out.receipts = receiptCheck(txns, accountClass, parsed.meta, { limit: opts.receiptLimit, attachments: opts.attachments }, opts.reviewed, opts.answers);
+    out.answers = answersView(opts.answers, opts.reviewed);
     out.closableMonths = once('fullMonths', () => fullMonths(txns, parsed.meta));
     // Takes a snapshot for "close the books through" a month; kept with the client's settings.
     out.closeBooks = (through) => periodSnapshot(txns, accountClass, through);
@@ -3577,6 +3778,8 @@
     if (obe) steps.push(`Move the ${fmtMoney(obe.amount)} in Opening Balance Equity to the right equity account so the balance sheet is lender-ready.`);
     const otherBs = bsItems.filter((x) => x !== uf && x !== obe);
     if (otherBs.length) steps.push(`Fix ${otherBs.length} other balance sheet item${otherBs.length === 1 ? '' : 's'} (${[...new Set(otherBs.map((x) => x.kind.toLowerCase()))].join(', ')}).`);
+    const rc = result.receipts;
+    if (rc && rc.open) steps.push(`Send the ${rc.open} missing receipt${rc.open === 1 ? '' : 's'} (meals, travel and large purchases); the IRS expects them for these expenses.`);
     const jc = result.jobCosts;
     if (jc && jc.mode === 'tracked') {
       const untagged = openOf(jc.items);
@@ -3930,6 +4133,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, buildHtmlReport, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, buildHtmlReport, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

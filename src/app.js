@@ -39,6 +39,12 @@
     const [checklist, setChecklist] = useState({});
     const [customSteps, setCustomSteps] = useState([]);
     const loadedAtRef = useRef(null);
+    // Answers returned by the client in the questions spreadsheet, by the key of the item asked about.
+    const [answers, setAnswers] = useState({});
+    const [pendingAnswers, setPendingAnswers] = useState(null);
+    const [notice, setNotice] = useState(null);
+    // Firm's own receipt limit for this client (blank: only the IRS categories and $2,500+).
+    const [receiptLimit, setReceiptLimit] = useState('');
     const [loanInputs, setLoanInputs] = useState({ amount: '', rate: '10.5', years: '10', addBacks: '' });
     const [taxInputs, setTaxInputs] = useState({ entity: 'sole', rate: '', salary: '', paid: '' });
     // Forecast inputs. Empty strings mean "use the value estimated from the export".
@@ -58,6 +64,8 @@
     const samplePnl = useMemo(() => E.parseProfitAndLoss(window.LedgerSample.profitAndLoss()), []);
     const pnl = source.kind === 'sample' ? samplePnl : source.pnl ? source.pnl.parsed : null;
     const sampleBudget = useMemo(() => E.parseBudget(window.LedgerSample.budgetOverview()), []);
+    const sampleAttachments = useMemo(() => E.parseAttachmentList(window.LedgerSample.expenseList()), []);
+    const attachments = source.kind === 'sample' ? sampleAttachments.entries : source.attachments ? source.attachments.parsed.entries : null;
     const uploadedBudget = source.kind === 'sample' ? { name: 'Sample FY2026 budget', parsed: sampleBudget } : source.budget || null;
 
     // Stable object: it only changes when one of the inputs does.
@@ -65,13 +73,13 @@
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const result = useMemo(() => (parsed.ok ? E.analyze(parsed.ok, {
-      accountClass, groupBy, chart, pnl, reviewed, closed, scenario: typed.scenario,
+      accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, startingCash, cashInputs.includeDoubtful, typed]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed]);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
@@ -83,6 +91,8 @@
       loadedAtRef.current = clientId ? new Date().toISOString() : null;
       setChecklist(saved && saved.checklist ? saved.checklist : {});
       setCustomSteps(saved && saved.customSteps ? saved.customSteps : []);
+      setAnswers(saved && saved.answers ? saved.answers : {});
+      setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
       setScenario({ levers: [] });
@@ -99,10 +109,29 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    // Match a returned questions spreadsheet to the current questions and keep the answers.
+    const applyAnswers = useCallback((file) => {
+      if (!result) return '';
+      const m = E.matchAnswers(result, file.parsed);
+      if (!m.matched.length) return `${file.name}: no answers matched the current questions${m.unmatched.length ? ' (they may be for another client, or already cleared)' : ''}.`;
+      const at = new Date().toISOString().slice(0, 10);
+      setAnswers((prev) => {
+        const next = { ...prev };
+        for (const a of m.matched) next[a.key] = { ref: a.ref, topic: a.topic, question: a.question, answer: a.answer, receipt: a.receipt, at };
+        return next;
+      });
+      return `Loaded ${m.matched.length} answer${m.matched.length === 1 ? '' : 's'} from ${file.name}${m.unmatched.length ? `; ${m.unmatched.length} row${m.unmatched.length === 1 ? '' : 's'} did not match a current question` : ''}. They are listed under Client answers on the audit tab.`;
+    }, [result]);
+    useEffect(() => {
+      if (!pendingAnswers || !result) return;
+      if (!clientId && source.kind !== 'sample') return;
+      setNotice(applyAnswers(pendingAnswers));
+      setPendingAnswers(null);
+    }, [pendingAnswers, result, clientId, source, applyAnswers]);
     const setReview = useCallback((keys, status) => {
       setReviewed((prev) => {
         const next = { ...prev };
@@ -138,6 +167,11 @@
           // A Profit and Loss report has a Net Income line and no dates.
           const pl = E.parseProfitAndLoss(text);
           if (pl) { resolve({ name: file.name, pnl: pl }); return; }
+          // The client's filled-in questions spreadsheet, and an expense list with attachments.
+          const ans = E.parseAnswers(text);
+          if (ans) { resolve({ name: file.name, answers: ans }); return; }
+          const att = E.parseAttachmentList(text);
+          if (att) { resolve({ name: file.name, attachments: att }); return; }
           const p = E.parseTransactions(text);
           if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
           resolve({ name: file.name, parsed: p });
@@ -159,17 +193,20 @@
       const chartFile = lastOf('chart');
       const pnlFile = lastOf('pnl');
       const budgetFile = lastOf('budget');
+      const attachFile = lastOf('attachments');
+      const answersFile = lastOf('answers');
+      if (answersFile) setPendingAnswers(answersFile);
       const errors = bad.map((b) => `${b.name} ${b.error}`);
       const prev = sourceRef.current;
       if (!good.length) {
         // A chart or P&L on its own attaches to the transactions already loaded.
-        const extra = chartFile || pnlFile || budgetFile;
-        if (extra && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl, budget: budgetFile || prev.budget });
-        else if (extra) errors.push(`${extra.name} is a ${chartFile ? 'chart of accounts' : pnlFile ? 'Profit and Loss report' : 'budget'}. Upload the client's Transaction Detail with it.`);
+        const extra = chartFile || pnlFile || budgetFile || attachFile;
+        if (extra && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl, budget: budgetFile || prev.budget, attachments: attachFile || prev.attachments });
+        else if (extra) errors.push(`${extra.name} is a ${chartFile ? 'chart of accounts' : pnlFile ? 'Profit and Loss report' : budgetFile ? 'budget' : 'list of expenses with attachments'}. Upload the client's Transaction Detail with it.`);
       } else {
         const keepPrev = append && prev.kind === 'upload';
         const kept = keepPrev ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
-        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null) });
+        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null), attachments: attachFile || (keepPrev ? prev.attachments : null) });
       }
       setError(errors.join(' '));
     }, []);
@@ -236,6 +273,7 @@
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
         ${error && html`<div class="error" role="alert">${error}</div>`}
+        ${notice && html`<${Banner} level="good" label="Client answers">${notice} <button class="linkish" onClick=${() => setNotice(null)}>Dismiss</button></${Banner}>`}
         ${welcome && html`<${Banner} level="good" label="Welcome">New here? The getting-started guide covers which QuickBooks reports to export, a monthly routine and how to send reports. <button class="linkish" onClick=${() => { dismissWelcome(); setHelpOpen(true); }}>Open the guide</button> · <button class="linkish" onClick=${dismissWelcome}>Dismiss</button></${Banner}>`}
         ${!welcome && backupDue && !backupSnoozed && html`<${Banner} level="medium" label="Back up">Your saved clients have not been backed up in over 30 days. They live only in this browser. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button> · <button class="linkish" onClick=${() => setBackupSnoozed(true)}>Later</button></${Banner}>`}
         ${restored && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
@@ -254,7 +292,7 @@
         </div>
 
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`}>
-          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => setClosed(through ? result.closeBooks(through) : null)} canSave=${!!clientId} />`
+          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => setClosed(through ? result.closeBooks(through) : null)} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; delete n[key]; return n; })} />`
             : tab === 'close' ? html`<${CloseTab} result=${result} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${setTab} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} onReview=${setReview} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
@@ -268,7 +306,7 @@
         <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
       </div>
 
-      ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
+      ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} answers=${answers} onLoadAnswers=${(file) => applyAnswers(file)} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
       ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} />`}
       ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
       ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} benchmarks=${benchmarks} onClose=${() => setReportOpen(false)} />`}
