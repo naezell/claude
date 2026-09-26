@@ -1,6 +1,7 @@
 // Interface tests: load the page in headless Chromium and use it the way a bookkeeper would.
-// The CDN scripts are served from node_modules, so no network is needed. Skipped when
-// playwright-core or a Chromium build is not available (run `npm install` first).
+// The libraries load from vendor/ like on the live site, and every outside request is refused, so
+// the page must work without other servers. Skipped when playwright-core or a Chromium build is
+// not available (run `npm install` first).
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -9,14 +10,6 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const PAGE = `file://${path.join(ROOT, 'index.html')}`;
 const SAMPLE = path.join(ROOT, 'sample-data', 'harbor-pine-transaction-detail.csv');
-const NM = path.join(ROOT, 'node_modules');
-const CDN = {
-  'react.production.min.js': 'react/umd/react.production.min.js',
-  'react-dom.production.min.js': 'react-dom/umd/react-dom.production.min.js',
-  'prop-types.min.js': 'prop-types/prop-types.min.js',
-  'Recharts.js': 'recharts/umd/Recharts.js',
-  'htm.umd.js': 'htm/dist/htm.umd.js',
-};
 const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory'];
 
 let chromium = null;
@@ -38,8 +31,6 @@ function candidates() {
 
 let browser = null;
 let skip = chromium ? false : 'playwright-core is not installed (run npm install)';
-const missingLibs = Object.values(CDN).filter((f) => !fs.existsSync(path.join(NM, f)));
-if (!skip && missingLibs.length) skip = `missing ${missingLibs.join(', ')} (run npm install)`;
 
 before(async () => {
   if (skip) return;
@@ -55,18 +46,19 @@ after(async () => { if (browser) await browser.close(); });
 async function openPage(opts, setup, serve) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, ...(opts || {}) });
   const errors = [];
+  const outside = [];
   page.on('pageerror', (e) => errors.push(e.message));
   if (setup) await setup(page);
   await page.route('**/*', async (route) => {
     const url = route.request().url();
     if (url.startsWith('file:')) return route.continue();
     if (serve && await serve(route, url)) return;
-    const hit = Object.keys(CDN).find((k) => url.endsWith(k));
-    return hit ? route.fulfill({ path: path.join(NM, CDN[hit]), contentType: 'application/javascript' }) : route.abort();
+    outside.push(url);
+    return route.abort();
   });
   await page.goto(PAGE);
   await page.waitForSelector('#tab-audit');
-  return { page, errors };
+  return { page, errors, outside };
 }
 
 const kpi = (page, label) => page.locator('.kpi', { has: page.locator('.kpi-label', { hasText: label }) }).locator('.kpi-value').first().innerText();
@@ -80,7 +72,11 @@ const kpiChange = (page, label, from) => page.waitForFunction(([l, f]) => {
 test('every tab renders without errors or sideways scrolling, light and dark, desktop and phone', async (t) => {
   if (skip) return t.skip(skip);
   for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
-    const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    const { page, errors, outside } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    // Libraries and fonts come from the site itself, not outside servers.
+    assert.deepEqual(outside, [], 'requests to outside servers');
+    await page.evaluate(() => document.fonts.ready);
+    assert.ok(await page.evaluate(() => document.fonts.check('500 14px "IBM Plex Sans"')), 'IBM Plex Sans loaded');
     for (const tab of TABS) {
       await page.click(`#tab-${tab}`);
       await page.waitForSelector(`main[aria-labelledby="tab-${tab}"] section`);

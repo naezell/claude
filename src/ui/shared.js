@@ -89,7 +89,7 @@
   const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.closed && !Object.keys(p.checklist || {}).length && !(p.customSteps || []).length && !p.cushion && !p.bench && !(p.loan && p.loan.amount) && !(p.tax && (p.tax.entity !== 'sole' || p.tax.rate || p.tax.salary || p.tax.paid)));
 
   // The Excel reader (SheetJS) is large, so it loads only when an Excel file is dropped in.
-  const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  const XLSX_URL = 'vendor/xlsx.full.min.js';
   let xlsxLoading = null;
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve(window.XLSX);

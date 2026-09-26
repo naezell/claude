@@ -5,7 +5,7 @@ set -e
 cd "$(dirname "$0")/.."
 rm -rf dist
 mkdir -p dist
-cp -r src assets dist/
+cp -r src assets vendor dist/
 cp login.html dist/
 {
   printf '<!doctype html>\n<html lang="en">\n<meta charset="utf-8">\n'
