@@ -390,3 +390,51 @@ test('receipts panel and the client answers round trip', async (t) => {
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// A stand-in for the browser's file picker: one file kept in memory.
+const fakeFilePicker = () => {
+  window.__file = { name: 'Ledger Lens backup.json', text: '' };
+  const handle = {
+    name: 'Ledger Lens backup.json',
+    queryPermission: async () => 'granted',
+    requestPermission: async () => 'granted',
+    createWritable: async () => { let buf = ''; return { write: async (t) => { buf += t; }, close: async () => { window.__file.text = buf; window.__file.writes = (window.__file.writes || 0) + 1; } }; },
+    getFile: async () => ({ text: async () => window.__file.text }),
+  };
+  window.showSaveFilePicker = async () => handle;
+  window.showOpenFilePicker = async () => [handle];
+};
+
+test('backup to a file on this computer: choose it, save automatically, restore from it', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage({}, (p) => p.addInitScript(fakeFilePicker));
+  await page.click('button:has-text("Clients")');
+  await page.click('button:has-text("Choose where to save")');
+  await page.locator('.backup-block', { hasText: 'Saving automatically' }).waitFor();
+  assert.equal(JSON.parse(await page.evaluate(() => window.__file.text)).format, 'ledger-lens-clients');
+  // A review on an uploaded client is written to the file a few seconds later.
+  await page.click('.drawer-head button');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Uncategorized transactions' }) });
+  await panel.locator('select.review-select').first().selectOption('ok');
+  await page.waitForFunction(() => { try { return Object.values(JSON.parse(window.__file.text).clients).some((c) => Object.keys(c.reviewed || {}).length); } catch (e) { return false; } }, null, { timeout: 15000 });
+  // Restoring merges a client that only exists in the file.
+  await page.evaluate(() => { const d = JSON.parse(window.__file.text); d.clients['other co'] = { name: 'Other Co', updatedAt: '2030-01-01T00:00:00.000Z' }; window.__file.text = JSON.stringify(d); });
+  await page.click('button:has-text("Clients")');
+  await page.click('button:has-text("Restore from it")');
+  await page.waitForSelector('.dash-row:has-text("Other Co")');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('without a file picker (Safari, Firefox) the panel explains and offers the download', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { delete window.showSaveFilePicker; window.showSaveFilePicker = undefined; }));
+  await page.click('button:has-text("Clients")');
+  const block = page.locator('.backup-block', { hasText: 'File on this computer' });
+  assert.match(await block.innerText(), /Chrome and Edge/);
+  assert.equal(await page.locator('button:has-text("Choose where to save")').count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

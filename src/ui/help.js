@@ -84,7 +84,7 @@
             <ul>
               <li>Client files are read in your browser and never uploaded anywhere.</li>
               <li>Your reviews and settings are saved in this browser on this computer. Clearing browser data, or switching browsers or computers, starts fresh.</li>
-              <li>So back up: the <strong>Clients</strong> panel saves to Google Drive (when set up) or to a backup file. Once a month is enough; the page reminds you.</li>
+              <li>So back up, in the <strong>Clients</strong> panel: pick a <strong>file on this computer</strong> that the app keeps saving to (Chrome and Edge), connect <strong>Google Drive</strong>, or download a backup file now and then. The page reminds you if nothing has been backed up for 30 days.</li>
             </ul>
             <p><button class="btn" onClick=${() => { onClose(); onOpenClients(); }}>${Icon.cloud}Open Clients & backup</button></p>
           `)}

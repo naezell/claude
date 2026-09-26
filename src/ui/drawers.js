@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive, excelToCsv } = UI;
+  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive, excelToCsv, LocalFile, useLocalFile } = UI;
 
   // ------------------------------------------------------------ client questions drawer
 
@@ -76,6 +76,52 @@
     const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
     return days < 1 && new Date().toDateString() === d.toDateString() ? `today at ${time}` : days < 2 ? `yesterday at ${time}` : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
+
+  // A backup file on this computer that the app keeps up to date (Chrome and Edge).
+  function ComputerBackup({ onRestored }) {
+    const st = useLocalFile();
+    const [note, setNote] = useState('');
+    const title = html`<h3>${Icon.download}File on this computer ${LocalFile.ready() ? html`<span class="pill good"><span class="dot"></span>Saving automatically</span>` : ''}</h3>`;
+    if (!LocalFile.supported()) {
+      return html`<div class="backup-block">${title}
+        <p>${window.self !== window.top
+          ? 'Automatic saving to a file works when the app is opened on its own site in Chrome or Edge.'
+          : 'This browser cannot keep saving to a file by itself; Chrome and Edge on a computer can.'} Here, use <strong>Save backup file</strong> below and keep the file somewhere safe, such as Documents.</p>
+      </div>`;
+    }
+    const restored = (n) => { if (n != null) { setNote(`Restored ${n} client${n === 1 ? '' : 's'} from ${LocalFile.state.name} (newer copies kept); saving there from now on.`); onRestored(); } };
+    const msg = st.busy || st.error || note;
+    if (st.handle && st.permission === 'granted') {
+      return html`<div class="backup-block">${title}
+        <p>Everything is saved to <strong>${st.name}</strong>${st.lastSaved ? `, last saved ${fmtWhen(st.lastSaved)}` : ''}. The file stays wherever you chose, for example Documents, and can be copied to a USB drive for safekeeping.</p>
+        <div class="backup-actions">
+          <button class="btn primary" disabled=${!!st.busy} onClick=${() => { setNote(''); LocalFile.save(); }}>Save now</button>
+          <button class="btn" disabled=${!!st.busy} onClick=${async () => { const n = await LocalFile.restore(); if (n != null) { setNote(`Restored ${n} client${n === 1 ? '' : 's'} from the file (newer copies kept).`); onRestored(); } }}>Restore from it</button>
+          <button class="btn" disabled=${!!st.busy} onClick=${() => { setNote(''); LocalFile.forget(); }}>Stop saving to it</button>
+        </div>
+        <label class="check" for="file-auto" style=${{ paddingTop: '8px' }}><input id="file-auto" type="checkbox" checked=${st.auto} onChange=${(e) => LocalFile.setAuto(e.target.checked)} />Save to the file automatically after each change</label>
+        <p class="backup-status" role="status">${msg}</p>
+      </div>`;
+    }
+    if (st.handle) {
+      return html`<div class="backup-block">${title}
+        <p>Saving goes to <strong>${st.name}</strong>. For safety the browser asks once each time the page is opened before the app may write to it.</p>
+        <div class="backup-actions">
+          <button class="btn primary" disabled=${!!st.busy} onClick=${() => LocalFile.reconnect()}>Allow saving to ${st.name}</button>
+          <button class="btn" disabled=${!!st.busy} onClick=${() => { setNote(''); LocalFile.forget(); }}>Use a different file</button>
+        </div>
+        <p class="backup-status" role="status">${msg}</p>
+      </div>`;
+    }
+    return html`<div class="backup-block">${title}
+      <p>Pick a file on this computer once, and the app saves every client's settings and reviews to it after each change. No account needed.</p>
+      <div class="backup-actions">
+        <button class="btn primary" disabled=${!!st.busy} onClick=${() => { setNote(''); LocalFile.create(); }}>Choose where to save</button>
+        <button class="btn" disabled=${!!st.busy} onClick=${async () => { setNote(''); restored(await LocalFile.openExisting()); }}>Use an existing backup file</button>
+      </div>
+      <p class="backup-status" role="status">${msg}</p>
+    </div>`;
+  }
 
   function DriveBackup({ onRestored }) {
     const st = useDrive();
@@ -170,7 +216,7 @@
             <div class="kpi"><span class="kpi-label">Clients</span><span class="kpi-value">${list.length}</span><span class="kpi-sub">saved in this browser</span></div>
             <div class=${`kpi ${attention ? 'alert' : 'okay'}`}><span class="kpi-label">Need attention</span><span class="kpi-value">${attention}</span><span class="kpi-sub">closed-month changes, balance sheet or cash</span></div>
             <div class="kpi"><span class="kpi-label">Closes complete</span><span class="kpi-value">${closedCount}</span><span class="kpi-sub">latest month fully ticked off</span></div>
-            <div class=${`kpi ${!last || daysSince(last.at) > 30 ? 'alert' : ''}`}><span class="kpi-label">Last backup</span><span class="kpi-value">${last ? `${daysSince(last.at)}d ago` : 'Never'}</span><span class="kpi-sub">${last ? (last.where === 'Google Drive' ? 'to Google Drive' : 'to a file') : 'see Backup below'}</span></div>
+            <div class=${`kpi ${!last || daysSince(last.at) > 30 ? 'alert' : ''}`}><span class="kpi-label">Last backup</span><span class="kpi-value">${last ? `${daysSince(last.at)}d ago` : 'Never'}</span><span class="kpi-sub">${last ? (last.where === 'Google Drive' ? 'to Google Drive' : last.where === 'computer' ? 'to the file on this computer' : 'to a downloaded file') : 'see Backup below'}</span></div>
           </section>`}
           <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Every client whose export has been loaded, most urgent first. Figures are from the last time their export was analyzed; load a client's latest export to update them and work on the books. Settings and reviews are kept in this browser, so back them up.</p></div>
           ${list.length ? html`<div class="table-wrap"><table class="dash-table">
@@ -194,10 +240,11 @@
             })}</tbody>
           </table></div>` : html`<div class="empty">No clients yet. Upload a client's export; it shows up here with where their books stand.</div>`}
           <div class="backup">
+            <${ComputerBackup} onRestored=${refresh} />
             <${DriveBackup} onRestored=${refresh} />
             <div class="backup-block">
-              <h3>${Icon.download}Backup file</h3>
-              <p>Save everything to one file you can keep anywhere (a Google Drive or Dropbox folder works well) and load it on another computer.${last ? ` Last backup: ${fmtWhen(last.at)}${last.where === 'Google Drive' ? ' to Google Drive' : ''}.` : ' No backup yet.'}</p>
+              <h3>${Icon.download}Download a backup file</h3>
+              <p>A one-off copy of everything in a file you can keep anywhere (a USB drive, Dropbox, or email it to yourself) and load on another computer. Works in every browser.${last ? ` Last backup: ${fmtWhen(last.at)}${last.where === 'Google Drive' ? ' to Google Drive' : last.where === 'computer' ? ' to the file on this computer' : ''}.` : ' No backup yet.'}</p>
               <div class="backup-actions">
                 <button class="btn" disabled=${!list.length} onClick=${doExport}>${Icon.download}Save backup file</button>
                 <label class="btn" for="clients-import">${Icon.upload}Restore from file</label>
