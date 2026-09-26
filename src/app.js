@@ -43,6 +43,8 @@
     const [answers, setAnswers] = useState({});
     const [pendingAnswers, setPendingAnswers] = useState(null);
     const [notice, setNotice] = useState(null);
+    // What the last upload did with each file, so nothing is silently ignored.
+    const [uploadNote, setUploadNote] = useState(null);
     // Firm's own receipt limit for this client (blank: only the IRS categories and $2,500+).
     const [receiptLimit, setReceiptLimit] = useState('');
     const [loanInputs, setLoanInputs] = useState({ amount: '', rate: '10.5', years: '10', addBacks: '' });
@@ -197,6 +199,9 @@
       const answersFile = lastOf('answers');
       if (answersFile) setPendingAnswers(answersFile);
       const errors = bad.map((b) => `${b.name} ${b.error}`);
+      const KIND = { parsed: 'transactions', chart: 'chart of accounts', pnl: 'Profit and Loss', budget: 'budget', attachments: 'expense list with attachments', answers: "client's answers" };
+      const seen = results.filter((r) => !r.error).map((r) => `${r.name} (${KIND[Object.keys(KIND).find((k) => r[k])] || 'file'})`);
+      setUploadNote(files.length ? { count: files.length, seen, skipped: bad.length } : null);
       const prev = sourceRef.current;
       if (!good.length) {
         // A chart or P&L on its own attaches to the transactions already loaded.
@@ -252,7 +257,7 @@
             <input id="csv-upload" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, false); e.target.value = ''; }} />
             ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
               <input id="csv-add" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
-            ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
+            ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setUploadNote(null); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
             <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.cloud}Clients</button>
             <button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
             <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>
@@ -270,12 +275,14 @@
             ? html`<span class="pill good"><span class="dot"></span>Chart of accounts</span><span>${result.chart.matched} of ${result.chart.of} accounts typed from it</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the client's Chart of Accounts export (Account List report) for exact account types.</span>`)}
           ${uploadedBudget && source.kind === 'upload' && html`<span class="pill good"><span class="dot"></span>Budget</span>`}
+          ${source.kind === 'upload' && source.attachments && html`<span class="pill good"><span class="dot"></span>Expense list (receipts)</span>`}
           ${result && (result.tieOut
             ? html`<span class=${`pill ${result.tieOut.ties ? 'good' : 'high'}`}><span class="dot"></span>${result.tieOut.ties ? 'Ties to QuickBooks P&L' : 'Does not tie to QuickBooks P&L'}</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>
         ${error && html`<div class="error" role="alert">${error}</div>`}
+        ${uploadNote && html`<${Banner} level=${uploadNote.skipped ? 'medium' : 'good'} label=${`${uploadNote.count} file${uploadNote.count === 1 ? '' : 's'} uploaded`}>${uploadNote.seen.length ? `Read: ${uploadNote.seen.join(', ')}.` : ''}${uploadNote.skipped ? ` ${uploadNote.skipped} could not be read (see the message above).` : ''}${uploadNote.count === 1 && source.kind === 'upload' && !source.chart && !source.pnl ? ' To add the chart of accounts, Profit and Loss or expense list, select them together with the transactions, or use Add export.' : ''} <button class="linkish" onClick=${() => setUploadNote(null)}>Dismiss</button></${Banner}>`}
         ${notice && html`<${Banner} level="good" label="Client answers">${notice} <button class="linkish" onClick=${() => setNotice(null)}>Dismiss</button></${Banner}>`}
         ${welcome && html`<${Banner} level="good" label="Welcome">New here? The getting-started guide covers which QuickBooks reports to export, a monthly routine and how to send reports. <button class="linkish" onClick=${() => { dismissWelcome(); setHelpOpen(true); }}>Open the guide</button> · <button class="linkish" onClick=${dismissWelcome}>Dismiss</button></${Banner}>`}
         ${!welcome && backupDue && !backupSnoozed && html`<${Banner} level="medium" label="Back up">Your saved clients have not been backed up in over 30 days. They live only in this browser. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button> · <button class="linkish" onClick=${() => setBackupSnoozed(true)}>Later</button></${Banner}>`}

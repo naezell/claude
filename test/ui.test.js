@@ -457,3 +457,18 @@ test('Save backup file: explains when there is nothing yet, downloads once a cli
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('uploading several files says what each one was read as', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  const D = path.join(ROOT, 'sample-data', 'test-clients');
+  await page.setInputFiles('#csv-upload', ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments'].map((f) => path.join(D, `bloom-basil-${f}.csv`)));
+  const note = page.locator('.banner', { hasText: '4 files uploaded' });
+  await note.waitFor();
+  const text = await note.innerText();
+  for (const s of ['(transactions)', '(chart of accounts)', '(Profit and Loss)', '(expense list with attachments)']) assert.ok(text.includes(s), s);
+  const src = await page.locator('.source').innerText();
+  for (const s of ['Chart of accounts', 'Ties to QuickBooks P&L', 'Expense list (receipts)']) assert.ok(src.includes(s), s);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
