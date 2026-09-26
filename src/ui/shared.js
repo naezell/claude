@@ -20,53 +20,21 @@
     return `${n < 0 ? '-' : ''}$${s}`;
   };
   const truncate = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
-  const safeStore = {
-    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } },
-  };
-
-  // Saved client settings live in this browser only (the page never uploads client data).
-  // Everything goes through this object, so moving storage elsewhere is a one-place change.
-  const ClientStore = {
-    key: 'll.clients.v1',
-    // Told about every change, so a backup elsewhere (Google Drive) can follow along.
-    listeners: new Set(),
-    changed() { this.listeners.forEach((fn) => { try { fn(); } catch (e) { /* a listener failing must not stop saving */ } }); },
-    all() { try { return JSON.parse(safeStore.get(this.key) || '{}') || {}; } catch (e) { return {}; } },
-    get(id) { return id ? this.all()[id] || null : null; },
-    put(id, profile) {
-      if (!id) return;
-      const all = this.all();
-      all[id] = { ...profile, updatedAt: new Date().toISOString() };
-      safeStore.set(this.key, JSON.stringify(all));
-      this.changed();
-    },
-    remove(id) { const all = this.all(); delete all[id]; safeStore.set(this.key, JSON.stringify(all)); this.changed(); },
-    // Import keeps whichever copy of each client was updated more recently.
-    merge(incoming) {
-      const all = this.all();
-      let n = 0;
-      for (const [id, p] of Object.entries(incoming || {})) {
-        if (!p || typeof p !== 'object') continue;
-        if (!all[id] || String(p.updatedAt || '') > String(all[id].updatedAt || '')) { all[id] = p; n++; }
-      }
-      safeStore.set(this.key, JSON.stringify(all));
-      if (n) this.changed();
-      return n;
-    },
-  };
+  // Saved clients and small settings: see src/store.js.
+  const { safeStore, ClientStore } = window.LedgerStore;
 
   // One backup file holds every saved client plus the preparer name. The same file is used for
   // a download and for Google Drive, and restoring merges it (newer copies win).
   const Backup = {
     format: 'ledger-lens-clients',
     build() {
-      return JSON.stringify({ format: this.format, version: 2, savedAt: new Date().toISOString(), clients: ClientStore.all(), settings: { preparer: safeStore.get('ll.preparer') || '' } }, null, 2);
+      return JSON.stringify({ format: this.format, version: 2, schema: ClientStore.schema, savedAt: new Date().toISOString(), clients: ClientStore.all(), settings: { preparer: safeStore.get('ll.preparer') || '' } }, null, 2);
     },
     restore(text) {
       let data;
       try { data = JSON.parse(String(text || '')); } catch (e) { throw new Error('the file is not valid JSON'); }
       if (!data || data.format !== this.format) throw new Error('not a Ledger Lens backup');
+      if (data.schema > ClientStore.schema) throw new Error('it was made by a newer version of Ledger Lens; reload the page to update, then try again');
       const n = ClientStore.merge(data.clients);
       const preparer = data.settings && typeof data.settings.preparer === 'string' ? data.settings.preparer : '';
       if (preparer && !safeStore.get('ll.preparer')) safeStore.set('ll.preparer', preparer);
@@ -89,7 +57,7 @@
   const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.closed && !Object.keys(p.checklist || {}).length && !(p.customSteps || []).length && !p.cushion && !p.bench && !(p.loan && p.loan.amount) && !(p.tax && (p.tax.entity !== 'sole' || p.tax.rate || p.tax.salary || p.tax.paid)));
 
   // The Excel reader (SheetJS) is large, so it loads only when an Excel file is dropped in.
-  const XLSX_URL = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+  const XLSX_URL = 'vendor/xlsx.full.min.js';
   let xlsxLoading = null;
   function loadXlsx() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
@@ -175,6 +143,7 @@
   }
 
   const Icon = {
+    flag: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 14V2.5M3.5 2.5h8l-1.8 3 1.8 3h-8"/></svg>`,
     upload: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10.5V2.5M4.8 5.5 8 2.3l3.2 3.2M2.5 10.5v2.2c0 .5.4.8.8.8h9.4c.4 0 .8-.3.8-.8v-2.2"/></svg>`,
     report: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5h3.5M6 8h4.5M6 10.5h4.5"/></svg>`,
     sample: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h7"/></svg>`,

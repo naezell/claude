@@ -146,7 +146,9 @@
 
   // Automatic saving a few seconds after any saved-client change, while allowed.
   let timer = null;
-  ClientStore.listeners.add(() => {
+  // Changes made in another open tab are saved by that tab.
+  ClientStore.listeners.add((info) => {
+    if (info.remote) return;
     if (!LocalFile.state.auto || !LocalFile.ready()) return;
     clearTimeout(timer);
     timer = setTimeout(() => { if (LocalFile.ready() && !LocalFile.state.busy) LocalFile.save(); }, 3000);

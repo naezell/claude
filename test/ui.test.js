@@ -1,6 +1,7 @@
 // Interface tests: load the page in headless Chromium and use it the way a bookkeeper would.
-// The CDN scripts are served from node_modules, so no network is needed. Skipped when
-// playwright-core or a Chromium build is not available (run `npm install` first).
+// The libraries load from vendor/ like on the live site, and every outside request is refused, so
+// the page must work without other servers. Skipped when playwright-core or a Chromium build is
+// not available (run `npm install` first).
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
@@ -9,14 +10,6 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const PAGE = `file://${path.join(ROOT, 'index.html')}`;
 const SAMPLE = path.join(ROOT, 'sample-data', 'harbor-pine-transaction-detail.csv');
-const NM = path.join(ROOT, 'node_modules');
-const CDN = {
-  'react.production.min.js': 'react/umd/react.production.min.js',
-  'react-dom.production.min.js': 'react-dom/umd/react-dom.production.min.js',
-  'prop-types.min.js': 'prop-types/prop-types.min.js',
-  'Recharts.js': 'recharts/umd/Recharts.js',
-  'htm.umd.js': 'htm/dist/htm.umd.js',
-};
 const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory'];
 
 let chromium = null;
@@ -38,8 +31,6 @@ function candidates() {
 
 let browser = null;
 let skip = chromium ? false : 'playwright-core is not installed (run npm install)';
-const missingLibs = Object.values(CDN).filter((f) => !fs.existsSync(path.join(NM, f)));
-if (!skip && missingLibs.length) skip = `missing ${missingLibs.join(', ')} (run npm install)`;
 
 before(async () => {
   if (skip) return;
@@ -55,18 +46,19 @@ after(async () => { if (browser) await browser.close(); });
 async function openPage(opts, setup, serve) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, ...(opts || {}) });
   const errors = [];
+  const outside = [];
   page.on('pageerror', (e) => errors.push(e.message));
   if (setup) await setup(page);
   await page.route('**/*', async (route) => {
     const url = route.request().url();
     if (url.startsWith('file:')) return route.continue();
     if (serve && await serve(route, url)) return;
-    const hit = Object.keys(CDN).find((k) => url.endsWith(k));
-    return hit ? route.fulfill({ path: path.join(NM, CDN[hit]), contentType: 'application/javascript' }) : route.abort();
+    outside.push(url);
+    return route.abort();
   });
   await page.goto(PAGE);
   await page.waitForSelector('#tab-audit');
-  return { page, errors };
+  return { page, errors, outside };
 }
 
 const kpi = (page, label) => page.locator('.kpi', { has: page.locator('.kpi-label', { hasText: label }) }).locator('.kpi-value').first().innerText();
@@ -80,7 +72,11 @@ const kpiChange = (page, label, from) => page.waitForFunction(([l, f]) => {
 test('every tab renders without errors or sideways scrolling, light and dark, desktop and phone', async (t) => {
   if (skip) return t.skip(skip);
   for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
-    const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    const { page, errors, outside } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    // Libraries and fonts come from the site itself, not outside servers.
+    assert.deepEqual(outside, [], 'requests to outside servers');
+    await page.evaluate(() => document.fonts.ready);
+    assert.ok(await page.evaluate(() => document.fonts.check('500 14px "IBM Plex Sans"')), 'IBM Plex Sans loaded');
     for (const tab of TABS) {
       await page.click(`#tab-${tab}`);
       await page.waitForSelector(`main[aria-labelledby="tab-${tab}"] section`);
@@ -470,5 +466,135 @@ test('uploading several files says what each one was read as', async (t) => {
   const src = await page.locator('.source').innerText();
   for (const s of ['Chart of accounts', 'Ties to QuickBooks P&L', 'Expense list (receipts)']) assert.ok(src.includes(s), s);
   assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('saved clients move from the old storage into the browser database and survive a reload', async (t) => {
+  if (skip) return t.skip(skip);
+  const old = { 'old co': { name: 'Old Co', updatedAt: '2026-01-01T00:00:00.000Z', reviewed: { a: 'ok' } } };
+  const { page, errors } = await openPage({}, (p) => p.addInitScript((data) => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('ll.clients.v1', data); sessionStorage.setItem('seeded', '1'); } }, JSON.stringify(old)));
+  assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'indexeddb');
+  assert.equal(await page.evaluate(() => localStorage.getItem('ll.clients.v1')), null, 'old copy removed once moved');
+  await page.reload();
+  await page.waitForSelector('#tab-audit');
+  await page.click('button:has-text("Clients")');
+  await page.waitForSelector('.dash-row:has-text("Old Co")');
+  assert.match(await page.locator('.storage-note').innerText(), /browser's database/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a failed save says so and points to a backup', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.evaluate(() => { IDBObjectStore.prototype.put = function () { throw new DOMException('full', 'QuotaExceededError'); }; });
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  const banner = page.locator('.banner', { hasText: 'Not saving' });
+  await banner.waitFor();
+  assert.match(await banner.innerText(), /run out of space/);
+  await banner.locator('button', { hasText: 'Back up now' }).click();
+  assert.match(await page.locator('.storage-note').innerText(), /Not saving/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('without the browser database, clients are saved in basic storage instead', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { Object.defineProperty(window, 'indexedDB', { value: undefined }); }));
+  assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'localstorage');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForFunction(() => Object.values(JSON.parse(localStorage.getItem('ll.clients.v1') || '{}')).some((c) => c.name === 'Harbor & Pine Design Co.'));
+  assert.equal(await page.locator('.banner', { hasText: 'Not saving' }).count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a client saved in one tab shows up in another open tab', async (t) => {
+  if (skip) return t.skip(skip);
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  const open = async () => {
+    const page = await context.newPage();
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.route('**/*', (route) => (route.request().url().startsWith('file:') ? route.continue() : route.abort()));
+    await page.goto(PAGE);
+    await page.waitForSelector('#tab-audit');
+    return page;
+  };
+  const a = await open();
+  const b = await open();
+  await b.click('button:has-text("Clients")');
+  await b.locator('.empty', { hasText: 'No clients yet' }).waitFor();
+  await a.setInputFiles('#csv-upload', SAMPLE);
+  await b.waitForSelector('.dash-row:has-text("Harbor & Pine")');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('an Excel export is read with the Excel reader served by the site', async (t) => {
+  if (skip) return t.skip(skip);
+  const XLSX = require('xlsx');
+  const rows = fs.readFileSync(SAMPLE, 'utf8');
+  const wb = XLSX.read(rows, { type: 'string' });
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const { page, errors, outside } = await openPage();
+  await page.setInputFiles('#csv-upload', { name: 'harbor-pine.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer });
+  await page.waitForSelector('button:has-text("Load sample")');
+  assert.equal(await kpi(page, 'Uncategorized'), '11');
+  assert.deepEqual(outside, []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Report a problem: fills in an email with the description and recent errors, no client data', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.evaluate(() => window.LedgerProblem.note('error', 'Test failure', 'src/engine.js:1'));
+  await page.click('footer button:has-text("Report a problem")');
+  await page.fill('#problem-what', 'The cash chart is empty');
+  const href = decodeURIComponent(await page.locator('a:has-text("Email the report")').getAttribute('href'));
+  assert.match(href, /^mailto:nate\.ezell@gmail\.com\?subject=Ledger Lens problem report&body=/);
+  assert.match(href, /The cash chart is empty/);
+  assert.match(href, /Test failure \(src\/engine\.js:1\)/);
+  assert.match(href, /Storage: indexeddb, 1 saved client/);
+  assert.match(href, /Tab: audit/);
+  assert.ok(!/Harbor|Pine/.test(href), 'no client name in the report');
+  await page.click('button:has-text("Show what the report contains")');
+  assert.match(await page.locator('.problem-details').innerText(), /Version: development copy/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a crash shows a way out instead of a blank page', async (t) => {
+  if (skip) return t.skip(skip);
+  // Break one tab's drawing on purpose.
+  const { page } = await openPage({}, (p) => p.addInitScript(() => {
+    Object.defineProperty(window, 'LedgerUI', { configurable: true, set(v) { Object.defineProperty(window, 'LedgerUI', { value: v, writable: true }); Object.defineProperty(v, 'TrendsTab', { configurable: true, get: () => () => { throw new Error('Boom'); }, set() {} }); }, get() { return undefined; } });
+  }));
+  await page.click('#tab-trends');
+  await page.waitForSelector('.crashed h1:has-text("Something went wrong")');
+  await page.click('.crashed button:has-text("Report a problem")');
+  const text = decodeURIComponent(await page.locator('a:has-text("Email the report")').getAttribute('href'));
+  assert.match(text, /crash: Boom/);
+  assert.match(text, /Crashed with: Boom/);
+  await page.close();
+});
+
+test('if the page cannot start, a plain message offers the report', async (t) => {
+  if (skip) return t.skip(skip);
+  const page = await browser.newPage();
+  await page.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.endsWith('vendor/react-dom.production.min.js')) return route.abort();
+    return url.startsWith('file:') ? route.continue() : route.abort();
+  });
+  await page.clock.install();
+  await page.goto(PAGE);
+  await page.clock.runFor(16000);
+  await page.waitForSelector('h1:has-text("Ledger Lens did not load")');
+  const pre = await page.locator('pre').innerText();
+  assert.match(pre, /did not load: vendor\/react-dom\.production\.min\.js/);
   await page.close();
 });

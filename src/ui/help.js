@@ -14,7 +14,7 @@
     ['save', 'Saving your work'],
   ];
 
-  function HelpDrawer({ onClose, onOpenClients }) {
+  function HelpDrawer({ onClose, onOpenClients, onReport }) {
     const [open, setOpen] = useState('export');
     useEscape(onClose);
     const part = (id, body) => html`<section class=${`help-part ${open === id ? 'open' : ''}`} id=${`help-${id}`}>${body}</section>`;
@@ -88,6 +88,7 @@
             </ul>
             <p><button class="btn" onClick=${() => { onClose(); onOpenClients(); }}>${Icon.cloud}Open Clients & backup</button></p>
           `)}
+          <p class="help-report">Something not working, or a figure that looks wrong? <button class="btn" onClick=${() => { onClose(); onReport(); }}>${Icon.flag}Report a problem</button></p>
         </div>
       </aside>
     </div>`;

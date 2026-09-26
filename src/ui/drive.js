@@ -174,7 +174,9 @@
 
   // Automatic saving: a few seconds after any saved-client change, while connected.
   let timer = null;
-  ClientStore.listeners.add(() => {
+  // Changes made in another open tab are saved by that tab.
+  ClientStore.listeners.add((info) => {
+    if (info.remote) return;
     if (!Drive.state.auto || !Drive.connected()) return;
     clearTimeout(timer);
     timer = setTimeout(() => { if (Drive.connected() && !Drive.state.busy) Drive.save(); }, 4000);
