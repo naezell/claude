@@ -236,7 +236,7 @@ function fakeGoogle() {
 test('Google Drive: connect, save, save automatically after a change, and restore', async (t) => {
   if (skip) return t.skip(skip);
   const g = fakeGoogle();
-  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com' }; }), g.serve);
+  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com', googleOrigins: [] }; }), g.serve);
   await page.click('button:has-text("Saved clients")');
   await page.click('button:has-text("Connect Google Drive")');
   await page.waitForSelector('button:has-text("Save to Drive now")');
@@ -268,6 +268,17 @@ test('Google Drive: connect, save, save automatically after a change, and restor
   await page.click('button:has-text("Saved clients")');
   await page.click('button:has-text("Restore from Drive")');
   await page.waitForSelector('.client-row:has-text("Other Co")');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Google Drive is only offered on the registered address; elsewhere the app points there', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.click('button:has-text("Saved clients")');
+  const text = await page.locator('.drawer').innerText();
+  assert.match(text, /7d-ledger-lens\.netlify\.app/);
+  assert.equal(await page.locator('button:has-text("Connect Google Drive")').count(), 0);
   assert.deepEqual(errors, []);
   await page.close();
 });

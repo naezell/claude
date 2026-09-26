@@ -69,6 +69,13 @@
     const [note, setNote] = useState('');
     const connected = Drive.connected();
     useEffect(() => { Drive.prepare().catch(() => { /* reported when Connect is pressed */ }); }, []);
+    const away = Drive.elsewhere();
+    if (away) {
+      return html`<div class="backup-block">
+        <h3>${Icon.cloud}Google Drive</h3>
+        <p>Google Drive saving works on the app's own site. Open <a href=${away} target="_blank" rel="noopener">${away.replace(/^https?:\/\//, '')}</a> to connect. Saved clients don't carry over between addresses by themselves: use <strong>Save backup file</strong> here, then <strong>Restore from file</strong> there.</p>
+      </div>`;
+    }
     if (!Drive.enabled()) {
       return html`<div class="backup-block">
         <h3>${Icon.cloud}Google Drive</h3>

@@ -16,7 +16,11 @@
   const FILE_NAME = 'Ledger Lens backup.json';
   const TAG = { key: 'ledgerLens', value: 'clients-backup' };
 
-  const clientId = () => String((window.LedgerConfig && window.LedgerConfig.googleClientId) || '').trim();
+  const cfg = () => window.LedgerConfig || {};
+  const clientId = () => String(cfg().googleClientId || '').trim();
+  const origins = () => (Array.isArray(cfg().googleOrigins) ? cfg().googleOrigins : []).map((o) => String(o).replace(/\/+$/, ''));
+  // Google refuses sign-in from addresses not registered on the client, so only offer it there.
+  const originAllowed = () => !origins().length || origins().includes(window.location.origin);
 
   const Drive = {
     state: {
@@ -34,7 +38,9 @@
       Object.assign(this.state, patch);
       this.listeners.forEach((fn) => fn({ ...this.state }));
     },
-    enabled() { return !!clientId(); },
+    enabled() { return !!clientId() && originAllowed(); },
+    // Set up, but this copy of the page is at another address: where to go instead.
+    elsewhere() { return clientId() && !originAllowed() ? origins()[0] : null; },
     connected() { return !!this.state.token && Date.now() < this.state.expires - 60e3; },
 
     // Load Google's sign-in library ahead of the click, so the sign-in window opens straight
