@@ -148,6 +148,10 @@ To change the logo, replace `assets/7d-logo.png` (full logo, used on reports) an
 node -e "const fs=require('fs'),u=(f)=>'data:image/png;base64,'+fs.readFileSync(f).toString('base64');let s=fs.readFileSync('src/firm.js','utf8');s=s.replace(/logo: '[^']*'/,\"logo: '\"+u('assets/7d-logo.png')+\"'\").replace(/mark: '[^']*'/,\"mark: '\"+u('assets/7d-mark.png')+\"'\");fs.writeFileSync('src/firm.js',s)"
 ```
 
+## Changes and deployment
+
+`main` is what runs on the live site. Work happens on a separate branch and comes in through a pull request; GitHub runs all the tests on it (`.github/workflows/tests.yml`) before it can be merged. Netlify is linked to `main`, so a merged change goes live a minute or two later. The build settings come from `netlify.toml`, and the sign-in settings live in Netlify's environment variables (see [docs/sign-in-setup.md](docs/sign-in-setup.md)).
+
 ## Tests
 
 ```sh
