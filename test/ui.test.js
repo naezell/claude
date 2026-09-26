@@ -468,3 +468,80 @@ test('uploading several files says what each one was read as', async (t) => {
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('saved clients move from the old storage into the browser database and survive a reload', async (t) => {
+  if (skip) return t.skip(skip);
+  const old = { 'old co': { name: 'Old Co', updatedAt: '2026-01-01T00:00:00.000Z', reviewed: { a: 'ok' } } };
+  const { page, errors } = await openPage({}, (p) => p.addInitScript((data) => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('ll.clients.v1', data); sessionStorage.setItem('seeded', '1'); } }, JSON.stringify(old)));
+  assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'indexeddb');
+  assert.equal(await page.evaluate(() => localStorage.getItem('ll.clients.v1')), null, 'old copy removed once moved');
+  await page.reload();
+  await page.waitForSelector('#tab-audit');
+  await page.click('button:has-text("Clients")');
+  await page.waitForSelector('.dash-row:has-text("Old Co")');
+  assert.match(await page.locator('.storage-note').innerText(), /browser's database/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a failed save says so and points to a backup', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.evaluate(() => { IDBObjectStore.prototype.put = function () { throw new DOMException('full', 'QuotaExceededError'); }; });
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  const banner = page.locator('.banner', { hasText: 'Not saving' });
+  await banner.waitFor();
+  assert.match(await banner.innerText(), /run out of space/);
+  await banner.locator('button', { hasText: 'Back up now' }).click();
+  assert.match(await page.locator('.storage-note').innerText(), /Not saving/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('without the browser database, clients are saved in basic storage instead', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { Object.defineProperty(window, 'indexedDB', { value: undefined }); }));
+  assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'localstorage');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForFunction(() => Object.values(JSON.parse(localStorage.getItem('ll.clients.v1') || '{}')).some((c) => c.name === 'Harbor & Pine Design Co.'));
+  assert.equal(await page.locator('.banner', { hasText: 'Not saving' }).count(), 0);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a client saved in one tab shows up in another open tab', async (t) => {
+  if (skip) return t.skip(skip);
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  const open = async () => {
+    const page = await context.newPage();
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.route('**/*', (route) => (route.request().url().startsWith('file:') ? route.continue() : route.abort()));
+    await page.goto(PAGE);
+    await page.waitForSelector('#tab-audit');
+    return page;
+  };
+  const a = await open();
+  const b = await open();
+  await b.click('button:has-text("Clients")');
+  await b.locator('.empty', { hasText: 'No clients yet' }).waitFor();
+  await a.setInputFiles('#csv-upload', SAMPLE);
+  await b.waitForSelector('.dash-row:has-text("Harbor & Pine")');
+  assert.deepEqual(errors, []);
+  await context.close();
+});
+
+test('an Excel export is read with the Excel reader served by the site', async (t) => {
+  if (skip) return t.skip(skip);
+  const XLSX = require('xlsx');
+  const rows = fs.readFileSync(SAMPLE, 'utf8');
+  const wb = XLSX.read(rows, { type: 'string' });
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const { page, errors, outside } = await openPage();
+  await page.setInputFiles('#csv-upload', { name: 'harbor-pine.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer });
+  await page.waitForSelector('button:has-text("Load sample")');
+  assert.equal(await kpi(page, 'Uncategorized'), '11');
+  assert.deepEqual(outside, []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
