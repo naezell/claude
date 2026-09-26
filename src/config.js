@@ -9,4 +9,6 @@ window.LedgerConfig = Object.assign({
   // The Netlify site asks visitors to sign in with Google (netlify/edge-functions); this only
   // adds the Sign out link there. See docs/sign-in-setup.md.
   signIn: true,
+  // Where "Report a problem" addresses its email. Nothing is sent automatically.
+  supportEmail: 'nate.ezell@gmail.com',
 }, window.LedgerConfig);

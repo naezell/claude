@@ -545,3 +545,56 @@ test('an Excel export is read with the Excel reader served by the site', async (
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('Report a problem: fills in an email with the description and recent errors, no client data', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.evaluate(() => window.LedgerProblem.note('error', 'Test failure', 'src/engine.js:1'));
+  await page.click('footer button:has-text("Report a problem")');
+  await page.fill('#problem-what', 'The cash chart is empty');
+  const href = decodeURIComponent(await page.locator('a:has-text("Email the report")').getAttribute('href'));
+  assert.match(href, /^mailto:nate\.ezell@gmail\.com\?subject=Ledger Lens problem report&body=/);
+  assert.match(href, /The cash chart is empty/);
+  assert.match(href, /Test failure \(src\/engine\.js:1\)/);
+  assert.match(href, /Storage: indexeddb, 1 saved client/);
+  assert.match(href, /Tab: audit/);
+  assert.ok(!/Harbor|Pine/.test(href), 'no client name in the report');
+  await page.click('button:has-text("Show what the report contains")');
+  assert.match(await page.locator('.problem-details').innerText(), /Version: development copy/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a crash shows a way out instead of a blank page', async (t) => {
+  if (skip) return t.skip(skip);
+  // Break one tab's drawing on purpose.
+  const { page } = await openPage({}, (p) => p.addInitScript(() => {
+    Object.defineProperty(window, 'LedgerUI', { configurable: true, set(v) { Object.defineProperty(window, 'LedgerUI', { value: v, writable: true }); Object.defineProperty(v, 'TrendsTab', { configurable: true, get: () => () => { throw new Error('Boom'); }, set() {} }); }, get() { return undefined; } });
+  }));
+  await page.click('#tab-trends');
+  await page.waitForSelector('.crashed h1:has-text("Something went wrong")');
+  await page.click('.crashed button:has-text("Report a problem")');
+  const text = decodeURIComponent(await page.locator('a:has-text("Email the report")').getAttribute('href'));
+  assert.match(text, /crash: Boom/);
+  assert.match(text, /Crashed with: Boom/);
+  await page.close();
+});
+
+test('if the page cannot start, a plain message offers the report', async (t) => {
+  if (skip) return t.skip(skip);
+  const page = await browser.newPage();
+  await page.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.endsWith('vendor/react-dom.production.min.js')) return route.abort();
+    return url.startsWith('file:') ? route.continue() : route.abort();
+  });
+  await page.clock.install();
+  await page.goto(PAGE);
+  await page.clock.runFor(16000);
+  await page.waitForSelector('h1:has-text("Ledger Lens did not load")');
+  const pre = await page.locator('pre').innerText();
+  assert.match(pre, /did not load: vendor\/react-dom\.production\.min\.js/);
+  await page.close();
+});

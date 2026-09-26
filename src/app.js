@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary } = UI;
 
   // ------------------------------------------------------------ top-level app
 
@@ -26,6 +26,7 @@
     const [questionsOpen, setQuestionsOpen] = useState(false);
     const [clientsOpen, setClientsOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
+    const [problemOpen, setProblemOpen] = useState(false);
     const [welcome, setWelcome] = useState(() => !safeStore.get('ll.welcomed'));
     const dismissWelcome = () => { safeStore.set('ll.welcomed', '1'); setWelcome(false); };
     // Checked when the page opens and whenever the backup drawer closes.
@@ -242,6 +243,13 @@
       const c = E.closeChecklist(result, m, checklist[m], customSteps);
       return `${c.done}/${c.total}`;
     }, [result, checklist, customSteps]);
+    // Facts about what is on screen for a problem report: no client names or figures.
+    const problemContext = useMemo(() => ({
+      Tab: tab,
+      Data: source.kind === 'sample' ? 'sample' : `${source.files.length} transaction file(s)${source.chart ? ', chart of accounts' : ''}${source.pnl ? ', P&L' : ''}${uploadedBudget ? ', budget' : ''}${source.attachments ? ', expense list' : ''}${result ? `, ${result.count} rows, ${result.period.start} to ${result.period.end}` : ''}`,
+      'Message on screen': error,
+    }), [tab, source, uploadedBudget, result, error]);
+    useEffect(() => { if (error) window.LedgerProblem.note('shown', error); }, [error]);
     const auditCount = result ? result.audit.open.uncategorized + result.audit.open.duplicates + result.audit.open.mismatches : 0;
 
     return html`
@@ -318,11 +326,12 @@
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
             : html`<${AdvisoryTab} result=${result} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
         </main>`}
-        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${signedInSite ? html` · <a href="/auth/logout">Sign out</a>` : ''}${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
+        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${signedInSite ? html` · <a href="/auth/logout">Sign out</a>` : ''} · <button class="linkish" onClick=${() => setProblemOpen(true)}>Report a problem</button>${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
       </div>
 
       ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} answers=${answers} onLoadAnswers=${(file) => applyAnswers(file)} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
-      ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} />`}
+      ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} onReport=${() => setProblemOpen(true)} />`}
+      ${problemOpen && html`<${ProblemDrawer} context=${problemContext} onClose=${() => setProblemOpen(false)} />`}
       ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
       ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} benchmarks=${benchmarks} onClose=${() => setReportOpen(false)} />`}
       ${dragging && html`<div class="drop-overlay">Drop the QuickBooks CSV to analyze it</div>`}
@@ -330,5 +339,5 @@
   }
 
   // Saved clients load from the browser's database first, so the page opens with them in place.
-  ClientStore.ready.then(() => ReactDOM.createRoot(document.getElementById('root')).render(html`<${App} />`));
+  ClientStore.ready.then(() => ReactDOM.createRoot(document.getElementById('root')).render(html`<${ErrorBoundary}><${App} /></${ErrorBoundary}>`));
 })();

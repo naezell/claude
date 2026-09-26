@@ -94,7 +94,7 @@ All processing happens in the browser. The file is never uploaded anywhere.
 
 ## Running it
 
-The live site is on Netlify (project `7d-ledger-lens`). `netlify.toml` tells Netlify to run `scripts/build-site.sh`, which copies the files into `dist/` and adds the page wrapper (doctype, viewport, favicon) a normal web host needs. Nothing is compiled. The same `index.html` also runs as-is as a claude.ai page.
+The live site is on Netlify (project `7d-ledger-lens`). `netlify.toml` tells Netlify to run `scripts/build-site.sh`, which copies the files into `dist/` and adds the page wrapper (doctype, viewport, favicon) a normal web host needs. Nothing is compiled. The build also stamps the commit into `src/version.js`, which problem reports quote.
 
 The Netlify site asks for sign-in: only Google accounts on an allowed list get in, checked on Netlify's servers before any of the app is sent (see [docs/sign-in-setup.md](docs/sign-in-setup.md)).
 
@@ -122,6 +122,10 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | Path | Purpose |
 | --- | --- |
 | `index.html` | Page shell, styles, library loading |
+| `vendor/` | The site's own copies of React, Recharts, htm, the Excel reader and the IBM Plex fonts (refresh with `npm run vendor`) |
+| `src/diagnostics.js` | Recent errors and the "Report a problem" text; loads first, and shows a plain message if the app never starts |
+| `src/store.js` | Where saved clients are kept: IndexedDB, falling back to localStorage, with save errors reported |
+| `src/version.js` | Which build this is (replaced by the site build) |
 | `src/engine.js` | CSV parsing and all analysis (pure JS, runs in Node too) |
 | `src/sample.js` | Deterministic sample export generator |
 | `src/config.js` | Settings for this copy (Google sign-in key for Drive backup) |
@@ -131,16 +135,18 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `src/ui/localfile.js` | Backup to a file on this computer (File System Access API) |
 | `src/ui/help.js` | Getting-started guide |
 | `src/ui/close.js` | Month-end close checklist |
+| `src/ui/problem.js` | "Report a problem" panel, and the fallback shown if part of the page crashes |
 | `src/ui/*.js` | One file per tab (`audit`, `growth`, `cash`, `breakeven`, `trends`, `budget`, `vendors`, `benchmarks`, `advisory`) and `drawers.js` for the report, client questions and saved clients |
 | `src/app.js` | Top-level app: file loading, state, tabs; mounts the page |
 | `test/engine.test.js` | Engine tests |
 | `test/ui.test.js` | Interface tests in headless Chromium |
 | `test/auth.test.js` | Sign-in checks and the Netlify edge functions |
+| `test/vendor.test.js` | `vendor/` matches `package.json`, and the page loads nothing from other servers |
 | `test/test-clients.test.js` | The two test clients: files match the generator, planted problems are found |
 | `netlify/edge-functions/` | Sign-in gate, sign-in and sign-out (Netlify only) |
 | `login.html` | Sign-in page |
 
-There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `shared.js` first, the tabs and drawers, then `app.js`.
+There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `diagnostics.js` first, the libraries from `vendor/`, `store.js`, `shared.js`, the tabs and drawers, then `app.js`.
 
 To change the logo, replace `assets/7d-logo.png` (full logo, used on reports) and `assets/7d-mark.png` (square mark, used in the header), then rebuild the embedded copies in `src/firm.js`:
 
@@ -152,6 +158,18 @@ node -e "const fs=require('fs'),u=(f)=>'data:image/png;base64,'+fs.readFileSync(
 
 `main` is what runs on the live site. Work happens on a separate branch and comes in through a pull request; GitHub runs all the tests on it (`.github/workflows/tests.yml`) before it can be merged. Netlify is linked to `main`, so a merged change goes live a minute or two later. The build settings come from `netlify.toml`, and the sign-in settings live in Netlify's environment variables (see [docs/sign-in-setup.md](docs/sign-in-setup.md)).
 
+### Saved clients
+
+Each client's settings and reviews are one record in the browser's IndexedDB database (`src/store.js`), which has far more room than localStorage. Clients saved by earlier versions in localStorage are moved over on first load. If a save fails, a red banner says so and points to a backup. Records carry a schema version: when the shape of a saved client changes, raise `SCHEMA` and add a conversion step to `upgrade` there.
+
+### Libraries
+
+The page loads nothing from other servers except Google (sign-in and Drive). To update a library, change its version in `package.json`, run `npm install` and `npm run vendor`, and commit `vendor/`. A test fails if the two drift apart.
+
+### Problem reports
+
+"Report a problem" (page footer, Help, and the crash screen) opens an email to `supportEmail` in `src/config.js` with the person's description, the build, browser, storage state and recent errors, and no client data. Nothing is sent automatically.
+
 ## Tests
 
 ```sh
@@ -160,4 +178,4 @@ npm test         # engine and interface tests
 npm run test:engine
 ```
 
-The engine tests need nothing installed. The interface tests open `index.html` in headless Chromium through `playwright-core`, serving React, Recharts and htm from `node_modules` so no network is needed. They find Playwright's own Chromium, any build under `PLAYWRIGHT_BROWSERS_PATH`, or the path in `CHROMIUM_PATH`, and skip themselves when none is available.
+The engine tests need nothing installed. The interface tests open `index.html` in headless Chromium through `playwright-core`, loading the libraries from `vendor/` as the live site does and refusing every outside request, so no network is needed. They find Playwright's own Chromium, any build under `PLAYWRIGHT_BROWSERS_PATH`, or the path in `CHROMIUM_PATH`, and skip themselves when none is available.

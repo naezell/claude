@@ -1,6 +1,7 @@
 <title>Ledger Lens</title>
 <meta name="description" content="QuickBooks Transaction Detail audit and customer profitability dashboard for bookkeepers.">
 <link rel="stylesheet" href="vendor/fonts.css">
+<script src="src/diagnostics.js"></script>
 <style>
   :root {
     --page: #f3f5f2;
@@ -408,6 +409,12 @@
   .add-step { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
   .add-step .field { flex: 1 1 280px; }
   textarea.text { font: inherit; resize: vertical; }
+  .problem .field { margin: 12px 0 6px; }
+  .problem textarea.text { padding: 8px 10px; border: 1px solid var(--hair); border-radius: 6px; background: var(--page); color: var(--ink); }
+  a.btn { text-decoration: none; }
+  .problem-details { white-space: pre-wrap; word-break: break-word; font: 12px/1.5 var(--mono); background: var(--surface-2); border-radius: 8px; padding: 12px; margin-top: 8px; }
+  .crashed { padding-top: 12vh; max-width: 640px; }
+  .crashed h1 { font-size: 22px; }
 
   /* All-clients dashboard */
   .dash-table td { vertical-align: middle; }
@@ -433,6 +440,7 @@
   .help { padding: 4px 18px 28px; }
   .help-part { display: none; max-width: 75ch; }
   .help-part.open { display: block; }
+  .help-report { margin-top: 24px; padding-top: 14px; border-top: 1px solid var(--hair); max-width: 75ch; }
   .help h3 { font: 600 18px var(--cond); margin: 16px 0 8px; }
   .help h4 { font: 600 13px var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--gold); margin: 18px 0 6px; }
   .help p, .help li { color: var(--ink-2); }
@@ -454,6 +462,7 @@
 <script src="vendor/Recharts.js"></script>
 <script src="vendor/htm.umd.js"></script>
 <script src="src/config.js"></script>
+<script src="src/version.js"></script>
 <script src="src/firm.js"></script>
 <script src="src/engine.js"></script>
 <script src="src/sample.js"></script>
@@ -473,4 +482,5 @@
 <script src="src/ui/close.js"></script>
 <script src="src/ui/drawers.js"></script>
 <script src="src/ui/help.js"></script>
+<script src="src/ui/problem.js"></script>
 <script src="src/app.js"></script>
