@@ -94,5 +94,5 @@ export async function verifyGoogleToken(token, { clientId, keys, nowSec = Math.f
 }
 
 // Paths anyone may load: the sign-in page and what it needs.
-export const PUBLIC_PATHS = ['/login', '/login.html', '/auth/verify', '/auth/logout', '/src/config.js', '/assets/7d-logo.png', '/assets/7d-mark.png', '/favicon.ico'];
+export const PUBLIC_PATHS = ['/login', '/login.html', '/login.js', '/auth/verify', '/auth/logout', '/src/config.js', '/assets/7d-logo.png', '/assets/7d-mark.png', '/favicon.ico'];
 export const isPublic = (path) => PUBLIC_PATHS.includes(path);

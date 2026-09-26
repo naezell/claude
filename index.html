@@ -151,6 +151,11 @@
   .pill.good { background: var(--good-wash); color: var(--good-ink); }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 
+  .working { display: flex; align-items: center; gap: 10px; margin-block: 12px; padding: 10px 14px; border-radius: 8px; background: var(--accent-wash); color: var(--ink); font-size: 14px; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--hair); border-top-color: var(--accent); animation: spin 0.8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
+  main.stale { opacity: 0.6; transition: opacity 0.2s; }
   .error { margin-block: 12px; padding: 12px 14px; border-radius: 8px; background: var(--critical-wash); color: var(--critical-ink); }
 
   /* Tabs */
@@ -253,6 +258,10 @@
   .banner > div { flex: 1 1 320px; max-width: 90ch; }
   .storage-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
   .storage-note.neg { color: var(--critical-ink); }
+  .check.keep-files { display: flex; align-items: flex-start; padding-top: 8px; font-size: 12.5px; max-width: 90ch; }
+  .check.keep-files input { margin-top: 2px; flex: none; }
+  .row-actions { white-space: nowrap; }
+  .btn.open-client { margin-top: 6px; padding: 4px 14px; font-size: 13px; }
   .banner.high .pill, .banner.medium .pill, .banner.good .pill { background: var(--surface); }
   .inputs-row { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-start; }
   .inputs-row .field { flex: 1 1 200px; max-width: 300px; }
@@ -458,7 +467,7 @@
 
 <script src="vendor/react.production.min.js"></script>
 <script src="vendor/react-dom.production.min.js"></script>
-<script src="vendor/prop-types.min.js"></script>
+<script src="vendor/react-is.production.min.js"></script>
 <script src="vendor/Recharts.js"></script>
 <script src="vendor/htm.umd.js"></script>
 <script src="src/config.js"></script>
@@ -467,6 +476,7 @@
 <script src="src/engine.js"></script>
 <script src="src/sample.js"></script>
 <script src="src/store.js"></script>
+<script src="src/work.js"></script>
 <script src="src/ui/shared.js"></script>
 <script src="src/ui/drive.js"></script>
 <script src="src/ui/localfile.js"></script>

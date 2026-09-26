@@ -5,6 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
+  const { FileStore } = window.LedgerStore;
   const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive, excelToCsv, LocalFile, useLocalFile } = UI;
 
   // ------------------------------------------------------------ client questions drawer
@@ -188,7 +189,7 @@
     return `${where}${kept}${space}.`;
   }
 
-  function ClientsDrawer({ currentId, onClose, onForget }) {
+  function ClientsDrawer({ currentId, onClose, onForget, onOpen }) {
     const [clients, setClients] = useState(() => ClientStore.all());
     const [confirm, setConfirm] = useState(null);
     const [status, setStatus] = useState('');
@@ -198,6 +199,10 @@
     const refresh = () => setClients(ClientStore.all());
     // Picks up changes saved from another open tab.
     useEffect(() => { ClientStore.listeners.add(refresh); return () => ClientStore.listeners.delete(refresh); }, []);
+    // Which clients have their files saved for Open.
+    const [, setFilesTick] = useState(0);
+    useEffect(() => { const f = () => setFilesTick((n) => n + 1); FileStore.listeners.add(f); return () => FileStore.listeners.delete(f); }, []);
+    const keepFiles = FileStore.enabled();
     const last = Backup.last();
     const attention = list.filter((x) => x.st.level === 'high').length;
     const closedCount = list.filter((x) => x.st.level === 'good').length;
@@ -231,7 +236,8 @@
             <div class=${`kpi ${!last || daysSince(last.at) > 30 ? 'alert' : ''}`}><span class="kpi-label">Last backup</span><span class="kpi-value">${last ? `${daysSince(last.at)}d ago` : 'Never'}</span><span class="kpi-sub">${last ? (last.where === 'Google Drive' ? 'to Google Drive' : last.where === 'computer' ? 'to the file on this computer' : 'to a downloaded file') : 'see Backup below'}</span></div>
           </section>`}
           <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Every client whose export has been loaded, most urgent first. Figures are from the last time their export was analyzed; load a client's latest export to update them and work on the books. Settings and reviews are kept in this browser, so back them up.</p>
-            <p class=${`storage-note ${ClientStore.status.error ? 'neg' : ''}`}>${storageNote(ClientStore.status)}</p></div>
+            <p class=${`storage-note ${ClientStore.status.error ? 'neg' : ''}`}>${storageNote(ClientStore.status)}</p>
+            ${FileStore.available() && html`<label class="check keep-files"><input type="checkbox" checked=${keepFiles} onChange=${(e) => { FileStore.setEnabled(e.target.checked); setFilesTick((n) => n + 1); }} /><span>Keep a copy of each client's latest files in this browser, so <strong>Open</strong> reloads them in one click. They stay on this computer and are not part of backups; turning this off deletes the copies.</span></label>`}</div>
           ${list.length ? html`<div class="table-wrap"><table class="dash-table">
             <thead><tr><th>Client</th><th>Status</th><th>Month-end close</th><th>To review</th><th>Closed through</th><th class="num">Cash / lowest ahead</th><th class="num">Revenue / net, 12 mo</th><th></th></tr></thead>
             <tbody>${list.map(({ id, c, st }) => {
@@ -239,14 +245,15 @@
               const ago = daysSince(c.loadedAt || c.updatedAt);
               return html`<tr key=${id} class="dash-row">
                 <td><span class="client-name">${c.name || id}</span>${id === currentId ? html` <span class="pill good">Open now</span>` : ''}
-                  <span class="sub">${s ? `Books to ${s.periodEnd}` : 'Load their export'}${ago != null ? ` · loaded ${ago === 0 ? 'today' : `${ago}d ago`}` : ''}</span></td>
+                  <span class="sub">${s ? `Books to ${s.periodEnd}` : 'Load their export'}${ago != null ? ` · loaded ${ago === 0 ? 'today' : `${ago}d ago`}` : ''}</span>
+                  ${FileStore.info(id) && id !== currentId && html`<button class="btn primary open-client" title=${`Reloads ${FileStore.info(id).names.join(', ')}`} onClick=${() => onOpen(id)}>Open</button>`}</td>
                 <td><span class=${`pill ${st.level}`}><span class="dot"></span>${st.label}</span></td>
                 <td>${s && s.close ? html`<div class="meter" style=${{ width: '110px' }}><span style=${{ width: `${Math.round((s.close.done / s.close.total) * 100)}%`, background: s.close.done === s.close.total ? 'var(--good)' : 'var(--accent)' }}></span></div><span class="sub">${monthLong(s.close.month)}: ${s.close.done}/${s.close.total}</span>` : html`<span class="sub">-</span>`}</td>
                 <td>${s ? (s.openTotal ? html`<div class="dash-stats">${[chip(s.open.uncategorized, 'uncategorized'), chip(s.open.duplicates, 'duplicates'), chip(s.open.mismatches, 'miscoded'), chip(s.open.balance, 'balance sheet'), chip(s.open.jobs, 'job costing'), chip(s.open.unusual, 'unusual'), chip(s.open.receipts, 'receipts'), chip(s.open.answers, 'answers to act on')]}</div>` : html`<span class="pill good">All clear</span>`) : html`<span class="sub">-</span>`}</td>
                 <td>${s && s.closedThrough ? html`${monthLong(s.closedThrough)}${s.closedChanges ? html`<span class="sub neg">${s.closedChanges} change${s.closedChanges === 1 ? '' : 's'} since</span>` : ''}` : html`<span class="sub">Not closed</span>`}</td>
                 <td class="num">${s ? html`${money0(s.cash)}<span class=${`sub ${s.lowestCash != null && s.lowestCash < 0 ? 'neg' : ''}`}>${money0(s.lowestCash)}${s.lowestWeek ? ` wk of ${s.lowestWeek.slice(5)}` : ''}</span>` : '-'}</td>
                 <td class="num">${s ? html`${money0(s.revenue12)}<span class=${`sub ${s.netIncome12 < 0 ? 'neg' : ''}`}>${money0(s.netIncome12)}</span>` : '-'}</td>
-                <td>${confirm === id
+                <td class="row-actions">${confirm === id
                   ? html`<span class="confirm">Forget? <button class="btn" onClick=${() => { ClientStore.remove(id); onForget(id); setConfirm(null); refresh(); }}>Forget</button><button class="btn" onClick=${() => setConfirm(null)}>Keep</button></span>`
                   : html`<button class="btn" onClick=${() => setConfirm(id)}>Forget</button>`}</td>
               </tr>`;

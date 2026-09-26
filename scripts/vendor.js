@@ -13,7 +13,7 @@ const OUT = path.join(ROOT, 'vendor');
 const FILES = {
   'react.production.min.js': 'react/umd/react.production.min.js',
   'react-dom.production.min.js': 'react-dom/umd/react-dom.production.min.js',
-  'prop-types.min.js': 'prop-types/prop-types.min.js',
+  'react-is.production.min.js': 'react-is/umd/react-is.production.min.js',
   'Recharts.js': 'recharts/umd/Recharts.js',
   'htm.umd.js': 'htm/dist/htm.umd.js',
   'xlsx.full.min.js': 'xlsx/dist/xlsx.full.min.js',

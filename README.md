@@ -122,9 +122,10 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | Path | Purpose |
 | --- | --- |
 | `index.html` | Page shell, styles, library loading |
-| `vendor/` | The site's own copies of React, Recharts, htm, the Excel reader and the IBM Plex fonts (refresh with `npm run vendor`) |
+| `vendor/` | The site's own copies of React, Recharts 3, htm, the Excel reader and the IBM Plex fonts (refresh with `npm run vendor`) |
 | `src/diagnostics.js` | Recent errors and the "Report a problem" text; loads first, and shows a plain message if the app never starts |
 | `src/store.js` | Where saved clients are kept: IndexedDB, falling back to localStorage, with save errors reported |
+| `src/work.js`, `src/worker.js` | Reading files and analyzing large exports in a background worker, with the same work done on the page where workers are unavailable |
 | `src/version.js` | Which build this is (replaced by the site build) |
 | `src/engine.js` | CSV parsing and all analysis (pure JS, runs in Node too) |
 | `src/sample.js` | Deterministic sample export generator |
@@ -141,12 +142,13 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `test/engine.test.js` | Engine tests |
 | `test/ui.test.js` | Interface tests in headless Chromium |
 | `test/auth.test.js` | Sign-in checks and the Netlify edge functions |
+| `test/site.test.js` | The built site over HTTP with Netlify's headers: nothing blocked by the security policy |
 | `test/vendor.test.js` | `vendor/` matches `package.json`, and the page loads nothing from other servers |
 | `test/test-clients.test.js` | The two test clients: files match the generator, planted problems are found |
 | `netlify/edge-functions/` | Sign-in gate, sign-in and sign-out (Netlify only) |
-| `login.html` | Sign-in page |
+| `login.html`, `login.js` | Sign-in page |
 
-There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `diagnostics.js` first, the libraries from `vendor/`, `store.js`, `shared.js`, the tabs and drawers, then `app.js`.
+There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `diagnostics.js` first, the libraries from `vendor/`, `store.js`, `work.js`, `shared.js`, the tabs and drawers, then `app.js`.
 
 To change the logo, replace `assets/7d-logo.png` (full logo, used on reports) and `assets/7d-mark.png` (square mark, used in the header), then rebuild the embedded copies in `src/firm.js`:
 
@@ -160,11 +162,19 @@ node -e "const fs=require('fs'),u=(f)=>'data:image/png;base64,'+fs.readFileSync(
 
 ### Saved clients
 
-Each client's settings and reviews are one record in the browser's IndexedDB database (`src/store.js`), which has far more room than localStorage. Clients saved by earlier versions in localStorage are moved over on first load. If a save fails, a red banner says so and points to a backup. Records carry a schema version: when the shape of a saved client changes, raise `SCHEMA` and add a conversion step to `upgrade` there.
+Each client's settings and reviews are one record in the browser's IndexedDB database (`src/store.js`), which has far more room than localStorage. A copy of each client's latest files is kept there too (`FileStore`), so **Open** in the Clients panel reloads them in one click; the bookkeeper can turn that off, and forgetting a client deletes its files. Files are not part of backups. Clients saved by earlier versions in localStorage are moved over on first load. If a save fails, a red banner says so and points to a backup. Records carry a schema version: when the shape of a saved client changes, raise `SCHEMA` and add a conversion step to `upgrade` there.
 
 ### Libraries
 
 The page loads nothing from other servers except Google (sign-in and Drive). To update a library, change its version in `package.json`, run `npm install` and `npm run vendor`, and commit `vendor/`. A test fails if the two drift apart.
+
+### Large files
+
+Files are recognized and parsed in a background worker (`src/worker.js`), and exports with 8,000 rows or more (`backgroundRows` in `src/config.js`) are analyzed there too, so the page stays responsive and shows progress. On a 108,000-row export the longest freeze drops from about 2 seconds to 0.3, and a review click from 0.5 to 0.1. Pages opened straight from a file (`file://`) cannot start workers and do the same work on the page.
+
+### Security headers
+
+`netlify.toml` sends a Content-Security-Policy: the browser runs only this site's own scripts, plus Google's sign-in script, and the page may only talk to this site and Google (sign-in and Drive). Nothing on the site may use inline scripts or `eval`, which is why the sign-in page's code is in `login.js`. `test/site.test.js` serves the built site with these headers and fails if anything is blocked. If you add an outside service, add its address to the policy.
 
 ### Problem reports
 

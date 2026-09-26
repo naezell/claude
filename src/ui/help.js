@@ -54,6 +54,8 @@
               <li>To add a file later (say the P&L), use <strong>Add export</strong>.</li>
               <li>Settings are remembered per client by the company name at the top of the export, and come back the next time that client's file is loaded.</li>
               <li>The <strong>Clients</strong> button shows every client loaded so far, most urgent first: open flags, balance sheet issues, changes to closed months, cash, and how far the month-end close has got.</li>
+              <li>To switch clients, press <strong>Open</strong> next to one in the Clients panel. It reloads the files you last uploaded for them, kept in this browser. Upload new exports when their books have moved on.</li>
+              <li>Large exports (tens of thousands of rows) take a few seconds; a note at the top shows progress and the page stays usable meanwhile.</li>
             </ul>
           `)}
           ${part('monthly', html`
@@ -83,8 +85,8 @@
             <h3>5. Saving your work</h3>
             <ul>
               <li>Client files are read in your browser and never uploaded anywhere.</li>
-              <li>Your reviews and settings are saved in this browser on this computer. Clearing browser data, or switching browsers or computers, starts fresh.</li>
-              <li>So back up, in the <strong>Clients</strong> panel: pick a <strong>file on this computer</strong> that the app keeps saving to (Chrome and Edge), connect <strong>Google Drive</strong>, or download a backup file now and then. The page reminds you if nothing has been backed up for 30 days.</li>
+              <li>Your reviews and settings are saved in this browser on this computer, and so is a copy of each client's latest files for the Open button (turn that off in the Clients panel if you prefer). Clearing browser data, or switching browsers or computers, starts fresh.</li>
+              <li>So back up, in the <strong>Clients</strong> panel: pick a <strong>file on this computer</strong> that the app keeps saving to (Chrome and Edge), connect <strong>Google Drive</strong>, or download a backup file now and then. The page reminds you if nothing has been backed up for 30 days. Backups hold reviews and settings, not the QuickBooks files, so keep those where you normally do.</li>
             </ul>
             <p><button class="btn" onClick=${() => { onClose(); onOpenClients(); }}>${Icon.cloud}Open Clients & backup</button></p>
           `)}
