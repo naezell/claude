@@ -106,6 +106,8 @@ npx serve .
 
 It opens with a sample data set (18 months of a fictional design studio, with seeded bookkeeping issues, a lost customer, a new hire and slowing collections) so every panel has something to show. The same sample is saved at `sample-data/harbor-pine-transaction-detail.csv`, with its Chart of Accounts at `sample-data/harbor-pine-chart-of-accounts.csv` Profit and Loss at `sample-data/harbor-pine-profit-and-loss.csv`, a 2026 budget at `sample-data/harbor-pine-budget-2026.csv`, and an Expenses list with attachments at `sample-data/harbor-pine-expenses-with-attachments.csv`.
 
+Two more fictional clients for testing, a plumbing contractor and a cafe, are in `sample-data/test-clients/` with an answer key of what each should turn up (see its README). Regenerate them with `node scripts/make-test-clients.js`.
+
 ## Exporting from QuickBooks
 
 1. **Reports → Transaction Detail by Account** (or Transaction List by Date / Transaction Detail).
@@ -134,6 +136,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `test/engine.test.js` | Engine tests |
 | `test/ui.test.js` | Interface tests in headless Chromium |
 | `test/auth.test.js` | Sign-in checks and the Netlify edge functions |
+| `test/test-clients.test.js` | The two test clients: files match the generator, planted problems are found |
 | `netlify/edge-functions/` | Sign-in gate, sign-in and sign-out (Netlify only) |
 | `login.html` | Sign-in page |
 

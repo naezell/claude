@@ -318,12 +318,22 @@ test('1099 review: thresholds by year, card-only and corporations', () => {
   const st = (y, n) => (y.vendors.find((x) => x.vendor === n) || {}).status;
   assert.equal(st(y25, 'Lena Ortiz Illustration'), 'Review');
   assert.equal(y25.vendors.find((x) => x.vendor === 'Brightline Properties').form, '1099-MISC (rent)');
-  assert.equal(st(y25, 'Comcast Business'), 'Likely exempt');
-  assert.equal(st(y25, 'Adobe Creative Cloud'), 'Card only');
+  assert.equal(st(y25, 'Comcast Business'), undefined, 'utilities are not payments for services');
+  assert.equal(st(y25, 'Adobe Creative Cloud'), undefined, 'software is not a payment for services');
   assert.equal(st(y26, 'R. Patel'), 'Below threshold');
   assert.ok(!y25.vendors.some((x) => x.vendor === 'Gusto' || x.vendor === 'Jordan Pike'), 'payroll and owner draws are excluded');
-  const t = E.tax1099(E.parseTransactions(['Date,Transaction Type,Num,Name,Account,Split,Amount', '03/01/2025,Check,1,Acme Widgets Inc.,Supplies,Checking,900.00'].join('\n')).transactions, {}, {});
+  const t = E.tax1099(E.parseTransactions(['Date,Transaction Type,Num,Name,Account,Split,Amount', '03/01/2025,Check,1,Acme Widgets Inc.,Consulting,Checking,900.00'].join('\n')).transactions, {}, {});
   assert.equal(t[0].vendors[0].status, 'Likely exempt');
+  // Goods, insurance, loan payments and transfers are left out; a service vendor is kept.
+  const mixed = E.tax1099(E.parseTransactions(['Date,Transaction Type,Num,Name,Account,Split,Amount',
+    '03/01/2025,Check,1,Ferguson Supply,Job Materials,Checking,5000.00',
+    '03/02/2025,Check,2,Travelers,Insurance,Checking,3000.00',
+    '03/03/2025,Transfer,,,Bank Fees,Checking,2500.00',
+    '03/04/2025,Check,3,Ace Consulting,Professional Fees,Checking,1200.00',
+    '03/05/2025,Check,4,City Light & Water Co,Repairs,Checking,900.00',
+    '03/06/2025,Expense,,Pat Rivera Design,Contract Labor,Amex Card,1500.00'].join('\n')).transactions, {}, {});
+  const names = mixed[0].vendors.map((x) => `${x.vendor}:${x.status}`);
+  assert.deepEqual(names.sort(), ['Ace Consulting:Review', 'City Light & Water Co:Likely exempt', 'Pat Rivera Design:Card only']);
 });
 
 test('benchmarks: request arguments, payload reading and comparison', () => {

@@ -801,6 +801,10 @@
     ['ringcentral', 'Phone'], ['dialpad', 'Phone'], ['grasshopper', 'Phone'], ['openphone', 'Phone'], ['vonage', 'Phone'],
     ['linkedin', 'Sales tools'], ['semrush', 'Marketing tools'], ['ahrefs', 'Marketing tools'], ['hootsuite', 'Marketing tools'], ['buffer', 'Marketing tools'], ['later.com', 'Marketing tools'],
     ['typeform', 'Forms'], ['jotform', 'Forms'], ['surveymonkey', 'Forms'],
+    ['servicetitan', 'Field service'], ['jobber', 'Field service'], ['housecall pro', 'Field service'], ['fieldedge', 'Field service'], ['workiz', 'Field service'],
+    ['square for restaurants', 'Point of sale'], ['square pos', 'Point of sale'], ['toast pos', 'Point of sale'], ['toasttab', 'Point of sale'], ['clover pos', 'Point of sale'], ['clover network', 'Point of sale'], ['clover app', 'Point of sale'], ['lightspeed', 'Point of sale'], ['spoton', 'Point of sale'],
+    ['7shifts', 'Scheduling'], ['homebase', 'Scheduling'], ['when i work', 'Scheduling'],
+    ['spotify for business', 'Music licensing'], ['soundtrack your brand', 'Music licensing'],
     ['spotify', 'Personal / entertainment'], ['netflix', 'Personal / entertainment'], ['hulu', 'Personal / entertainment'], ['apple.com/bill', 'Personal / entertainment'], ['audible', 'Personal / entertainment'],
   ];
   const NOT_SAAS_ACCOUNT = /payroll|wages|salar|rent|lease|loan|insurance|tax|contract labor|subcontract/i;
@@ -1647,9 +1651,30 @@
       const before = custTotals(full.slice(0, -6));
       const everBefore = custTotals(full.slice(0, -3));
       const lastSeen = new Map();
-      for (const mo of monthList) for (const c of mo.byCustomer.keys()) lastSeen.set(c, mo.key);
+      const activeMonths = new Map();
+      for (const mo of monthList) for (const c of mo.byCustomer.keys()) { lastSeen.set(c, mo.key); activeMonths.set(c, (activeMonths.get(c) || 0) + 1); }
+      const recent6 = new Map();
+      for (const mo of full.slice(-6)) for (const c of mo.byCustomer.keys()) recent6.set(c, (recent6.get(c) || 0) + 1);
+      const recent3 = new Map();
+      for (const mo of last3) for (const c of mo.byCustomer.keys()) recent3.set(c, (recent3.get(c) || 0) + 1);
+      // Regular before going quiet: billed in at least 3 of the 6 months up to their last invoice.
+      const idx = new Map(full.map((mo, i) => [mo.key, i]));
+      const regularity = (c) => {
+        const end = idx.get(lastSeen.get(c));
+        if (end == null) return { months: 0, avg: 0 };
+        const win = full.slice(Math.max(0, end - 5), end + 1);
+        return { months: win.filter((mo) => mo.byCustomer.has(c)).length, avg: win.reduce((t, mo) => t + (mo.byCustomer.get(c) || 0), 0) / 6 };
+      };
+      // Big enough to matter: at least 2% of a typical month's revenue.
+      const typical = full.slice(-12).reduce((t, mo) => t + mo.revenue, 0) / Math.max(1, full.slice(-12).length);
+      const material = typical * 0.02;
       for (const c of new Set([...recentT.keys(), ...everBefore.keys()])) {
+        // One-time customers (a service call, a single job) are neither won nor lost, and
+        // register sales under one name are not a customer at all.
+        if (isWalkIn(c) || (activeMonths.get(c) || 0) < 2) continue;
         const r = recentT.get(c) || 0, p = priorT.get(c) || 0;
+        if (r > 0 && !before.has(c) && ((recent3.get(c) || 0) < 2 && (recent6.get(c) || 0) < 3 || r / Math.max(1, last3.length) < material)) continue;
+        if (r === 0) { const g = regularity(c); if (g.months < 3 || g.avg < material) continue; }
         let status;
         if (!before.has(c) && r > 0) status = 'New';
         else if (r === 0 && everBefore.has(c)) status = 'Lost';
@@ -1719,6 +1744,10 @@
 
   // ---------------------------------------------------------------- customer concentration & risk
 
+  // Register and counter sales recorded under one catch-all name are many customers, not one.
+  const WALK_IN = /^(daily|pos|point of sale|walk[- ]?in|cash (customer|sales?)|counter|retail|store|register|sales receipts?|misc(ellaneous)?|various|general|web|online|shopify|square|toast|clover|stripe)\b.*|\b(daily|pos|register|counter|walk[- ]?in)\b.*\bsales\b|^customers?$/i;
+  const isWalkIn = (name) => WALK_IN.test(String(name || '').trim());
+
   function customerRisk(txns, accountClass, cash, trend, breakeven) {
     const prof = profitability(txns, accountClass, 'customer');
     if (!prof.groups.length) return null;
@@ -1759,6 +1788,8 @@
       const monthlyRevenue = round2(rev / windowMonths);
       const monthlyContribution = margin != null ? round2(monthlyRevenue * margin) : null;
       const flags = [];
+      const walkIn = isWalkIn(name);
+      if (walkIn) return { name, walkIn, revenue: round2(rev), lifetimeRevenue: g ? g.revenue : 0, share, margin, openAR, arShare: arTotal ? openAR / arTotal : 0, over90, days, status: null, trendPct: null, flags: [{ kind: 'Walk-in sales', level: 'low', detail: 'Counter or register sales under one name; not a single customer' }], monthlyRevenue, monthlyContribution, profitIfLost: null };
       if (mover && mover.status === 'Lost') flags.push({ kind: 'Lost', level: 'high', detail: `No invoices since ${mover.lastMonth}` });
       if (share >= 0.25) flags.push({ kind: 'Concentration', level: 'high', detail: `${fmtPct(share)} of revenue` });
       else if (share >= 0.15) flags.push({ kind: 'Large share', level: 'medium', detail: `${fmtPct(share)} of revenue` });
@@ -1775,7 +1806,8 @@
     }).filter((r) => r.revenue > 0 || r.lifetimeRevenue > 0 || r.openAR > 0)
       .sort((a, b) => b.revenue - a.revenue || b.lifetimeRevenue - a.lifetimeRevenue);
 
-    const active = rows.filter((r) => r.revenue > 0);
+    // Concentration is about named customers; walk-in sales are many small buyers.
+    const active = rows.filter((r) => r.revenue > 0 && !r.walkIn);
     const hhi = Math.round(active.reduce((t, r) => t + (r.share * 100) ** 2, 0));
     const level = hhi >= 2500 ? { label: 'Highly concentrated', tone: 'high' } : hhi >= 1500 ? { label: 'Moderately concentrated', tone: 'medium' } : { label: 'Diversified', tone: 'good' };
     const top = active[0] || null;
@@ -1788,6 +1820,7 @@
       hhi,
       level,
       activeCount: active.length,
+      walkInShare: rows.filter((r) => r.walkIn).reduce((t, r) => t + r.share, 0),
       arTopShare: rows.reduce((m, r) => Math.max(m, r.arShare), 0),
       baseProfit,
     };
@@ -1802,6 +1835,11 @@
   const threshold1099 = (year) => (year <= 2025 ? 600 : 2000);
 
   // Payments to each vendor by calendar year, split by bank and card, for 1099 review.
+  // Not payments for services: goods, utilities, insurance, interest, taxes, fees, travel.
+  const NON_1099_ACCOUNT = /material|inventory|supplies|packaging|food|beverage|merchandise|freight|shipping|postage|utilit|insurance|interest|bank (fee|charge|service)|merchant|service charge|fuel|telephone|phone|internet|software|subscri|\btax|licens|permit|meals|travel|depreciation|amortization|equipment rental/i;
+  // Payees that never get a 1099: utilities, insurers, banks and lenders, tax agencies.
+  const NO_1099_PAYEE = /insurance|assurance|\bbank\b|credit union|financial|\bcredit\b|light & water|utilit|power|energy|gas & electric|water (district|dept)|wireless|irs\b|eftps|dept\.? of revenue|department of|state of|county of|city of|recology|waste management/i;
+
   function tax1099(txns, accountClass, meta) {
     const cls = (a) => classOf(accountClass, a);
     const entries = logicalRows(txns, accountClass);
@@ -1824,12 +1862,16 @@
     for (const t of entries) {
       if (!/bill payment/i.test(t.type)) continue;
       const who = payeeOf(t);
-      add(t.date.getUTCFullYear(), who, /credit card/i.test(t.type) ? 'card' : 'bank', Math.abs(t.amount), billAccount.get(who.key));
+      const acct = billAccount.get(who.key);
+      if (acct && NON_1099_ACCOUNT.test(acct)) continue;
+      add(t.date.getUTCFullYear(), who, /credit card/i.test(t.type) ? 'card' : 'bank', Math.abs(t.amount), acct);
     }
     // Direct payments: checks, expenses and card charges coded straight to a cost account.
     for (const p of postings) {
       if (p.cls === 'income' || p.value <= 0 || /^bill$/i.test(p.t.type)) continue;
-      if (PAYROLL_ACCOUNT.test(p.category)) continue;
+      // Uncategorized payments stay in: an unexplained check to a person may well be contract work.
+      if (PAYROLL_ACCOUNT.test(p.category) || NON_1099_ACCOUNT.test(p.category)) continue;
+      if (/transfer|journal|deposit|payroll|tax payment|credit card payment/i.test(p.t.type)) continue;
       const funding = isPnlClass(cls(p.t.account)) ? p.t.split : p.t.account;
       const fundRole = roleOf(accountClass, funding);
       const method = fundRole === 'card' ? 'card' : fundRole === 'cash' || cls(funding) === 'balance' ? 'bank' : null;
@@ -1847,6 +1889,7 @@
         const bank = round2(v.bank), card = round2(v.card);
         if (bank < limit && card >= limit) { status = 'Card only'; note = 'Card payments are reported by the card processor on 1099-K.'; }
         else if (bank < limit) { status = 'Below threshold'; note = `Under ${fmtWhole(limit)} paid by check or bank transfer.`; }
+        else if (NO_1099_PAYEE.test(v.vendor)) { status = 'Likely exempt'; note = 'Utilities, insurers, banks, lenders and tax agencies do not get 1099s.'; }
         else if (saasCategory(v.vendor) || LARGE_COMPANY.test(v.vendor)) { status = 'Likely exempt'; note = 'Large company, usually a corporation. Keep a W-9 on file.'; }
         else if (CORP_SUFFIX.test(v.vendor)) { status = 'Likely exempt'; note = 'Name suggests a corporation. Confirm on the W-9 (attorneys still get a 1099).'; }
         else { status = 'Review'; note = 'Collect a W-9 to confirm whether a 1099 is needed.'; }
