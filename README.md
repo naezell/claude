@@ -135,6 +135,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `src/ui/drive.js` | Google Drive backup (sign-in, save, restore, automatic saving) |
 | `src/ui/localfile.js` | Backup to a file on this computer (File System Access API) |
 | `src/ui/help.js` | Getting-started guide |
+| `src/ui/arrange.js` | Customize: moving and hiding sections on each page, and tabs |
 | `src/ui/close.js` | Month-end close checklist |
 | `src/ui/problem.js` | "Report a problem" panel, and the fallback shown if part of the page crashes |
 | `src/ui/*.js` | One file per tab (`audit`, `growth`, `cash`, `breakeven`, `trends`, `budget`, `vendors`, `benchmarks`, `advisory`) and `drawers.js` for the report, client questions and saved clients |

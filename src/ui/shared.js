@@ -28,7 +28,7 @@
   const Backup = {
     format: 'ledger-lens-clients',
     build() {
-      return JSON.stringify({ format: this.format, version: 2, schema: ClientStore.schema, savedAt: new Date().toISOString(), clients: ClientStore.all(), settings: { preparer: safeStore.get('ll.preparer') || '' } }, null, 2);
+      return JSON.stringify({ format: this.format, version: 2, schema: ClientStore.schema, savedAt: new Date().toISOString(), clients: ClientStore.all(), settings: { preparer: safeStore.get('ll.preparer') || '', layout: safeStore.get('ll.layout') || '' } }, null, 2);
     },
     restore(text) {
       let data;
@@ -38,6 +38,9 @@
       const n = ClientStore.merge(data.clients);
       const preparer = data.settings && typeof data.settings.preparer === 'string' ? data.settings.preparer : '';
       if (preparer && !safeStore.get('ll.preparer')) safeStore.set('ll.preparer', preparer);
+      // The page layout comes back too, unless this browser already has one.
+      const layout = data.settings && typeof data.settings.layout === 'string' ? data.settings.layout : '';
+      if (layout && !safeStore.get('ll.layout')) safeStore.set('ll.layout', layout);
       return n;
     },
     // When and where the last backup went, for the reminder.
@@ -143,6 +146,7 @@
   }
 
   const Icon = {
+    sliders: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/></svg>`,
     flag: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 14V2.5M3.5 2.5h8l-1.8 3 1.8 3h-8"/></svg>`,
     upload: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 10.5V2.5M4.8 5.5 8 2.3l3.2 3.2M2.5 10.5v2.2c0 .5.4.8.8.8h9.4c.4 0 .8-.3.8-.8v-2.2"/></svg>`,
     report: html`<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.8h5.2L12.5 5v9.2H4z"/><path d="M9 1.8V5h3.5M6 8h4.5M6 10.5h4.5"/></svg>`,

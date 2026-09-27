@@ -7,7 +7,7 @@
   const E = window.LedgerEngine;
   const { fmtMoney } = E;
   const UI = window.LedgerUI;
-  const { compactMoney, truncate, useTokens, Icon, Severity, Money, ChartTooltip, shortDate, wholeMoney, Banner, MoneyInput, NumberInput } = UI;
+  const { compactMoney, truncate, useTokens, Icon, Severity, Money, ChartTooltip, shortDate, wholeMoney, Banner, MoneyInput, NumberInput, Arrange } = UI;
 
   // ------------------------------------------------------------ cash forecast tab
 
@@ -43,6 +43,7 @@
         : below.length
           ? html`<${Banner} level="medium" label="Below cushion">Cash dips below your ${wholeMoney(cushion)} cushion in <strong>${below.length} of 13 weeks</strong>, bottoming at <strong>${wholeMoney(low.ending)}</strong> the week of ${shortDate(low.start)}.${driverText}</${Banner}>`
           : html`<${Banner} level="good" label="Healthy">Cash stays above your ${wholeMoney(cushion)} cushion for all 13 weeks. The lowest point is ${wholeMoney(low.ending)} the week of ${shortDate(low.start)}.</${Banner}>`}
+
       ${cash.ap.duplicateTotal > 0 && html`<${Banner} level="medium" label="Check before paying">${wholeMoney(cash.ap.duplicateTotal)} of open bills match entries the audit flags as possible duplicates. They are still in the forecast; void them in QuickBooks if they are duplicates.</${Banner}>`}
 
       <section class="kpis" aria-label="Cash summary">
@@ -53,71 +54,82 @@
         <div class="kpi"><span class="kpi-label">Open bills</span><span class="kpi-value">${wholeMoney(cash.ap.total)}</span><span class="kpi-sub">${cash.ap.openBills.length} unpaid${cash.cardBalance ? ` + ${wholeMoney(cash.cardBalance)} on cards` : ''}</span></div>
       </section>
 
-      <div class="grid-2">
-        <section class="panel">
-          <div class="panel-head"><h2>Projected cash balance</h2><p>Cash at the end of each week. Points below your cushion are marked red.</p></div>
-          <div class="panel-body">
-            <div class="legend"><span><i style=${{ background: t.s1 }}></i>${scenarioCash ? 'With your changes' : 'Ending cash'}</span>${scenarioCash && html`<span><i style=${{ background: t.neutral, height: '3px' }}></i>Baseline</span>`}<span><i style=${{ background: t.warnLine, height: '2px' }}></i>Cushion</span></div>
-            <div style=${{ height: 260 }}>
-              <${ResponsiveContainer} width="100%" height="100%">
-                <${ComposedChart} data=${chartData} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
-                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
-                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${12} />
-                  <${YAxis} domain=${[minY < 0 ? 'auto' : 0, 'auto']} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
-                  <${ReferenceLine} y=${cushion} stroke=${t.warnLine} strokeWidth=${2} />
-                  ${minY < 0 && html`<${ReferenceLine} y=${0} stroke=${t.axis} />`}
-                  <${Tooltip} cursor=${{ stroke: t.axis }} content=${html`<${ChartTooltip} rows=${(d) => d.week ? [
-                    { label: 'Cash in', value: fmtMoney(d.inflow) },
-                    { label: 'Cash out', value: fmtMoney(d.outflow) },
-                    { label: 'Ending cash', value: fmtMoney(d.ending), color: t.s1 },
-                  ].concat(scenarioCash ? [{ label: 'Baseline', value: fmtMoney(d.baseline), color: t.neutral }] : []) : [{ label: 'Starting cash', value: fmtMoney(d.ending), color: t.s1 }]} />`} />
-                  ${scenarioCash && html`<${Line} type="linear" dataKey="baseline" stroke=${t.neutral} strokeWidth=${2} dot=${false} isAnimationActive=${false} />`}
-                  <${Area} type="linear" dataKey="ending" stroke=${t.s1} strokeWidth=${2} fill=${t.s1} fillOpacity=${0.12} isAnimationActive=${false}
-                    dot=${(p) => html`<circle key=${p.index} cx=${p.cx} cy=${p.cy} r=${p.payload.ending < cushion ? 5 : 3.5} fill=${p.payload.ending < cushion ? t.neg : t.s1} stroke=${t.surface} strokeWidth=${2} />`}
-                    activeDot=${{ r: 6, stroke: t.surface, strokeWidth: 2 }} />
+      <${Arrange} page="cash" parts=${[
+        ["charts", "Cash balance and cash in vs. out", html`
+        <div class="grid-2">
+          <section class="panel">
+            <div class="panel-head"><h2>Projected cash balance</h2><p>Cash at the end of each week. Points below your cushion are marked red.</p></div>
+            <div class="panel-body">
+              <div class="legend"><span><i style=${{ background: t.s1 }}></i>${scenarioCash ? 'With your changes' : 'Ending cash'}</span>${scenarioCash && html`<span><i style=${{ background: t.neutral, height: '3px' }}></i>Baseline</span>`}<span><i style=${{ background: t.warnLine, height: '2px' }}></i>Cushion</span></div>
+              <div style=${{ height: 260 }}>
+                <${ResponsiveContainer} width="100%" height="100%">
+                  <${ComposedChart} data=${chartData} margin=${{ top: 8, right: 12, bottom: 0, left: 4 }}>
+                    <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                    <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${12} />
+                    <${YAxis} domain=${[minY < 0 ? 'auto' : 0, 'auto']} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                    <${ReferenceLine} y=${cushion} stroke=${t.warnLine} strokeWidth=${2} />
+                    ${minY < 0 && html`<${ReferenceLine} y=${0} stroke=${t.axis} />`}
+                    <${Tooltip} cursor=${{ stroke: t.axis }} content=${html`<${ChartTooltip} rows=${(d) => d.week ? [
+                      { label: 'Cash in', value: fmtMoney(d.inflow) },
+                      { label: 'Cash out', value: fmtMoney(d.outflow) },
+                      { label: 'Ending cash', value: fmtMoney(d.ending), color: t.s1 },
+                    ].concat(scenarioCash ? [{ label: 'Baseline', value: fmtMoney(d.baseline), color: t.neutral }] : []) : [{ label: 'Starting cash', value: fmtMoney(d.ending), color: t.s1 }]} />`} />
+                    ${scenarioCash && html`<${Line} type="linear" dataKey="baseline" stroke=${t.neutral} strokeWidth=${2} dot=${false} isAnimationActive=${false} />`}
+                    <${Area} type="linear" dataKey="ending" stroke=${t.s1} strokeWidth=${2} fill=${t.s1} fillOpacity=${0.12} isAnimationActive=${false}
+                      dot=${(p) => html`<circle key=${p.index} cx=${p.cx} cy=${p.cy} r=${p.payload.ending < cushion ? 5 : 3.5} fill=${p.payload.ending < cushion ? t.neg : t.s1} stroke=${t.surface} strokeWidth=${2} />`}
+                      activeDot=${{ r: 6, stroke: t.surface, strokeWidth: 2 }} />
+                  <//>
                 <//>
-              <//>
+              </div>
             </div>
-          </div>
-        </section>
-        <section class="panel">
-          <div class="panel-head"><h2>Cash in vs. cash out</h2><p>Weeks where payroll and bills cluster ahead of collections are the pinch points.</p></div>
-          <div class="panel-body">
-            <div class="legend"><span><i style=${{ background: t.s1 }}></i>Cash in</span><span><i style=${{ background: t.s2 }}></i>Cash out</span></div>
-            <div style=${{ height: 260 }}>
-              <${ResponsiveContainer} width="100%" height="100%">
-                <${BarChart} data=${chartData.slice(1)} margin=${{ top: 8, right: 8, bottom: 0, left: 4 }} barGap=${2} barCategoryGap="22%">
-                  <${CartesianGrid} vertical=${false} stroke=${t.grid} />
-                  <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${12} />
-                  <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
-                  <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [
-                    { label: 'Cash in', value: fmtMoney(d.inflow), color: t.s1 },
-                    { label: 'Cash out', value: fmtMoney(d.outflow), color: t.s2 },
-                    { label: 'Net', value: fmtMoney(d.net) },
-                  ]} />`} />
-                  <${Bar} dataKey="inflow" fill=${t.s1} radius=${[4, 4, 0, 0]} maxBarSize=${14} isAnimationActive=${false} />
-                  <${Bar} dataKey="outflow" fill=${t.s2} radius=${[4, 4, 0, 0]} maxBarSize=${14} isAnimationActive=${false} />
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Cash in vs. cash out</h2><p>Weeks where payroll and bills cluster ahead of collections are the pinch points.</p></div>
+            <div class="panel-body">
+              <div class="legend"><span><i style=${{ background: t.s1 }}></i>Cash in</span><span><i style=${{ background: t.s2 }}></i>Cash out</span></div>
+              <div style=${{ height: 260 }}>
+                <${ResponsiveContainer} width="100%" height="100%">
+                  <${BarChart} data=${chartData.slice(1)} margin=${{ top: 8, right: 8, bottom: 0, left: 4 }} barGap=${2} barCategoryGap="22%">
+                    <${CartesianGrid} vertical=${false} stroke=${t.grid} />
+                    <${XAxis} dataKey="label" tickLine=${false} axisLine=${{ stroke: t.axis }} tick=${{ fill: t.muted, fontSize: 11 }} interval="preserveStartEnd" minTickGap=${12} />
+                    <${YAxis} tickFormatter=${compactMoney} tickLine=${false} axisLine=${false} tick=${{ fill: t.muted, fontSize: 12 }} width=${52} />
+                    <${Tooltip} cursor=${{ fill: t.surface2 }} content=${html`<${ChartTooltip} rows=${(d) => [
+                      { label: 'Cash in', value: fmtMoney(d.inflow), color: t.s1 },
+                      { label: 'Cash out', value: fmtMoney(d.outflow), color: t.s2 },
+                      { label: 'Net', value: fmtMoney(d.net) },
+                    ]} />`} />
+                    <${Bar} dataKey="inflow" fill=${t.s1} radius=${[4, 4, 0, 0]} maxBarSize=${14} isAnimationActive=${false} />
+                    <${Bar} dataKey="outflow" fill=${t.s2} radius=${[4, 4, 0, 0]} maxBarSize=${14} isAnimationActive=${false} />
+                  <//>
                 <//>
-              <//>
+              </div>
             </div>
-          </div>
-        </section>
-      </div>
-
-      <${WeekGrid} cash=${cash} cushion=${cushion} />
-
-      <div class="section-title"><h2>Receivables & payables</h2></div>
-      <div class="grid-2">
-        <${AgingPanel} ar=${cash.ar} includeDoubtful=${inputs.includeDoubtful} />
-        <${PaymentSpeedChart} lags=${cash.ar.customerLags} />
-      </div>
-      <${OpenInvoices} ar=${cash.ar} includeDoubtful=${inputs.includeDoubtful} />
-      <${OpenBills} ap=${cash.ap} />
-
-      <details class="panel mapping">
-        <summary>How this forecast is built</summary>
-        <div class="panel-body"><ul class="assumptions">${cash.assumptions.map((a) => html`<li key=${a}>${a}</li>`)}</ul></div>
-      </details>
+          </section>
+        </div>
+        `],
+        ["weeks", "Week by week", html`
+        <${WeekGrid} cash=${cash} cushion=${cushion} />
+        `],
+        ["receivables", "Receivables & payables", html`
+        <div class="section-title"><h2>Receivables & payables</h2></div>
+        <div class="grid-2">
+          <${AgingPanel} ar=${cash.ar} includeDoubtful=${inputs.includeDoubtful} />
+          <${PaymentSpeedChart} lags=${cash.ar.customerLags} />
+        </div>
+        `],
+        ["invoices", "Open invoices", html`
+        <${OpenInvoices} ar=${cash.ar} includeDoubtful=${inputs.includeDoubtful} />
+        `],
+        ["bills", "Open bills", html`
+        <${OpenBills} ap=${cash.ap} />
+        `],
+        ["method", "How this forecast is built", html`
+        <details class="panel mapping">
+          <summary>How this forecast is built</summary>
+          <div class="panel-body"><ul class="assumptions">${cash.assumptions.map((a) => html`<li key=${a}>${a}</li>`)}</ul></div>
+        </details>
+        `],
+      ]} />
     `;
   }
 

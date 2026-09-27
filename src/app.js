@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore } = window.LedgerStore;
@@ -35,6 +35,19 @@
     return { result: later.of === parsedOk ? later.result : null, analyzing: later.busy || later.of !== parsedOk };
   }
 
+  const TABS = [
+    ['audit', 'Diagnostic audit'],
+    ['close', 'Month-end close'],
+    ['growth', 'Growth & profitability insights'],
+    ['cash', 'Cash forecast'],
+    ['breakeven', 'Break-even'],
+    ['trends', 'Trends'],
+    ['budget', 'Budget'],
+    ['vendors', 'Vendors'],
+    ['benchmarks', 'Benchmarks'],
+    ['advisory', 'Tax & lending'],
+  ];
+
   // ------------------------------------------------------------ top-level app
 
   function App() {
@@ -55,6 +68,17 @@
     const [clientsOpen, setClientsOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
     const [problemOpen, setProblemOpen] = useState(false);
+    // The bookkeeper's arrangement of pages and tabs (src/ui/arrange.js).
+    const [layout, setLayoutState] = useState(() => Layout.load());
+    const setLayout = useCallback((next) => { Layout.save(next); setLayoutState(next); }, []);
+    const [customizing, setCustomizing] = useState(false);
+    const layoutCtx = useMemo(() => ({ customizing, layout, setLayout }), [customizing, layout, setLayout]);
+    const tabOrder = arrangeIds(TABS.map((t) => t[0]), layout.tabs.order);
+    const hiddenTabs = new Set(layout.tabs.hidden || []);
+    // A hidden tab can't stay open: go to the first one still shown.
+    useEffect(() => {
+      if (hiddenTabs.has(tab) && !customizing) setTab(tabOrder.find((t) => !hiddenTabs.has(t)) || 'audit');
+    }, [layout, tab, customizing]);
     // Number of files being read, for the progress note.
     const [reading, setReading] = useState(0);
     const [welcome, setWelcome] = useState(() => !safeStore.get('ll.welcomed'));
@@ -289,7 +313,7 @@
     useEffect(() => { if (error) window.LedgerProblem.note('shown', error); }, [error]);
     const auditCount = result ? result.audit.open.uncategorized + result.audit.open.duplicates + result.audit.open.mismatches : 0;
 
-    return html`
+    return html`<${LayoutContext.Provider} value=${layoutCtx}>
       <header class="topbar">
         <div class="wrap">
           <div class="brand">
@@ -339,18 +363,13 @@
         ${!welcome && backupDue && !backupSnoozed && html`<${Banner} level="medium" label="Back up">Your saved clients have not been backed up in over 30 days. They live only in this browser. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button> · <button class="linkish" onClick=${() => setBackupSnoozed(true)}>Later</button></${Banner}>`}
         ${restored && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
 
-        <div class="tabs" role="tablist">
-          <button class="tab" role="tab" id="tab-audit" aria-selected=${tab === 'audit'} onClick=${() => setTab('audit')}>Diagnostic audit<span class="count">${auditCount}</span></button>
-          <button class="tab" role="tab" id="tab-close" aria-selected=${tab === 'close'} onClick=${() => setTab('close')}>Month-end close${closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>
-          <button class="tab" role="tab" id="tab-growth" aria-selected=${tab === 'growth'} onClick=${() => setTab('growth')}>Growth & profitability insights</button>
-          <button class="tab" role="tab" id="tab-cash" aria-selected=${tab === 'cash'} onClick=${() => setTab('cash')}>Cash forecast</button>
-          <button class="tab" role="tab" id="tab-breakeven" aria-selected=${tab === 'breakeven'} onClick=${() => setTab('breakeven')}>Break-even</button>
-          <button class="tab" role="tab" id="tab-trends" aria-selected=${tab === 'trends'} onClick=${() => setTab('trends')}>Trends</button>
-          <button class="tab" role="tab" id="tab-budget" aria-selected=${tab === 'budget'} onClick=${() => setTab('budget')}>Budget</button>
-          <button class="tab" role="tab" id="tab-vendors" aria-selected=${tab === 'vendors'} onClick=${() => setTab('vendors')}>Vendors</button>
-          <button class="tab" role="tab" id="tab-benchmarks" aria-selected=${tab === 'benchmarks'} onClick=${() => setTab('benchmarks')}>Benchmarks</button>
-          <button class="tab" role="tab" id="tab-advisory" aria-selected=${tab === 'advisory'} onClick=${() => setTab('advisory')}>Tax & lending</button>
+        <div class="tabs-row">
+          <div class="tabs" role="tablist">
+            ${tabOrder.filter((id) => !hiddenTabs.has(id) || id === tab).map((id) => html`<button key=${id} class="tab" role="tab" id=${`tab-${id}`} aria-selected=${tab === id} onClick=${() => setTab(id)}>${TABS.find((t) => t[0] === id)[1]}${id === 'audit' ? html`<span class="count">${auditCount}</span>` : id === 'close' && closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>`)}
+          </div>
+          ${result && !customizing && html`<button class="btn customize-toggle" onClick=${() => setCustomizing(true)}>${Icon.sliders}Customize</button>`}
         </div>
+        ${customizing && result && html`<${CustomizeBar} tabs=${TABS} current=${tab} pageLabel=${TABS.find((t) => t[0] === tab)[1]} onDone=${() => setCustomizing(false)} />`}
 
         ${!result && analyzing && html`<div class="empty">Working through a large export. The results appear here in a moment.</div>`}
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`} class=${analyzing ? 'stale' : ''} aria-busy=${analyzing ? 'true' : 'false'}>
@@ -374,7 +393,7 @@
       ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onOpen=${(id) => { setClientsOpen(false); openClient(id); }} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
       ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} benchmarks=${benchmarks} onClose=${() => setReportOpen(false)} />`}
       ${dragging && html`<div class="drop-overlay">Drop the QuickBooks CSV to analyze it</div>`}
-    `;
+    </${LayoutContext.Provider}>`;
   }
 
   // Saved clients load from the browser's database first, so the page opens with them in place.

@@ -676,3 +676,54 @@ test('a browser database from the previous version is upgraded with clients inta
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('Customize: move and hide sections and tabs, kept after a reload, Reset restores', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  const titles = () => page.$$eval('main[aria-labelledby="tab-audit"] section.panel h2', (hs) => hs.map((h) => h.textContent.trim()));
+  const before = await titles();
+  assert.ok(before.indexOf('Uncategorized transactions') < before.indexOf('Potential duplicates'));
+  await page.click('button:has-text("Customize")');
+  await page.locator('.arrange-item[data-part="closed"] button', { hasText: 'Hide' }).click();
+  await page.locator('.arrange-item[data-part="duplicates"] button[aria-label="Move Potential duplicates up"]').click();
+  // Hide a tab too.
+  await page.locator('.tab-arrange li', { hasText: 'Benchmarks' }).locator('button', { hasText: 'Hide' }).click();
+  await page.click('.customize-bar button:has-text("Done")');
+  const after = await titles();
+  assert.ok(after.indexOf('Potential duplicates') < after.indexOf('Uncategorized transactions'), 'duplicates moved above uncategorized');
+  assert.ok(!after.includes('Closed months'), 'closed months hidden');
+  assert.equal(await page.locator('#tab-benchmarks').count(), 0);
+  // Kept after a reload.
+  await page.reload();
+  await page.waitForSelector('#tab-audit');
+  const reloaded = await titles();
+  assert.deepEqual(reloaded, after);
+  assert.equal(await page.locator('#tab-benchmarks').count(), 0);
+  // The layout goes into backups.
+  const layout = await page.evaluate(() => JSON.parse(JSON.parse(window.LedgerUI.Backup.build()).settings.layout));
+  assert.deepEqual(layout.pages.audit.hidden, ['closed']);
+  // Reset brings the page and tabs back.
+  await page.click('button:has-text("Customize")');
+  await page.click('.customize-bar button:has-text("Reset every page and tab")');
+  await page.click('.customize-bar button:has-text("Done")');
+  assert.deepEqual(await titles(), before);
+  assert.equal(await page.locator('#tab-benchmarks').count(), 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Customize works on every page without errors or sideways scrolling on a phone', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage({ viewport: { width: 400, height: 900 } });
+  for (const tab of TABS) {
+    await page.click(`#tab-${tab}`);
+    await page.click('button:has-text("Customize")');
+    await page.waitForSelector('.customize-bar');
+    assert.ok(await page.locator('.arrange-item').count() > 0, `${tab} has movable sections`);
+    const sideways = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+    assert.equal(sideways, false, `${tab} scrolls sideways while customizing`);
+    await page.click('.customize-bar button:has-text("Done")');
+  }
+  assert.deepEqual(errors, []);
+  await page.close();
+});

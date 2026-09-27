@@ -160,6 +160,26 @@
 
   /* Tabs */
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--hair); margin-top: 4px; overflow-x: auto; }
+  .tabs-row { display: flex; align-items: flex-end; gap: 8px; }
+  .tabs-row .tabs { flex: 1 1 auto; min-width: 0; }
+  .customize-toggle { flex: none; margin-bottom: 6px; }
+  .customize-bar { border-color: var(--accent); }
+  .customize-actions { display: flex; gap: 8px; margin-left: auto; }
+  .customize-sub { font: 600 13px/1.2 var(--cond); text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); margin: 0 0 8px; }
+  .tab-arrange { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .tab-arrange li { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px; border: 1px solid var(--hair); border-radius: 8px; background: var(--page); font-size: 13px; }
+  .tab-arrange li span { margin-right: 4px; }
+  .tab-arrange li.off span { color: var(--muted); text-decoration: line-through; }
+  .tab-arrange .btn, .arrange-actions .btn { padding: 4px 8px; font-size: 12.5px; min-height: 0; }
+  /* min-width: 0 keeps a wide table inside from stretching the page grid. */
+  .arrange-item { border: 1px dashed var(--axis); border-radius: 12px; padding: 8px; min-width: 0; }
+  .arrange-body { display: grid; gap: 22px; min-width: 0; }
+  .arrange-item.off { opacity: 0.7; }
+  .arrange-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 2px 4px 8px; }
+  .arrange-item.off .arrange-bar { padding-bottom: 2px; }
+  .arrange-label { font: 600 14px/1.2 var(--cond); }
+  .arrange-actions { display: flex; gap: 4px; }
+
   .tab {
     appearance: none; border: 0; background: none; padding: 12px 12px 11px; cursor: pointer;
     font: 600 12.5px/1 var(--cond); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
@@ -478,6 +498,7 @@
 <script src="src/store.js"></script>
 <script src="src/work.js"></script>
 <script src="src/ui/shared.js"></script>
+<script src="src/ui/arrange.js"></script>
 <script src="src/ui/drive.js"></script>
 <script src="src/ui/localfile.js"></script>
 <script src="src/ui/audit.js"></script>

@@ -6,7 +6,7 @@
   const E = window.LedgerEngine;
   const { fmtMoney, fmtPct } = E;
   const UI = window.LedgerUI;
-  const { compactMoney, useTokens, Money, ChartTooltip, wholeMoney, NumberInput } = UI;
+  const { compactMoney, useTokens, Money, ChartTooltip, wholeMoney, NumberInput, Arrange } = UI;
 
   // ------------------------------------------------------------ budget tab
 
@@ -67,25 +67,30 @@
         <div class="kpi"><span class="kpi-label">Year on track for</span><span class="kpi-value">${wholeMoney(bva.outlook.netIncome)}</span><span class="kpi-sub">net income if the rest of the year goes to budget (budget ${wholeMoney(T.fullYear.netIncome)})</span></div>
       </section>
 
-      <div class="grid-2">
-        ${chart('Revenue by month', 'actualRevenue', 'budgetRevenue', 'Bars are actual revenue; the line is the budget. Months still to come show the budget only.')}
-        ${chart('Net income by month', 'actualNet', 'budgetNet', 'Revenue less all costs, against what the budget expected each month.')}
-      </div>
-
-      <section class="panel">
-        <div class="panel-head"><h2>By account, ${bva.ytdLabel}</h2><p>Largest differences first. Income above budget and costs below budget are favorable. Differences of $500 and 10% or more are flagged.</p></div>
-        <div class="panel-body flush"><div class="table-wrap"><table>
-          <thead><tr><th>Account</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Difference</th><th></th><th class="num">Full-year budget</th></tr></thead>
-          <tbody>${bva.rows.map((r) => html`<tr key=${r.name}>
-            <td>${r.name}<span class="sub">${r.cls === 'income' ? 'Income' : r.cls === 'cogs' ? 'Cost of goods sold' : 'Expense'}${r.unbudgeted ? ' · not in the budget' : ''}</span></td>
-            <td class="num"><${Money} v=${r.budgetYtd} /></td>
-            <td class="num"><${Money} v=${r.actualYtd} /></td>
-            <td class="num"><span class=${r.favorable ? '' : 'neg'}>${r.variance > 0 ? '+' : ''}${wholeMoney(r.variance)}${r.pct != null ? ` (${r.pct > 0 ? '+' : ''}${(r.pct * 100).toFixed(0)}%)` : ''}</span></td>
-            <td>${r.flag ? html`<span class=${`pill ${r.favorable ? 'good' : 'high'}`}>${r.favorable ? 'Favorable' : 'Over budget'}</span>` : ''}</td>
-            <td class="num">${r.fullYear ? wholeMoney(r.fullYear) : html`<span class="sub">-</span>`}</td>
-          </tr>`)}</tbody>
-        </table></div></div>
-      </section>
+      <${Arrange} page="budget" parts=${[
+        ["charts", "Revenue and net income by month", html`
+        <div class="grid-2">
+          ${chart('Revenue by month', 'actualRevenue', 'budgetRevenue', 'Bars are actual revenue; the line is the budget. Months still to come show the budget only.')}
+          ${chart('Net income by month', 'actualNet', 'budgetNet', 'Revenue less all costs, against what the budget expected each month.')}
+        </div>
+        `],
+        ["accounts", "By account", html`
+        <section class="panel">
+          <div class="panel-head"><h2>By account, ${bva.ytdLabel}</h2><p>Largest differences first. Income above budget and costs below budget are favorable. Differences of $500 and 10% or more are flagged.</p></div>
+          <div class="panel-body flush"><div class="table-wrap"><table>
+            <thead><tr><th>Account</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Difference</th><th></th><th class="num">Full-year budget</th></tr></thead>
+            <tbody>${bva.rows.map((r) => html`<tr key=${r.name}>
+              <td>${r.name}<span class="sub">${r.cls === 'income' ? 'Income' : r.cls === 'cogs' ? 'Cost of goods sold' : 'Expense'}${r.unbudgeted ? ' · not in the budget' : ''}</span></td>
+              <td class="num"><${Money} v=${r.budgetYtd} /></td>
+              <td class="num"><${Money} v=${r.actualYtd} /></td>
+              <td class="num"><span class=${r.favorable ? '' : 'neg'}>${r.variance > 0 ? '+' : ''}${wholeMoney(r.variance)}${r.pct != null ? ` (${r.pct > 0 ? '+' : ''}${(r.pct * 100).toFixed(0)}%)` : ''}</span></td>
+              <td>${r.flag ? html`<span class=${`pill ${r.favorable ? 'good' : 'high'}`}>${r.favorable ? 'Favorable' : 'Over budget'}</span>` : ''}</td>
+              <td class="num">${r.fullYear ? wholeMoney(r.fullYear) : html`<span class="sub">-</span>`}</td>
+            </tr>`)}</tbody>
+          </table></div></div>
+        </section>
+        `],
+      ]} />
     `;
   }
 

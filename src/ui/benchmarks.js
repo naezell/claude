@@ -6,7 +6,7 @@
   const E = window.LedgerEngine;
   const { fmtPct } = E;
   const UI = window.LedgerUI;
-  const { safeStore, useTokens, wholeMoney, MoneyInput } = UI;
+  const { safeStore, useTokens, wholeMoney, MoneyInput, Arrange } = UI;
 
   // ------------------------------------------------------------ benchmarks tab
 
@@ -155,44 +155,49 @@
         </div>
       </section>
 
-      ${shown ? html`
-        <section class="bm-grid" aria-label="Benchmark comparison">
-          ${rows.map((r) => {
-            const max = Math.max(Math.abs(r.company || 0), Math.abs(r.peer || 0), 1e-9);
-            const pill = r.read === 'Ahead' ? 'good' : r.read === 'Behind' ? 'high' : r.read === 'n/a' ? 'low' : 'medium';
-            const nat = usingLive && live.national ? live.national[r.metric] : null;
-            const gap = r.diff == null ? '' : r.kind === 'pct' ? `${r.diff > 0 ? '+' : ''}${(r.diff * 100).toFixed(1)} pts vs peers` : `${r.diff > 0 ? '+' : ''}${fmtPct(r.diff)} vs peers`;
-            const miss = usingLive && live.partial.find((p) => p.metric === r.metric);
-            return html`<div class="panel bm-card" key=${r.metric}>
-              <div class="bm-head"><span class="kpi-label">${r.label}</span><span class=${`pill ${pill}`}><span class="dot"></span>${r.read}</span></div>
-              <div class="bm-bars">
-                <div class="bm-row"><span>Client</span><span class="bm-track"><span style=${{ width: `${(Math.max(0, r.company || 0) / max) * 100}%`, background: t.s1 }}></span></span><b class="num">${f(r, r.company)}</b></div>
-                <div class="bm-row"><span>Peers</span><span class="bm-track"><span style=${{ width: `${(Math.max(0, r.peer || 0) / max) * 100}%`, background: t.neutral }}></span></span><b class="num">${f(r, r.peer)}</b></div>
-                ${nat != null && html`<div class="bm-row"><span>National</span><span class="bm-track"></span><b class="num">${f(r, nat)}</b></div>`}
-              </div>
-              <span class="kpi-sub">${miss ? miss.message : gap || 'No peer figure'}</span>
-            </div>`;
-          })}
-        </section>
-        ${takeaways.length > 0 && html`<section class="panel"><div class="panel-head"><h2>What the gaps mean</h2></div><div class="panel-body"><ul class="assumptions">${takeaways.map((x) => html`<li key=${x}>${x}</li>`)}</ul></div></section>`}
-        <p class="chart-note">${usingLive
-          ? `Peer figures are regional averages for ${industry ? industry.name : 'the industry'} (NAICS ${industry ? industry.code : ''}) in ${state}. When the service has too few businesses for a code, it falls back to the broader industry group, so treat small or unusual industries as a rough guide.`
-          : 'Peer figures below were entered by hand; note the source so the client knows where they came from.'}</p>
-      ` : ''}
-
-      <details class="panel mapping" open=${!mcp && !hasManual}>
-        <summary>Enter peer figures by hand</summary>
-        <div class="panel-body inputs-row">
-          <${MoneyInput} id="mp-revenue" label="Peer yearly revenue" value=${manual.revenue} placeholder="e.g. 250,000" onChange=${(x) => setManual({ ...manual, revenue: x })} />
-          <${MoneyInput} id="mp-profit" label="Peer yearly profit" value=${manual.profit} placeholder="e.g. 30,000" onChange=${(x) => setManual({ ...manual, profit: x })} />
-          <label class="field" for="mp-margin">Peer profit margin
-            <span class="money-input"><input id="mp-margin" inputmode="decimal" value=${manual.margin} placeholder="e.g. 12" onInput=${(e) => setManual({ ...manual, margin: e.target.value.replace(/[^0-9.\-]/g, '') })} /><span aria-hidden="true" style=${{ paddingRight: '10px' }}>%</span></span>
-          </label>
-          <${MoneyInput} id="mp-expenses" label="Peer yearly expenses" value=${manual.expenses} placeholder="e.g. 220,000" onChange=${(x) => setManual({ ...manual, expenses: x })} />
-          <label class="field" for="mp-source">Source<input id="mp-source" class="text" value=${manual.source} placeholder="e.g. RMA 2026, trade association survey" onInput=${(e) => setManual({ ...manual, source: e.target.value })} /></label>
-        </div>
-        <div class="panel-body"><p class="chart-note">${usingLive ? 'Live benchmarks are showing; clear them by changing the industry or state to compare against these instead.' : 'Saved in this browser only.'}</p></div>
-      </details>
+      <${Arrange} page="benchmarks" parts=${[
+        ["results", "Comparison with peers", html`
+        ${shown ? html`
+          <section class="bm-grid" aria-label="Benchmark comparison">
+            ${rows.map((r) => {
+              const max = Math.max(Math.abs(r.company || 0), Math.abs(r.peer || 0), 1e-9);
+              const pill = r.read === 'Ahead' ? 'good' : r.read === 'Behind' ? 'high' : r.read === 'n/a' ? 'low' : 'medium';
+              const nat = usingLive && live.national ? live.national[r.metric] : null;
+              const gap = r.diff == null ? '' : r.kind === 'pct' ? `${r.diff > 0 ? '+' : ''}${(r.diff * 100).toFixed(1)} pts vs peers` : `${r.diff > 0 ? '+' : ''}${fmtPct(r.diff)} vs peers`;
+              const miss = usingLive && live.partial.find((p) => p.metric === r.metric);
+              return html`<div class="panel bm-card" key=${r.metric}>
+                <div class="bm-head"><span class="kpi-label">${r.label}</span><span class=${`pill ${pill}`}><span class="dot"></span>${r.read}</span></div>
+                <div class="bm-bars">
+                  <div class="bm-row"><span>Client</span><span class="bm-track"><span style=${{ width: `${(Math.max(0, r.company || 0) / max) * 100}%`, background: t.s1 }}></span></span><b class="num">${f(r, r.company)}</b></div>
+                  <div class="bm-row"><span>Peers</span><span class="bm-track"><span style=${{ width: `${(Math.max(0, r.peer || 0) / max) * 100}%`, background: t.neutral }}></span></span><b class="num">${f(r, r.peer)}</b></div>
+                  ${nat != null && html`<div class="bm-row"><span>National</span><span class="bm-track"></span><b class="num">${f(r, nat)}</b></div>`}
+                </div>
+                <span class="kpi-sub">${miss ? miss.message : gap || 'No peer figure'}</span>
+              </div>`;
+            })}
+          </section>
+          ${takeaways.length > 0 && html`<section class="panel"><div class="panel-head"><h2>What the gaps mean</h2></div><div class="panel-body"><ul class="assumptions">${takeaways.map((x) => html`<li key=${x}>${x}</li>`)}</ul></div></section>`}
+          <p class="chart-note">${usingLive
+            ? `Peer figures are regional averages for ${industry ? industry.name : 'the industry'} (NAICS ${industry ? industry.code : ''}) in ${state}. When the service has too few businesses for a code, it falls back to the broader industry group, so treat small or unusual industries as a rough guide.`
+            : 'Peer figures below were entered by hand; note the source so the client knows where they came from.'}</p>
+        ` : ''}
+        `],
+        ["manual", "Enter peer figures by hand", html`
+        <details class="panel mapping" open=${!mcp && !hasManual}>
+          <summary>Enter peer figures by hand</summary>
+          <div class="panel-body inputs-row">
+            <${MoneyInput} id="mp-revenue" label="Peer yearly revenue" value=${manual.revenue} placeholder="e.g. 250,000" onChange=${(x) => setManual({ ...manual, revenue: x })} />
+            <${MoneyInput} id="mp-profit" label="Peer yearly profit" value=${manual.profit} placeholder="e.g. 30,000" onChange=${(x) => setManual({ ...manual, profit: x })} />
+            <label class="field" for="mp-margin">Peer profit margin
+              <span class="money-input"><input id="mp-margin" inputmode="decimal" value=${manual.margin} placeholder="e.g. 12" onInput=${(e) => setManual({ ...manual, margin: e.target.value.replace(/[^0-9.\-]/g, '') })} /><span aria-hidden="true" style=${{ paddingRight: '10px' }}>%</span></span>
+            </label>
+            <${MoneyInput} id="mp-expenses" label="Peer yearly expenses" value=${manual.expenses} placeholder="e.g. 220,000" onChange=${(x) => setManual({ ...manual, expenses: x })} />
+            <label class="field" for="mp-source">Source<input id="mp-source" class="text" value=${manual.source} placeholder="e.g. RMA 2026, trade association survey" onInput=${(e) => setManual({ ...manual, source: e.target.value })} /></label>
+          </div>
+          <div class="panel-body"><p class="chart-note">${usingLive ? 'Live benchmarks are showing; clear them by changing the industry or state to compare against these instead.' : 'Saved in this browser only.'}</p></div>
+        </details>
+        `],
+      ]} />
     `;
   }
 

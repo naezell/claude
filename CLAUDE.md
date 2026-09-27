@@ -33,7 +33,7 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
 - Static site, **no build step**: `index.html` loads React 18 UMD, Recharts 3 and `htm` from
   `vendor/`, then plain scripts in order: `src/diagnostics.js` first, `config.js`,
   `version.js`, `firm.js`, `engine.js`, `sample.js`, `store.js`, `work.js`, `ui/shared.js`,
-  the tab and drawer files in `src/ui/`, then `app.js`. UI files share `window.LedgerUI`.
+  `ui/arrange.js`, the tab and drawer files in `src/ui/`, then `app.js`. UI files share `window.LedgerUI`.
   When adding a script, add its tag in the right place in `index.html`.
 - `src/engine.js`: all parsing and analysis, pure functions, runs in Node and the browser
   (and in `src/worker.js`). Put logic here and test it in `test/engine.test.js`.
@@ -43,6 +43,10 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
 - `src/work.js` / `src/worker.js`: file reading, and analysis of exports with 8,000+ rows, in a
   Web Worker, with the same work on the page as a fallback (always on `file://`).
 - No client data leaves the browser. Only Google (sign-in, Drive backup) is contacted.
+- Pages are arranged by the bookkeeper (`src/ui/arrange.js`): each tab passes its movable
+  sections to `<${Arrange} page=... parts=${[[id, label, content], ...]} />`; KPI tiles and
+  input panels stay outside it. A new section needs a stable id and a plain label there;
+  never rename an existing id, or saved layouts lose it. Layouts live in `ll.layout`.
 - Branding comes from `src/firm.js`. Settings (Google client ID, support email) are in
   `src/config.js`.
 
