@@ -7,7 +7,7 @@
   const E = window.LedgerEngine;
   const { fmtMoney, fmtWhole, counterpartyOf, leafAccount } = E;
   const UI = window.LedgerUI;
-  const { useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf } = UI;
+  const { useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf, Arrange } = UI;
 
   // ------------------------------------------------------------ audit tab
 
@@ -66,17 +66,41 @@
         ${audit.cleared > 0 && html`<label class="check" for="show-cleared" style=${{ paddingTop: 0 }}><input id="show-cleared" type="checkbox" checked=${showCleared} onChange=${(e) => setShowCleared(e.target.checked)} />Show cleared</label>`}
       </div>
 
-      ${result.tieOut && html`<${TieOutPanel} tie=${result.tieOut} />`}
-      <${ClosedMonthsPanel} result=${result} onClose=${onClose} canSave=${canSave} />
-      ${result.answers && result.answers.length > 0 && html`<${AnswersPanel} answers=${result.answers} onReview=${onReview} onRemove=${onRemoveAnswer} />`}
-      <${IssuesByMonth} audit=${audit} />
-      <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
-      <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
-      <${MismatchPanel} rows=${vis(audit.mismatches)} open=${audit.open.mismatches} onReview=${onReview} />
-      ${result.balanceSheet && result.balanceSheet.available && html`<${BalanceSheetPanel} bs=${result.balanceSheet} vis=${vis} onReview=${onReview} />`}
-      ${result.receipts && html`<${ReceiptsPanel} rc=${result.receipts} vis=${vis} onReview=${onReview} limit=${receiptLimit} setLimit=${setReceiptLimit} />`}
-      ${result.unusual && html`<${UnusualPanel} u=${result.unusual} vis=${vis} onReview=${onReview} />`}
-      <${AccountMapping} accounts=${result.accounts} accountClass=${accountClass} setAccountClass=${setAccountClass} />
+      <${Arrange} page="audit" parts=${[
+        ["tieout", "Ties to QuickBooks", html`
+        ${result.tieOut && html`<${TieOutPanel} tie=${result.tieOut} />`}
+        `],
+        ["closed", "Closed months", html`
+        <${ClosedMonthsPanel} result=${result} onClose=${onClose} canSave=${canSave} />
+        `],
+        ["answers", "Client answers", html`
+        ${result.answers && result.answers.length > 0 && html`<${AnswersPanel} answers=${result.answers} onReview=${onReview} onRemove=${onRemoveAnswer} />`}
+        `],
+        ["bymonth", "Issues by month", html`
+        <${IssuesByMonth} audit=${audit} />
+        `],
+        ["uncategorized", "Uncategorized transactions", html`
+        <${UncategorizedPanel} rows=${vis(audit.uncategorized)} open=${audit.open.uncategorized} total=${audit.uncategorizedOpenTotal} onReview=${onReview} />
+        `],
+        ["duplicates", "Potential duplicates", html`
+        <${DuplicatesPanel} groups=${vis(audit.duplicates)} open=${audit.open.duplicates} exposure=${audit.duplicateOpenExposure} onReview=${onReview} />
+        `],
+        ["mismatches", "Mismatched entries", html`
+        <${MismatchPanel} rows=${vis(audit.mismatches)} open=${audit.open.mismatches} onReview=${onReview} />
+        `],
+        ["balance", "Balance sheet check", html`
+        ${result.balanceSheet && result.balanceSheet.available && html`<${BalanceSheetPanel} bs=${result.balanceSheet} vis=${vis} onReview=${onReview} />`}
+        `],
+        ["receipts", "Receipts", html`
+        ${result.receipts && html`<${ReceiptsPanel} rc=${result.receipts} vis=${vis} onReview=${onReview} limit=${receiptLimit} setLimit=${setReceiptLimit} />`}
+        `],
+        ["unusual", "Unusual activity", html`
+        ${result.unusual && html`<${UnusualPanel} u=${result.unusual} vis=${vis} onReview=${onReview} />`}
+        `],
+        ["mapping", "Account mapping", html`
+        <${AccountMapping} accounts=${result.accounts} accountClass=${accountClass} setAccountClass=${setAccountClass} />
+        `],
+      ]} />
     `;
   }
 

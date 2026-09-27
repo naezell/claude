@@ -55,6 +55,7 @@
               <li>Settings are remembered per client by the company name at the top of the export, and come back the next time that client's file is loaded.</li>
               <li>The <strong>Clients</strong> button shows every client loaded so far, most urgent first: open flags, balance sheet issues, changes to closed months, cash, and how far the month-end close has got.</li>
               <li>To switch clients, press <strong>Open</strong> next to one in the Clients panel. It reloads the files you last uploaded for them, kept in this browser. Upload new exports when their books have moved on.</li>
+              <li>To arrange a page your way, press <strong>Customize</strong> at the right of the tabs. Move sections up or down, hide the ones you don't use, and hide or reorder tabs. Your layout applies to every client; <em>Reset</em> puts things back.</li>
               <li>Large exports (tens of thousands of rows) take a few seconds; a note at the top shows progress and the page stays usable meanwhile.</li>
             </ul>
           `)}

@@ -7,7 +7,7 @@
   const E = window.LedgerEngine;
   const { fmtMoney, fmtPct } = E;
   const UI = window.LedgerUI;
-  const { compactMoney, truncate, useTokens, Icon, Money, ChartTooltip, wholeMoney, ReviewSelect, clearedOf } = UI;
+  const { compactMoney, truncate, useTokens, Icon, Money, ChartTooltip, wholeMoney, ReviewSelect, clearedOf, Arrange } = UI;
 
   // ------------------------------------------------------------ growth tab
 
@@ -24,30 +24,34 @@
         <div class=${`kpi ${subs.potentialSavings ? 'okay' : ''}`}><span class="kpi-label">Potential savings / yr</span><span class="kpi-value">${fmtMoney(subs.potentialSavings)}</span><span class="kpi-sub">Overlaps, extra seats, personal</span></div>
       </section>
 
-      <div class="section-title"><h2>Net margin by ${noun}</h2></div>
-      <div style=${{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px', alignItems: 'center' }}>
-        <div class="seg" role="group" aria-label="Group by">
-          <button aria-pressed=${groupBy === 'customer'} onClick=${() => setGroupBy('customer')}>By customer</button>
-          <button aria-pressed=${groupBy === 'project'} onClick=${() => setGroupBy('project')}>By project</button>
-        </div>
-        <div class="seg" role="group" aria-label="Margin basis">
-          <button aria-pressed=${mode === 'gross'} onClick=${() => setMode('gross')}>Direct costs only</button>
-          <button aria-pressed=${mode === 'net'} onClick=${() => setMode('net')}>After overhead</button>
-        </div>
-      </div>
-
-      ${profit.groups.length
-        ? html`<div class="grid-2">
-            <${RevenueCostChart} groups=${profit.groups} noun=${noun} />
-            <${MarginChart} groups=${profit.groups} mode=${mode} noun=${noun} />
+      <${Arrange} page="growth" parts=${[
+        ['margins', 'Net margin by customer', html`
+          <div class="section-title"><h2>Net margin by ${noun}</h2></div>
+          <div style=${{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px', alignItems: 'center' }}>
+            <div class="seg" role="group" aria-label="Group by">
+              <button aria-pressed=${groupBy === 'customer'} onClick=${() => setGroupBy('customer')}>By customer</button>
+              <button aria-pressed=${groupBy === 'project'} onClick=${() => setGroupBy('project')}>By project</button>
+            </div>
+            <div class="seg" role="group" aria-label="Margin basis">
+              <button aria-pressed=${mode === 'gross'} onClick=${() => setMode('gross')}>Direct costs only</button>
+              <button aria-pressed=${mode === 'net'} onClick=${() => setMode('net')}>After overhead</button>
+            </div>
           </div>
-          <${ProfitTable} profit=${profit} noun=${noun} />
-          ${result.jobCosts && result.jobCosts.mode !== 'none' && html`<${JobCostPanel} jc=${result.jobCosts} noun=${noun} onReview=${onReview} />`}
-          <${CustomerRiskSection} risk=${result.customers} />`
-        : html`<section class="panel"><div class="empty">No ${noun} tags found on income. Add the ${groupBy === 'project' ? 'Customer (with sub-customers/projects) or Class' : 'Customer'} column to the QuickBooks report before exporting.</div></section>`}
-
-      <div class="section-title"><h2>Recurring software & subscriptions</h2></div>
-      <${SubscriptionSection} subs=${subs} />
+          ${profit.groups.length
+            ? html`<div class="grid-2">
+                <${RevenueCostChart} groups=${profit.groups} noun=${noun} />
+                <${MarginChart} groups=${profit.groups} mode=${mode} noun=${noun} />
+              </div>`
+            : html`<section class="panel"><div class="empty">No ${noun} tags found on income. Add the ${groupBy === 'project' ? 'Customer (with sub-customers/projects) or Class' : 'Customer'} column to the QuickBooks report before exporting.</div></section>`}
+        `],
+        ['detail', 'Customer profitability detail', profit.groups.length > 0 && html`<${ProfitTable} profit=${profit} noun=${noun} />`],
+        ['jobcosts', 'Job costing gaps', profit.groups.length > 0 && result.jobCosts && result.jobCosts.mode !== 'none' && html`<${JobCostPanel} jc=${result.jobCosts} noun=${noun} onReview=${onReview} />`],
+        ['risk', 'Customer concentration & risk', profit.groups.length > 0 && html`<${CustomerRiskSection} risk=${result.customers} />`],
+        ['subscriptions', 'Recurring software & subscriptions', html`
+          <div class="section-title"><h2>Recurring software & subscriptions</h2></div>
+          <${SubscriptionSection} subs=${subs} />
+        `],
+      ]} />
     `;
   }
 

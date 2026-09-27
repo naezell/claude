@@ -143,7 +143,8 @@ test('large exports are read and analyzed in the background worker', async (t) =
 test('if the worker cannot start, the page does the work itself', async (t) => {
   if (skip) return t.skip(skip);
   const { page, errors } = await open('/', null, { backgroundRows: 100 });
-  await page.route('**/src/worker.js', (route) => route.fulfill({ status: 404, body: '' }));
+  // A browser that refuses to start the worker (blocked by policy, out of memory).
+  await page.evaluate(() => { window.Worker = function () { throw new Error('workers are blocked'); }; });
   await page.waitForSelector('#tab-audit');
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.waitForSelector('button:has-text("Load sample")');
