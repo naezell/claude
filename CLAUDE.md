@@ -33,7 +33,7 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
 - Static site, **no build step**: `index.html` loads React 18 UMD, Recharts 3 and `htm` from
   `vendor/`, then plain scripts in order: `src/diagnostics.js` first, `config.js`,
   `version.js`, `firm.js`, `engine.js`, `sample.js`, `store.js`, `work.js`, `ui/shared.js`,
-  `ui/arrange.js`, the tab and drawer files in `src/ui/`, then `app.js`. UI files share `window.LedgerUI`.
+  `ui/arrange.js`, the tab and drawer files (including `ui/landscape.js`) in `src/ui/`, then `app.js`. UI files share `window.LedgerUI`.
   When adding a script, add its tag in the right place in `index.html`.
 - `src/engine.js`: all parsing and analysis, pure functions, runs in Node and the browser
   (and in `src/worker.js`). Put logic here and test it in `test/engine.test.js`.
@@ -60,6 +60,11 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
 - Lender-ready package: `lenderPackage()` in the engine (statements by year, ratios, payroll
   and balance checks, `result.lender`) and `buildLenderReport()`; the Tax & lending tab's
   `PackagePanel` and `LenderDrawer`. The lender copy must never include the review notes.
+- Landscaping: `detectIndustry()` and `landscapeAnalysis()` in the engine (`result.industry`,
+  `result.landscape`: off-season cash, service lines, contracts, labor, equipment); the profile's
+  `industry` ('' = detected) is passed as `opts.industry`. `src/ui/landscape.js` is the tab, added
+  by `tabsFor()` in `app.js` only for landscapers. Close steps with `industry`/`months` only show
+  when they apply. Test client: Greenway in `sample-data/test-clients/`.
 - Branding comes from `src/firm.js`. Settings (Google client ID, support email) are in
   `src/config.js`.
 

@@ -1,11 +1,11 @@
-// The two test clients in sample-data/test-clients: the saved files match the generator, and
+// The test clients in sample-data/test-clients: the saved files match the generator, and
 // the app finds what was planted in them (a contractor and a cafe, unlike the built-in sample).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const E = require('../src/engine.js');
-const { riverbend, cafe, transactionDetail } = require('../scripts/make-test-clients.js');
+const { riverbend, cafe, greenway, transactionDetail } = require('../scripts/make-test-clients.js');
 
 const dir = path.join(__dirname, '..', 'sample-data', 'test-clients');
 const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
@@ -23,6 +23,8 @@ test('saved test-client files match the generator', () => {
   assert.equal(read('riverbend-transaction-detail.csv'), transactionDetail(rb.b, rb.openings, 'January 2025 - August 2026'));
   const cf = cafe();
   assert.equal(read('bloom-basil-transaction-detail.csv'), transactionDetail(cf.b, cf.openings, 'January 2025 - August 2026', true));
+  const gw = greenway();
+  assert.equal(read('greenway-transaction-detail.csv'), transactionDetail(gw.b, gw.openings, 'January 2024 - August 2026', true));
 });
 
 test('Riverbend Plumbing: contractor problems are all found', () => {
@@ -76,4 +78,37 @@ test('Riverbend September update: edits to closed months are caught', () => {
   assert.equal(c.months[0].removed, 1, 'a deleted crew lunch');
   assert.match(c.months[1].added[0].memo, /gift card/, 'an edited description');
   assert.deepEqual(c.months[2].accounts, [{ account: 'Telephone', was: 318.45, now: 418.45, diff: 100 }]);
+});
+
+test('Greenway Landscape: the landscaping checks find what was planted', () => {
+  const r = load('greenway');
+  assert.equal(r.meta.company, 'Greenway Landscape Co.');
+  assert.ok(r.tieOut.ties);
+  assert.equal(r.industry, 'landscaping');
+  assert.deepEqual([r.audit.open.uncategorized, r.audit.open.duplicates], [1, 1]);
+  const L = r.landscape;
+  // Winter: cash dips under the cushion in April, before spring money comes in.
+  assert.deepEqual(L.offSeason.offMonths, [1, 2, 3, 11, 12]);
+  assert.equal(L.offSeason.low.key, '2027-04');
+  assert.ok(L.offSeason.needed > 0 && L.offSeason.setAside > 0);
+  assert.equal(L.offSeason.locDraws.length, 3);
+  // Snow loses money after the salt price jump; the other lines make money.
+  assert.deepEqual(L.serviceLines.losing.map((x) => x.key), ['snow']);
+  assert.ok(L.serviceLines.byClass);
+  // Two contract invoices never sent, four prices frozen since 2024.
+  assert.deepEqual(L.contracts.missed.map((m) => `${m.name} ${m.month}`), ['Lakeview Office Park 2026-08', 'Sunset Villas HOA 2026-07']);
+  assert.deepEqual(L.contracts.stale.map((m) => m.name).sort(), ['Dr. Patel Dental', 'Hartman Residence', 'Maple Ridge HOA', 'Riverside Church']);
+  // June 2026 overtime; winter labor above the usual range.
+  assert.ok(L.labor.flags.some((f) => f.kind === 'Overtime spike' && f.key === '2026-06'));
+  assert.ok(L.labor.flags.some((f) => f.key === '2026-01'));
+  assert.ok(!L.labor.flags.some((f) => ['2026-05', '2026-07', '2026-08'].includes(f.key)));
+  // The mower that keeps breaking, and equipment bought but expensed.
+  assert.deepEqual(L.equipment.repeat.map((x) => [x.machine, x.count]), [['Exmark Lazer Z #3', 4]]);
+  assert.deepEqual(L.equipment.capitalize.map((x) => x.amount).sort((a, b) => a - b), [3150, 12480]);
+  assert.deepEqual(L.equipment.loans.sort(), ['Ally Truck Loan', 'John Deere Financial']);
+  // The close checklist and the saved summary carry the landscaping items.
+  const cl = E.closeChecklist(r, '2026-08', {}, []);
+  assert.equal(cl.items.find((i) => i.id === 'contractbilling').auto.status, 'open');
+  assert.ok(!cl.items.some((i) => i.id === 'snowbilled'), 'no snow step in August');
+  assert.deepEqual(E.clientSummary(r, {}, []).landscape, { missed: 2, stale: 4 });
 });

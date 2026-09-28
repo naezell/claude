@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -47,6 +47,9 @@
     ['benchmarks', 'Benchmarks'],
     ['advisory', 'Tax & lending'],
   ];
+  // Tabs for one industry, placed after the profitability tab.
+  const INDUSTRY_TABS = { landscaping: ['landscape', 'Landscaping'] };
+  const tabsFor = (industry) => (INDUSTRY_TABS[industry] ? [...TABS.slice(0, 3), INDUSTRY_TABS[industry], ...TABS.slice(3)] : TABS);
 
   // ------------------------------------------------------------ top-level app
 
@@ -75,12 +78,6 @@
     const setLayout = useCallback((next) => { Layout.save(next); setLayoutState(next); }, []);
     const [customizing, setCustomizing] = useState(false);
     const layoutCtx = useMemo(() => ({ customizing, layout, setLayout }), [customizing, layout, setLayout]);
-    const tabOrder = arrangeIds(TABS.map((t) => t[0]), layout.tabs.order);
-    const hiddenTabs = new Set(layout.tabs.hidden || []);
-    // A hidden tab can't stay open: go to the first one still shown.
-    useEffect(() => {
-      if (hiddenTabs.has(tab) && !customizing) setTab(tabOrder.find((t) => !hiddenTabs.has(t)) || 'audit');
-    }, [layout, tab, customizing]);
     // Number of files being read, for the progress note.
     const [reading, setReading] = useState(0);
     const [welcome, setWelcome] = useState(() => !safeStore.get('ll.welcomed'));
@@ -105,6 +102,8 @@
     const [portal, setPortal] = useState(null);
     // The client asked for a lender-ready package (Tax & lending tab).
     const [loanRequest, setLoanRequest] = useState(null);
+    // The client's industry: '' means detected from the file (landscaping adds its own tab).
+    const [industry, setIndustry] = useState('');
     const [lenderOpen, setLenderOpen] = useState(false);
     const [pendingAnswers, setPendingAnswers] = useState(null);
     const [notice, setNotice] = useState(null);
@@ -141,15 +140,25 @@
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const analyzeOpts = useMemo(() => (parsed.ok ? ({
-      accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario,
+      accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry]);
     // Large exports are analyzed in the background so the page stays responsive (src/work.js).
     const { result, analyzing } = useAnalysis(parsed.ok, analyzeOpts);
+    // The industry's own tab shows once the analysis knows the industry.
+    const [lastIndustry, setLastIndustry] = useState('general');
+    useEffect(() => { if (result) setLastIndustry(result.industry || 'general'); }, [result]);
+    const tabs = tabsFor(result ? result.industry : lastIndustry);
+    const tabOrder = arrangeIds(tabs.map((t) => t[0]), layout.tabs.order);
+    const hiddenTabs = new Set(layout.tabs.hidden || []);
+    // A hidden tab, or another industry's tab, can't stay open: go to the first one shown.
+    useEffect(() => {
+      if ((hiddenTabs.has(tab) && !customizing) || (result && !tabOrder.includes(tab))) setTab(tabOrder.find((t) => !hiddenTabs.has(t)) || 'audit');
+    }, [layout, tab, customizing, result]);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
@@ -164,6 +173,7 @@
       setAnswers(saved && saved.answers ? saved.answers : {});
       setPortal(saved && saved.portal ? saved.portal : null);
       setLoanRequest(saved && saved.loanRequest ? saved.loanRequest : null);
+      setIndustry(saved && saved.industry ? saved.industry : '');
       setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
@@ -181,10 +191,10 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
@@ -386,6 +396,7 @@
           ${result && (result.tieOut
             ? html`<span class=${`pill ${result.tieOut.ties ? 'good' : 'high'}`}><span class="dot"></span>${result.tieOut.ties ? 'Ties to QuickBooks P&L' : 'Does not tie to QuickBooks P&L'}</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}
+          ${result && html`<${IndustryPick} value=${industry} detected=${result.detectedIndustry} onChange=${setIndustry} />`}
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
         </div>`}
         ${(reading > 0 || analyzing) && html`<div class="working" role="status"><span class="spinner" aria-hidden="true"></span>${reading > 0 ? `Reading ${reading} file${reading === 1 ? '' : 's'}…` : `Analyzing ${parsed.ok ? parsed.ok.transactions.length.toLocaleString() : ''} rows… The page stays usable meanwhile.`}</div>`}
@@ -401,16 +412,17 @@
         ${home && html`<${HomePage} onOpen=${openClient} onUpload=${() => document.getElementById('csv-upload').click()} onSample=${loadSample} onHelp=${() => setHelpOpen(true)} onClients=${() => setClientsOpen(true)} />`}
         ${!home && html`<div class="tabs-row">
           <div class="tabs" role="tablist">
-            ${tabOrder.filter((id) => !hiddenTabs.has(id) || id === tab).map((id) => html`<button key=${id} class="tab" role="tab" id=${`tab-${id}`} aria-selected=${tab === id} onClick=${() => setTab(id)}>${TABS.find((t) => t[0] === id)[1]}${id === 'audit' ? html`<span class="count">${auditCount}</span>` : id === 'close' && closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>`)}
+            ${tabOrder.filter((id) => !hiddenTabs.has(id) || id === tab).map((id) => html`<button key=${id} class="tab" role="tab" id=${`tab-${id}`} aria-selected=${tab === id} onClick=${() => setTab(id)}>${tabs.find((t) => t[0] === id)[1]}${id === 'audit' ? html`<span class="count">${auditCount}</span>` : id === 'close' && closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>`)}
           </div>
           ${result && !customizing && html`<button class="btn customize-toggle" onClick=${() => setCustomizing(true)}>${Icon.sliders}Customize</button>`}
         </div>`}
-        ${customizing && result && html`<${CustomizeBar} tabs=${TABS} current=${tab} pageLabel=${TABS.find((t) => t[0] === tab)[1]} onDone=${() => setCustomizing(false)} />`}
+        ${customizing && result && html`<${CustomizeBar} tabs=${tabs} current=${tab} pageLabel=${(tabs.find((t) => t[0] === tab) || tabs[0])[1]} onDone=${() => setCustomizing(false)} />`}
 
         ${!result && analyzing && html`<div class="empty">Working through a large export. The results appear here in a moment.</div>`}
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`} class=${analyzing ? 'stale' : ''} aria-busy=${analyzing ? 'true' : 'false'}>
           ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => { if (!through) setClosed(null); else Promise.resolve(result.closeBooks(through)).then(setClosed); }} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; if (n[key] && n[key].photoKey) { const [c, r] = n[key].photoKey.split('|'); AttachStore.remove(c, r); } delete n[key]; return n; })} />`
             : tab === 'close' ? html`<${CloseTab} result=${result} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${setTab} />`
+            : tab === 'landscape' ? html`<${LandscapeTab} result=${result} inputs=${cashInputs} setInputs=${setCashInputs} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} onReview=${setReview} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
             : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`

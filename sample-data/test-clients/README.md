@@ -1,6 +1,6 @@
 # Test clients
 
-Two fictional businesses for trying Ledger Lens on something other than the built-in sample. Both cover January 2025 to August 2026, are built as proper double-entry books (so they tie to their own Profit and Loss), and have bookkeeping problems planted in them. The list below is the answer key: what to look for, and where.
+Three fictional businesses for trying Ledger Lens on something other than the built-in sample. They cover January 2025 (Greenway: January 2024) to August 2026, are built as proper double-entry books (so they tie to their own Profit and Loss), and have bookkeeping problems planted in them. The list below is the answer key: what to look for, and where.
 
 Regenerate with `node scripts/make-test-clients.js` (the same files every run).
 
@@ -8,14 +8,14 @@ Regenerate with `node scripts/make-test-clients.js` (the same files every run).
 
 Upload a client's files together (select all four, or drag them onto the page):
 
-| Riverbend Plumbing & Heating | Bloom & Basil Cafe |
-| --- | --- |
-| `riverbend-transaction-detail.csv` | `bloom-basil-transaction-detail.csv` (or the Excel copy, `.xlsx`, if you have it) |
-| `riverbend-chart-of-accounts.csv` | `bloom-basil-chart-of-accounts.csv` |
-| `riverbend-profit-and-loss.csv` | `bloom-basil-profit-and-loss.csv` |
-| `riverbend-expenses-with-attachments.csv` | `bloom-basil-expenses-with-attachments.csv` |
+| Riverbend Plumbing & Heating | Bloom & Basil Cafe | Greenway Landscape Co. |
+| --- | --- | --- |
+| `riverbend-transaction-detail.csv` | `bloom-basil-transaction-detail.csv` (or the Excel copy, `.xlsx`, if you have it) | `greenway-transaction-detail.csv` |
+| `riverbend-chart-of-accounts.csv` | `bloom-basil-chart-of-accounts.csv` | `greenway-chart-of-accounts.csv` |
+| `riverbend-profit-and-loss.csv` | `bloom-basil-profit-and-loss.csv` | `greenway-profit-and-loss.csv` |
+| `riverbend-expenses-with-attachments.csv` | `bloom-basil-expenses-with-attachments.csv` | `greenway-expenses-with-attachments.csv` |
 
-Then load the other client the same way: each is remembered separately, and both appear under **Clients**.
+Then load the others the same way: each is remembered separately, and all appear under **Clients** and on **Home**.
 
 ## Riverbend Plumbing & Heating LLC
 
@@ -58,3 +58,22 @@ A cafe open six days a week: nightly register sales recorded as "Daily POS Sales
 **Vendors:** price increases from Cintas (linens) and Recology (waste). Food costs rise from February 2026 when Sysco raises prices. **1099 review:** only the landlord.
 
 **Trends:** margin down from a year ago, mostly from the espresso machine and higher food costs.
+
+## Greenway Landscape Co.
+
+A Midwest landscaper, about $900,000 a year: 20 maintenance contracts billed on the 1st (April to November, year-round for six commercial sites), installation and hardscape jobs with deposits, irrigation start-ups and winterizations, spring and fall enhancements, and snow removal in winter (six seasonal contracts plus per-push customers). A crew of 9 in season and 4 in winter, paid through Gusto with wages tagged by class; John Deere and Ally loans; a line of credit drawn each March. The transaction file has a Class column (Maintenance, Install, Irrigation, Enhancements, Snow). Ledger Lens recognizes it as a landscaper and adds the **Landscaping** tab.
+
+**Diagnostic audit**
+- Ties to the QuickBooks P&L exactly.
+- 1 uncategorized: a Farm & Fleet card charge with no payee ($286.40).
+- 1 duplicate: a WEX fuel charge entered twice on July 21, 2026 ($612.18).
+
+**Landscaping tab**
+- **Off-season cash plan:** the slow months are November to March. Cash bottoms out in April 2027, below the cushion; the plan says how much to set aside in each busy month left. The spring ramp (April) still uses cash, and the three March line-of-credit draws are listed.
+- **Profit by service line:** snow & ice loses money after the 2025-26 winter (salt up about 55%, per-push prices cut 15%). The other four lines make money.
+- **Contract invoices not sent:** Lakeview Office Park for August 2026 and Sunset Villas HOA for July 2026.
+- **Prices not raised in a year:** Maple Ridge HOA, Dr. Patel Dental, Riverside Church and Hartman Residence, unchanged since April 2024. Everyone else went up in 2025 and 2026.
+- **Labor through the season:** about 40% of revenue over the year; winter months run 48-62% with the year-round crew; an overtime spike in June 2026.
+- **Equipment and fuel:** Exmark Lazer Z #3 repaired four times in 2026 ($4,820); a new $12,480 zero-turn mower coded to Equipment Repairs and $3,150 of backpack blowers coded to Small Tools (both belong in fixed assets). The $8,900 trailer in March 2025 was recorded properly.
+
+**Month-end close:** the checklist adds landscaping steps; *Every maintenance and snow contract billed* is open for August 2026. **Benchmarks** start on Landscaping Services (NAICS 561730).

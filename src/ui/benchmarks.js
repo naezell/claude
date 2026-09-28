@@ -41,7 +41,7 @@
     const t = useTokens();
     const inputs = useMemo(() => E.benchmarkInputs(result), [result]);
     // A saved client's industry and state win over the last ones used in this browser.
-    const [code, setCode] = useState(() => (prefs && prefs.code) || safeStore.get('ll.naics') || '541430');
+    const [code, setCode] = useState(() => (prefs && prefs.code) || (result.industry === 'landscaping' ? '561730' : null) || safeStore.get('ll.naics') || '541430');
     const [customCode, setCustomCode] = useState(() => (prefs && prefs.customCode) || safeStore.get('ll.naicsCustom') || '');
     const [customName, setCustomName] = useState(() => (prefs && prefs.customName) || safeStore.get('ll.naicsCustomName') || '');
     const [state, setState] = useState(() => (prefs && prefs.state) || safeStore.get('ll.state') || '');

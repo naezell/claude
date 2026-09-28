@@ -815,3 +815,44 @@ test('Loan package: flag the request, see what to fix, download the lender copy 
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('a landscaper gets the Landscaping tab: winter cash, service lines, contracts, labor and equipment', async (t) => {
+  if (skip) return t.skip(skip);
+  const dir = path.join(ROOT, 'sample-data', 'test-clients');
+  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments'].map((f) => path.join(dir, `greenway-${f}.csv`));
+  for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
+    const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    assert.equal(await page.locator('#tab-landscape').count(), 0, 'the sample is not a landscaper');
+    await page.setInputFiles('#csv-upload', files);
+    await page.waitForSelector('#tab-landscape');
+    await page.click('#tab-landscape');
+    await page.waitForSelector('main[aria-labelledby="tab-landscape"] section');
+    const text = await page.locator('main').innerText();
+    for (const want of [/Off-season cash plan/, /Lakeview Office Park/, /Sunset Villas HOA/, /Maple Ridge HOA/, /Snow & ice lost/, /Exmark Lazer Z #3/, /zero-turn mower/, /Overtime spike/]) assert.match(text, want);
+    assert.equal(await kpi(page, 'Contract invoices not sent'), '2');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `landscape tab scrolls sideways at ${width}px`);
+    // Its sections can be arranged like any other page.
+    await page.click('button.customize-toggle');
+    assert.equal(await page.locator('.arrange-item').count() >= 5, true);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `customizing the landscape tab scrolls sideways at ${width}px`);
+    await page.locator('button', { hasText: 'Done' }).first().click();
+    if (width === 1280) {
+      // The month-end checklist gains the landscaping steps.
+      await page.click('#tab-close');
+      assert.match(await page.locator('main').innerText(), /contract billed for the month/);
+      // Benchmarks start on landscaping.
+      await page.click('#tab-benchmarks');
+      assert.equal(await page.locator('#bm-industry').inputValue(), '561730');
+      // Set to General: the tab goes away; back to automatic brings it back.
+      await page.selectOption('#industry-pick', 'general');
+      await page.waitForSelector('#tab-landscape', { state: 'detached' });
+      await page.selectOption('#industry-pick', '');
+      await page.waitForSelector('#tab-landscape');
+      // Home lists the missed contract invoices.
+      await page.locator('button', { hasText: 'Home' }).first().click();
+      assert.match(await page.locator('.home').innerText(), /2 contract invoices not sent/);
+    }
+    assert.deepEqual(errors, [], `${colorScheme} ${width}px`);
+    await page.close();
+  }
+});
