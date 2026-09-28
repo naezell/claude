@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -51,7 +51,9 @@
   // ------------------------------------------------------------ top-level app
 
   function App() {
-    const [source, setSource] = useState({ kind: 'sample' });
+    // The page opens on Home; 'sample' and 'upload' show an analysis.
+    const [source, setSource] = useState({ kind: 'home' });
+    const home = source.kind === 'home';
     const sourceRef = useRef(source);
     sourceRef.current = source;
     const [error, setError] = useState('');
@@ -101,6 +103,9 @@
     const [answers, setAnswers] = useState({});
     // The client's answer link, if one was sent (src/ui/portal.js).
     const [portal, setPortal] = useState(null);
+    // The client asked for a lender-ready package (Tax & lending tab).
+    const [loanRequest, setLoanRequest] = useState(null);
+    const [lenderOpen, setLenderOpen] = useState(false);
     const [pendingAnswers, setPendingAnswers] = useState(null);
     const [notice, setNotice] = useState(null);
     // What the last upload did with each file, so nothing is silently ignored.
@@ -116,6 +121,7 @@
     // One or more uploaded exports are parsed separately, then merged.
     const parsed = useMemo(() => {
       try {
+        if (source.kind === 'home') return {};
         if (source.kind === 'sample') return { ok: E.parseTransactions(sampleText) };
         return { ok: E.mergeParsed(source.files.map((f) => f.parsed)) };
       } catch (e) { return { err: e.message }; }
@@ -157,6 +163,7 @@
       setCustomSteps(saved && saved.customSteps ? saved.customSteps : []);
       setAnswers(saved && saved.answers ? saved.answers : {});
       setPortal(saved && saved.portal ? saved.portal : null);
+      setLoanRequest(saved && saved.loanRequest ? saved.loanRequest : null);
       setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
@@ -174,10 +181,10 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
@@ -297,6 +304,8 @@
       ingest(results, append);
     }, [ingest]);
 
+    const loadSample = () => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setUploadNote(null); setSource({ kind: 'sample' }); };
+    const goHome = () => { setCustomizing(false); setUploadNote(null); setError(''); setSource({ kind: 'home' }); };
     // Reopens a client from the copies of their files saved in this browser.
     const openClient = useCallback(async (id) => {
       const saved = await FileStore.get(id);
@@ -331,8 +340,8 @@
     }, [result, checklist, customSteps]);
     // Facts about what is on screen for a problem report: no client names or figures.
     const problemContext = useMemo(() => ({
-      Tab: tab,
-      Data: source.kind === 'sample' ? 'sample' : `${source.files.length} transaction file(s)${source.chart ? ', chart of accounts' : ''}${source.pnl ? ', P&L' : ''}${uploadedBudget ? ', budget' : ''}${source.attachments ? ', expense list' : ''}${result ? `, ${result.count} rows, ${result.period.start} to ${result.period.end}` : ''}`,
+      Tab: home ? 'home' : tab,
+      Data: source.kind === 'home' ? 'none (Home)' : source.kind === 'sample' ? 'sample' : `${source.files.length} transaction file(s)${source.chart ? ', chart of accounts' : ''}${source.pnl ? ', P&L' : ''}${uploadedBudget ? ', budget' : ''}${source.attachments ? ', expense list' : ''}${result ? `, ${result.count} rows, ${result.period.start} to ${result.period.end}` : ''}`,
       'Message on screen': error,
     }), [tab, source, uploadedBudget, result, error]);
     useEffect(() => { if (error) window.LedgerProblem.note('shown', error); }, [error]);
@@ -354,17 +363,18 @@
             <input id="csv-upload" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, false); e.target.value = ''; }} />
             ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
               <input id="csv-add" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
-            ${source.kind !== 'sample' && html`<button class="btn" onClick=${() => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setUploadNote(null); setSource({ kind: 'sample' }); }}>${Icon.sample}Load sample</button>`}
+            ${source.kind === 'upload' && html`<button class="btn" onClick=${loadSample}>${Icon.sample}Load sample</button>`}
+            ${!home && html`<button class="btn" onClick=${goHome}>${Icon.home}Home</button>`}
             <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.cloud}Clients</button>
-            <button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
-            <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>
+            ${!home && html`<button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
+            <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>`}
             <button class="btn" onClick=${() => setHelpOpen(true)}>${Icon.help}Help</button>
           </div>
         </div>
       </header>
 
       <div class="wrap">
-        <div class="source">
+        ${!home && html`<div class="source">
           ${source.kind === 'sample'
             ? html`<span class="pill sample"><span class="dot"></span>Sample data</span><span>Showing a fictional design studio. Upload your QuickBooks <strong>Transaction Detail</strong> export (CSV or Excel; several at once is fine, such as one per year), or drop them anywhere on this page.</span>`
             : html`<span class="pill good"><span class="dot"></span>${source.files.length > 1 ? `${source.files.length} files combined` : 'Your file'}</span><strong>${source.files.map((f) => f.name).join(', ')}</strong>${parsed.ok && parsed.ok.meta.droppedOverlap ? html`<span>${parsed.ok.meta.droppedOverlap} overlapping rows skipped</span>` : ''}`}
@@ -377,23 +387,24 @@
             ? html`<span class=${`pill ${result.tieOut.ties ? 'good' : 'high'}`}><span class="dot"></span>${result.tieOut.ties ? 'Ties to QuickBooks P&L' : 'Does not tie to QuickBooks P&L'}</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}
           ${result && html`<span>${result.meta.company && source.kind !== 'sample' ? `${result.meta.company} · ` : ''}${result.period.start} to ${result.period.end} · <span class="num">${result.count.toLocaleString()}</span> rows${result.entryCount !== result.count ? html` (<span class="num">${result.entryCount.toLocaleString()}</span> unique entries)` : ''}</span>`}
-        </div>
+        </div>`}
         ${(reading > 0 || analyzing) && html`<div class="working" role="status"><span class="spinner" aria-hidden="true"></span>${reading > 0 ? `Reading ${reading} file${reading === 1 ? '' : 's'}…` : `Analyzing ${parsed.ok ? parsed.ok.transactions.length.toLocaleString() : ''} rows… The page stays usable meanwhile.`}</div>`}
         ${error && html`<div class="error" role="alert">${error}</div>`}
         ${uploadNote && html`<${Banner} level=${uploadNote.skipped ? 'medium' : 'good'} label=${uploadNote.opened ? `Opened ${uploadNote.opened}` : `${uploadNote.count} file${uploadNote.count === 1 ? '' : 's'} uploaded`}>${uploadNote.seen.length ? `Read: ${uploadNote.seen.join(', ')}.` : ''}${uploadNote.skipped ? ` ${uploadNote.skipped} could not be read (see the message above).` : ''}${uploadNote.count === 1 && source.kind === 'upload' && !source.chart && !source.pnl ? ' To add the chart of accounts, Profit and Loss or expense list, select them together with the transactions, or use Add export.' : ''} <button class="linkish" onClick=${() => setUploadNote(null)}>Dismiss</button></${Banner}>`}
         ${notice && html`<${Banner} level="good" label="Client answers">${notice} <button class="linkish" onClick=${() => setNotice(null)}>Dismiss</button></${Banner}>`}
-        ${welcome && html`<${Banner} level="good" label="Welcome">New here? The getting-started guide covers which QuickBooks reports to export, a monthly routine and how to send reports. <button class="linkish" onClick=${() => { dismissWelcome(); setHelpOpen(true); }}>Open the guide</button> · <button class="linkish" onClick=${dismissWelcome}>Dismiss</button></${Banner}>`}
+        ${welcome && !home && html`<${Banner} level="good" label="Welcome">New here? The getting-started guide covers which QuickBooks reports to export, a monthly routine and how to send reports. <button class="linkish" onClick=${() => { dismissWelcome(); setHelpOpen(true); }}>Open the guide</button> · <button class="linkish" onClick=${dismissWelcome}>Dismiss</button></${Banner}>`}
         ${storage.error && html`<${Banner} level="high" label="Not saving">Your reviews and settings are not being saved in this browser: ${storage.error}. Download a backup file now so nothing is lost. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button></${Banner}>`}
         ${!storage.error && ClientStore.nearlyFull() && html`<${Banner} level="medium" label="Storage nearly full">This browser has almost used up the space it allows this site. Back up, then forget clients you no longer work with. <button class="linkish" onClick=${() => setClientsOpen(true)}>Open Clients</button></${Banner}>`}
         ${!welcome && backupDue && !backupSnoozed && html`<${Banner} level="medium" label="Back up">Your saved clients have not been backed up in over 30 days. They live only in this browser. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button> · <button class="linkish" onClick=${() => setBackupSnoozed(true)}>Later</button></${Banner}>`}
         ${restored && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
 
-        <div class="tabs-row">
+        ${home && html`<${HomePage} onOpen=${openClient} onUpload=${() => document.getElementById('csv-upload').click()} onSample=${loadSample} onHelp=${() => setHelpOpen(true)} onClients=${() => setClientsOpen(true)} />`}
+        ${!home && html`<div class="tabs-row">
           <div class="tabs" role="tablist">
             ${tabOrder.filter((id) => !hiddenTabs.has(id) || id === tab).map((id) => html`<button key=${id} class="tab" role="tab" id=${`tab-${id}`} aria-selected=${tab === id} onClick=${() => setTab(id)}>${TABS.find((t) => t[0] === id)[1]}${id === 'audit' ? html`<span class="count">${auditCount}</span>` : id === 'close' && closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>`)}
           </div>
           ${result && !customizing && html`<button class="btn customize-toggle" onClick=${() => setCustomizing(true)}>${Icon.sliders}Customize</button>`}
-        </div>
+        </div>`}
         ${customizing && result && html`<${CustomizeBar} tabs=${TABS} current=${tab} pageLabel=${TABS.find((t) => t[0] === tab)[1]} onDone=${() => setCustomizing(false)} />`}
 
         ${!result && analyzing && html`<div class="empty">Working through a large export. The results appear here in a moment.</div>`}
@@ -407,7 +418,7 @@
             : tab === 'budget' ? html`<${BudgetTab} bva=${result.budget} uploaded=${uploadedBudget} prefs=${budgetPrefs} setPrefs=${setBudgetPrefs} />`
             : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
-            : html`<${AdvisoryTab} result=${result} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
+            : html`<${AdvisoryTab} result=${result} loanRequest=${loanRequest} setLoanRequest=${setLoanRequest} onPackage=${() => setLenderOpen(true)} canSave=${!!clientId} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
         </main>`}
         <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${signedInSite ? html` · <a href="/auth/logout">Sign out</a>` : ''} · <button class="linkish" onClick=${() => setProblemOpen(true)}>Report a problem</button>${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
       </div>
@@ -416,6 +427,7 @@
       ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} onReport=${() => setProblemOpen(true)} />`}
       ${problemOpen && html`<${ProblemDrawer} context=${problemContext} onClose=${() => setProblemOpen(false)} />`}
       ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onOpen=${(id) => { setClientsOpen(false); openClient(id); }} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
+      ${lenderOpen && result && html`<${LenderDrawer} result=${result} request=${loanRequest} setRequest=${setLoanRequest} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} onClose=${() => setLenderOpen(false)} />`}
       ${reportOpen && result && html`<${ReportDrawer} result=${result} groupBy=${groupBy} cushion=${cushion} benchmarks=${benchmarks} onClose=${() => setReportOpen(false)} />`}
       ${dragging && html`<div class="drop-overlay">Drop the QuickBooks CSV to analyze it</div>`}
     </${LayoutContext.Provider}>`;

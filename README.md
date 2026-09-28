@@ -135,6 +135,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `src/ui/drive.js` | Google Drive backup (sign-in, save, restore, automatic saving) |
 | `src/ui/localfile.js` | Backup to a file on this computer (File System Access API) |
 | `src/ui/help.js` | Getting-started guide |
+| `src/ui/home.js` | Home: the landing page with every client and what is waiting on the bookkeeper or the client |
 | `src/ui/arrange.js` | Customize: moving and hiding sections on each page, and tabs |
 | `src/ui/close.js` | Month-end close checklist |
 | `src/ui/problem.js` | "Report a problem" panel, and the fallback shown if part of the page crashes |
@@ -175,6 +176,10 @@ The page loads nothing from other servers except Google (sign-in and Drive). To 
 ### Large files
 
 Files are recognized and parsed in a background worker (`src/worker.js`), and exports with 8,000 rows or more (`backgroundRows` in `src/config.js`) are analyzed there too, so the page stays responsive and shows progress. On a 108,000-row export the longest freeze drops from about 2 seconds to 0.3, and a review click from 0.5 to 0.1. Pages opened straight from a file (`file://`) cannot start workers and do the same work on the page.
+
+### Lender-ready package
+
+On the Tax & lending tab, once the client has asked for a loan package, *Create lender-ready package* builds a report for the bank: the loan request, the measures underwriters test (debt service coverage, coverage with the new loan, current and quick ratios, debt to EBITDA) against usual targets, income statements by year plus the last 12 months, cash available for debt service, a balance summary and debt schedule, monthly figures, receivables and payables aging, largest customers, and the documents a lender will also ask for. Before it goes out it lists problems a lender would catch (wages without employer payroll taxes, payroll taxes out of line or unpaid, balance sheet issues, open flags, changed closed months, draws above profit, loans without interest). The lender copy leaves those notes out; the bookkeeper's copy includes them.
 
 ### Client portal (answer links)
 

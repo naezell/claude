@@ -278,6 +278,27 @@
   .banner > div { flex: 1 1 320px; max-width: 90ch; }
   .storage-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
   .storage-note.neg { color: var(--critical-ink); }
+  .home { padding-block: 22px 60px; display: grid; gap: 22px; }
+  .home-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .home-head h2 { margin: 0; font: 600 22px/1.2 var(--cond); }
+  .home-empty h2 { margin: 0 0 8px; font: 600 20px/1.2 var(--cond); }
+  .home-empty p { max-width: 70ch; color: var(--ink-2); }
+  .task-list { list-style: none; margin: 0; padding: 0; }
+  .task-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--hair); }
+  .task-list li:last-child { border-bottom: 0; }
+  .task-list li > div { display: grid; gap: 2px; min-width: 0; }
+  .task-client { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .task-text { font-weight: 600; }
+  .task-list .btn { flex: none; }
+  .client-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .client-card { border: 1px solid var(--hair); border-radius: 10px; padding: 12px 14px; display: grid; gap: 8px; justify-items: start; background: var(--page); }
+  .client-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; width: 100%; justify-content: space-between; }
+  .lender-issues { margin: 0 20px 12px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: 10px; background: var(--surface-2); max-height: 220px; overflow: auto; }
+  .lender-issues h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font: 600 15px/1.2 var(--cond); }
+  .lender-issues ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+  .lender-issues .sub { display: block; }
+  .package-summary { margin-top: 12px; display: grid; gap: 8px; justify-items: start; }
+  .package-summary p { margin: 0; color: var(--ink-2); font-size: 13.5px; }
   .portal-block { margin: 0 20px 14px; padding: 14px 16px; border: 1px solid var(--hair); border-radius: 10px; background: var(--surface-2); }
   .portal-block h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 600 15px/1.2 var(--cond); }
   .portal-block h3 svg { width: 16px; height: 16px; }
@@ -523,6 +544,7 @@
 <script src="src/ui/advisory.js"></script>
 <script src="src/ui/close.js"></script>
 <script src="src/ui/drawers.js"></script>
+<script src="src/ui/home.js"></script>
 <script src="src/ui/help.js"></script>
 <script src="src/ui/problem.js"></script>
 <script src="src/app.js"></script>
