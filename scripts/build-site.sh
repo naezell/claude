@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 rm -rf dist
 mkdir -p dist
 cp -r src assets vendor dist/
-cp login.html login.js dist/
+cp login.html login.js portal.html portal.js dist/
 # Stamp the commit for problem reports (Netlify sets COMMIT_REF; otherwise ask git).
 commit="${COMMIT_REF:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
 printf "window.LedgerVersion = { commit: '%s', built: '%s' };\n" "$(printf %s "$commit" | cut -c1-7)" "$(date -u +%Y-%m-%dT%H:%MZ)" > dist/src/version.js

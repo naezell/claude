@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<link rel="icon" type="image/png" href="assets/7d-mark.png">
+<title>Questions from your bookkeeper</title>
+<style>
+  :root { --page: #f3f5f2; --surface: #fcfcfb; --ink: #15201b; --ink-2: #4b5751; --muted: #7f8a84; --hair: #dde2dd; --accent: #2b4c1c; --accent-ink: #fff; --bad: #b02a2a; --bad-wash: #fbeaea; --good: #1f6b1f; --good-wash: #e3f3e3; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #0e1311; --surface: #161c19; --ink: #eef2ef; --ink-2: #b9c3bd; --muted: #85908a; --hair: #29322d; --accent: #8cc063; --accent-ink: #0b1a13; --bad: #f07a7a; --bad-wash: #3a1d1d; --good: #7fd07f; --good-wash: #16301a; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; }
+  header img { width: 64px; height: auto; background: #fff; border-radius: 10px; padding: 4px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header p { margin: 2px 0 0; color: var(--ink-2); font-size: 14px; }
+  .note { background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; white-space: pre-wrap; }
+  .q { background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  .q .topic { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 4px; }
+  .q .text { margin: 0 0 10px; font-weight: 500; }
+  textarea { width: 100%; min-height: 72px; font: inherit; color: inherit; background: var(--page); border: 1px solid var(--hair); border-radius: 8px; padding: 10px; resize: vertical; }
+  textarea:focus-visible, button:focus-visible, label.btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--hair); background: var(--surface); color: var(--ink); cursor: pointer; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; font-weight: 600; padding: 12px 20px; font-size: 16px; }
+  .btn[disabled] { opacity: 0.6; cursor: default; }
+  input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  .thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .thumb { position: relative; }
+  .thumb img { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid var(--hair); display: block; }
+  .thumb button { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--hair); background: var(--surface); color: var(--ink); cursor: pointer; font-size: 14px; line-height: 1; }
+  .msg { margin-top: 14px; padding: 12px 14px; border-radius: 10px; }
+  .msg.error { background: var(--bad-wash); color: var(--bad); }
+  .msg.good { background: var(--good-wash); color: var(--good); }
+  .hint { color: var(--muted); font-size: 13px; }
+  footer { margin-top: 28px; color: var(--muted); font-size: 13px; }
+</style>
+<main id="app">
+  <p id="loading">Loading your questions…</p>
+</main>
+<script src="src/sealed.js"></script>
+<script src="portal.js"></script>
+</html>

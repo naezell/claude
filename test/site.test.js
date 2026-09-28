@@ -27,6 +27,7 @@ function candidates() {
 let browser = null;
 let server = null;
 let base = '';
+let portalStore = null;
 let skip = chromium ? false : 'playwright-core is not installed (run npm install)';
 
 before(async () => {
@@ -36,7 +37,7 @@ before(async () => {
   }
   if (!browser) { skip = 'no Chromium build found (set CHROMIUM_PATH)'; return; }
   site.build();
-  ({ server, url: base } = await site.start());
+  ({ server, url: base, portalStore } = await site.start());
 });
 after(async () => { if (browser) await browser.close(); if (server) server.close(); });
 
@@ -152,5 +153,66 @@ test('if the worker cannot start, the page does the work itself', async (t) => {
   assert.equal(await kpi(page, 'Uncategorized'), '11');
   assert.equal(await page.evaluate(() => window.LedgerWork.available()), false);
   assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// A tiny PNG, as a phone photo stand-in.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGUlEQVR4nGP4z8DAwMDAxMDAwMDAwMAAAB3sA/1kC2LZAAAAAElFTkSuQmCC', 'base64');
+
+test('answer link: Mark sends it, the client answers with a photo, the answers come into Ledger Lens', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await open('/');
+  await page.waitForSelector('#tab-audit');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.click('button:has-text("Client questions")');
+  await page.fill('#p-email', 'owner@harborpine.test');
+  await page.click('.portal-block button:has-text("Create answer link")');
+  const link = await page.locator('.portal-link').inputValue();
+  assert.match(link, new RegExp(`^${base}/portal#[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}$`));
+  const mailto = decodeURIComponent(await page.locator('.portal-block a:has-text("Email to client")').getAttribute('href'));
+  assert.ok(mailto.startsWith('mailto:owner@harborpine.test?subject=Questions about your books'), mailto.slice(0, 80));
+  assert.ok(mailto.includes(link));
+  // The site holds only sealed data.
+  const stored = [...portalStore.values()].join('');
+  assert.ok(stored.length > 0 && !/Amazon|Harbor|What was this for/.test(stored));
+
+  // The client opens the link: no sign-in, questions readable, answers with a photo.
+  const client = await open(link.slice(base.length));
+  await client.page.waitForSelector('section.q');
+  assert.match(await client.page.locator('header h1').innerText(), /Questions from 7D Business Solutions/);
+  const first = client.page.locator('section.q').first();
+  const firstQuestion = await first.locator('label.text').innerText();
+  await first.locator('textarea').fill('Printer paper for the office');
+  await first.locator('input[type=file]').setInputFiles({ name: 'receipt.png', mimeType: 'image/png', buffer: PNG });
+  await first.locator('.thumb img').waitFor();
+  await client.page.click('button:has-text("Send answers")');
+  await client.page.locator('.msg.good', { hasText: 'Thank you' }).waitFor();
+  assert.ok(!/Printer paper/.test([...portalStore.values()].join('')), 'answers are sealed on the site');
+  assert.deepEqual(await client.page.evaluate(() => window.__csp), []);
+  assert.deepEqual(client.errors, []);
+
+  // Back in Ledger Lens: the answer comes in and the site copy is deleted.
+  await page.click('.portal-block button:has-text("Check for answers")');
+  await page.locator('.banner', { hasText: 'answered 1 question through the answer link' }).waitFor();
+  assert.equal(portalStore.size, 0);
+  await page.click('.drawer-head button');
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Client answers' }) });
+  await panel.waitFor();
+  assert.match(await panel.innerText(), /Printer paper for the office/);
+  assert.ok((await panel.innerText()).includes(firstQuestion.slice(0, 30)));
+  await panel.locator('.answer-photos img').waitFor();
+  // The link no longer opens.
+  await client.page.reload();
+  await client.page.locator('h1', { hasText: 'can\u2019t be opened' }).waitFor();
+  // Kept after a reload, photo included.
+  await page.reload();
+  await page.waitForSelector('#tab-audit');
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await panel.locator('.answer-photos img').waitFor();
+  assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  assert.deepEqual(errors, []);
+  await client.page.close();
   await page.close();
 });

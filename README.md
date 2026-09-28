@@ -148,6 +148,9 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `test/test-clients.test.js` | The two test clients: files match the generator, planted problems are found |
 | `netlify/edge-functions/` | Sign-in gate, sign-in and sign-out (Netlify only) |
 | `login.html`, `login.js` | Sign-in page |
+| `portal.html`, `portal.js`, `src/sealed.js` | The client's answer page, and the sealing (encryption) it shares with the app |
+| `src/ui/portal.js` | Answer links: creating, emailing, collecting answers and receipt photos |
+| `netlify/functions/` | The portal's server side: sealed records in Netlify Blobs |
 
 There is no build step. Each UI file is a plain script that reads what it needs from `window.LedgerUI` and adds its own components to it, so `index.html` loads them in order: `diagnostics.js` first, the libraries from `vendor/`, `store.js`, `work.js`, `shared.js`, the tabs and drawers, then `app.js`.
 
@@ -172,6 +175,10 @@ The page loads nothing from other servers except Google (sign-in and Drive). To 
 ### Large files
 
 Files are recognized and parsed in a background worker (`src/worker.js`), and exports with 8,000 rows or more (`backgroundRows` in `src/config.js`) are analyzed there too, so the page stays responsive and shows progress. On a 108,000-row export the longest freeze drops from about 2 seconds to 0.3, and a review click from 0.5 to 0.1. Pages opened straight from a file (`file://`) cannot start workers and do the same work on the page.
+
+### Client portal (answer links)
+
+From **Client questions**, *Create answer link* seals the open questions in the browser and stores them on the site under a random id; the key to open them is only in the link (after the `#`, which browsers never send to a server). Mark emails the link from his own address. The client answers on `/portal`, with optional receipt photos (shrunk in their browser), and the answers are sealed with the same key. Ledger Lens collects them on load, every few minutes, and on *Check for answers*, files them under Client answers, and deletes the site's copy. Links expire after 30 days (45 at most); a new link replaces the client's previous one. The site never holds anything it can read. `test/portal.test.js` covers the server side, and `test/site.test.js` the whole round trip in a browser.
 
 ### Security headers
 
