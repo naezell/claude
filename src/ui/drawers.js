@@ -6,7 +6,7 @@
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
   const { FileStore } = window.LedgerStore;
-  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive, excelToCsv, LocalFile, useLocalFile } = UI;
+  const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive, excelToCsv, LocalFile, useLocalFile, PortalBlock } = UI;
 
   // ------------------------------------------------------------ client questions drawer
 
@@ -20,7 +20,7 @@
     ['w9', 'W-9 requests'],
   ];
 
-  function QuestionsDrawer({ result, answers, onLoadAnswers, onClose, onMarkAsked }) {
+  function QuestionsDrawer({ result, answers, onLoadAnswers, onClose, onMarkAsked, portal, setPortal, canSave, onCheckPortal }) {
     const [greeting, setGreeting] = useState('');
     const [preparer, setPreparer] = useState(() => safeStore.get('ll.preparer') || '');
     const [include, setInclude] = useState({ uncategorized: true, duplicates: true, coding: true, unusual: true, receipts: true, receivables: true, w9: true });
@@ -45,6 +45,7 @@
             <div class="chips">${QUESTION_SECTIONS.map(([k, l]) => html`<button key=${k} class="chip" aria-pressed=${include[k]} onClick=${() => setInclude({ ...include, [k]: !include[k] })}>${l}</button>`)}</div>
           </div>
         </div>
+        <${PortalBlock} q=${q} portal=${portal} setPortal=${setPortal} canSave=${canSave} client=${result.meta.company || ''} greeting=${greeting.trim()} preparer=${preparer} onCheck=${onCheckPortal} />
         <pre class="report-pre" ref=${preRef}>${q.text}</pre>
         <div class="drawer-foot">
           <button class="btn primary" onClick=${async () => setStatus(await copyText(q.text, preRef.current))}>${Icon.copy}Copy text</button>
@@ -245,7 +246,7 @@
               const ago = daysSince(c.loadedAt || c.updatedAt);
               return html`<tr key=${id} class="dash-row">
                 <td><span class="client-name">${c.name || id}</span>${id === currentId ? html` <span class="pill good">Open now</span>` : ''}
-                  <span class="sub">${s ? `Books to ${s.periodEnd}` : 'Load their export'}${ago != null ? ` · loaded ${ago === 0 ? 'today' : `${ago}d ago`}` : ''}</span>
+                  <span class="sub">${s ? `Books to ${s.periodEnd}` : 'Load their export'}${ago != null ? ` · loaded ${ago === 0 ? 'today' : `${ago}d ago`}` : ''}${c.portal && c.portal.status === 'waiting' && c.portal.expiresAt > Date.now() ? ' · answer link sent, waiting' : ''}</span>
                   ${FileStore.info(id) && id !== currentId && html`<button class="btn primary open-client" title=${`Reloads ${FileStore.info(id).names.join(', ')}`} onClick=${() => onOpen(id)}>Open</button>`}</td>
                 <td><span class=${`pill ${st.level}`}><span class="dot"></span>${st.label}</span></td>
                 <td>${s && s.close ? html`<div class="meter" style=${{ width: '110px' }}><span style=${{ width: `${Math.round((s.close.done / s.close.total) * 100)}%`, background: s.close.done === s.close.total ? 'var(--good)' : 'var(--accent)' }}></span></div><span class="sub">${monthLong(s.close.month)}: ${s.close.done}/${s.close.total}</span>` : html`<span class="sub">-</span>`}</td>

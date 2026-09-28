@@ -21,18 +21,42 @@ function siteHeaders() {
 
 function build() { execSync('sh scripts/build-site.sh', { cwd: ROOT, stdio: 'ignore' }); }
 
-function start() {
+// The portal's endpoints, with Netlify Blobs kept in memory and anyone treated as signed in.
+async function portalApi() {
+  const { pathToFileURL } = require('url');
+  const { portalHandler } = await import(pathToFileURL(path.join(ROOT, 'netlify', 'functions', 'lib', 'portal.mjs')).href);
+  const m = new Map();
+  const store = {
+    async get(k) { return m.has(k) ? JSON.parse(m.get(k)) : null; },
+    async setJSON(k, v) { m.set(k, JSON.stringify(v)); },
+    async delete(k) { m.delete(k); },
+    async list() { return { blobs: [...m.keys()].map((key) => ({ key })) }; },
+  };
+  return { store: m, handle: portalHandler({ store, verifySession: async () => 'mark@example.com' }) };
+}
+
+async function start() {
   const headers = siteHeaders();
-  const server = http.createServer((req, res) => {
+  const portal = await portalApi();
+  const server = http.createServer(async (req, res) => {
+    if (req.url.startsWith('/api/portal/')) {
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const r = await portal.handle(new Request(`http://x${req.url}`, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks) }));
+      res.writeHead(r.status, { ...headers, 'Content-Type': 'application/json' });
+      res.end(await r.text());
+      return;
+    }
     let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (p === '/') p = '/index.html';
     if (p === '/login') p = '/login.html';
+    if (p === '/portal') p = '/portal.html';
     const file = path.join(DIST, path.normalize(p));
     if (!file.startsWith(DIST) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404, headers); res.end('not found'); return; }
     res.writeHead(200, { ...headers, 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}`, headers })));
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}`, headers, portalStore: portal.store })));
 }
 
 module.exports = { build, start, siteHeaders };

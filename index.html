@@ -278,6 +278,15 @@
   .banner > div { flex: 1 1 320px; max-width: 90ch; }
   .storage-note { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
   .storage-note.neg { color: var(--critical-ink); }
+  .portal-block { margin: 0 20px 14px; padding: 14px 16px; border: 1px solid var(--hair); border-radius: 10px; background: var(--surface-2); }
+  .portal-block h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 600 15px/1.2 var(--cond); }
+  .portal-block h3 svg { width: 16px; height: 16px; }
+  .portal-block p { margin: 0 0 10px; font-size: 13.5px; color: var(--ink-2); max-width: 75ch; }
+  .portal-fields { padding: 0; margin-bottom: 10px; }
+  .portal-fields textarea { padding: 8px 10px; border: 1px solid var(--hair); border-radius: 6px; background: var(--page); color: var(--ink); }
+  .portal-link { width: 100%; font: 12.5px var(--mono); padding: 8px 10px; border: 1px solid var(--hair); border-radius: 6px; background: var(--page); color: var(--ink); margin-bottom: 10px; }
+  .answer-photos { display: flex; gap: 6px; margin-top: 6px; }
+  .answer-photos img { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid var(--hair); display: block; }
   .check.keep-files { display: flex; align-items: flex-start; padding-top: 8px; font-size: 12.5px; max-width: 90ch; }
   .check.keep-files input { margin-top: 2px; flex: none; }
   .row-actions { white-space: nowrap; }
@@ -497,8 +506,10 @@
 <script src="src/sample.js"></script>
 <script src="src/store.js"></script>
 <script src="src/work.js"></script>
+<script src="src/sealed.js"></script>
 <script src="src/ui/shared.js"></script>
 <script src="src/ui/arrange.js"></script>
+<script src="src/ui/portal.js"></script>
 <script src="src/ui/drive.js"></script>
 <script src="src/ui/localfile.js"></script>
 <script src="src/ui/audit.js"></script>

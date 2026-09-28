@@ -22,6 +22,13 @@
   [headers.values]
     Cache-Control = "public, max-age=0, must-revalidate"
 
+# The client portal: never cached, never indexed by search engines.
+[[headers]]
+  for = "/portal*"
+  [headers.values]
+    Cache-Control = "no-store"
+    X-Robots-Tag = "noindex, nofollow"
+
 # The sign-in page is never cached; the app itself is marked private by the edge function.
 [[headers]]
   for = "/login*"

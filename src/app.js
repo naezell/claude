@@ -5,10 +5,10 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal } = UI;
 
   const Work = window.LedgerWork;
-  const { FileStore } = window.LedgerStore;
+  const { FileStore, AttachStore } = window.LedgerStore;
 
   // The analysis for the loaded transactions. Small exports are analyzed right away; large ones
   // in the background, keeping the last result on screen (for the same data) until the new one
@@ -99,6 +99,8 @@
     const loadedAtRef = useRef(null);
     // Answers returned by the client in the questions spreadsheet, by the key of the item asked about.
     const [answers, setAnswers] = useState({});
+    // The client's answer link, if one was sent (src/ui/portal.js).
+    const [portal, setPortal] = useState(null);
     const [pendingAnswers, setPendingAnswers] = useState(null);
     const [notice, setNotice] = useState(null);
     // What the last upload did with each file, so nothing is silently ignored.
@@ -154,6 +156,7 @@
       setChecklist(saved && saved.checklist ? saved.checklist : {});
       setCustomSteps(saved && saved.customSteps ? saved.customSteps : []);
       setAnswers(saved && saved.answers ? saved.answers : {});
+      setPortal(saved && saved.portal ? saved.portal : null);
       setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
@@ -171,10 +174,10 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
@@ -182,6 +185,28 @@
       if (!list.every((f) => typeof f.text === 'string')) return;
       FileStore.put(clientId, list.map((f) => ({ name: f.name, text: f.text })));
     }, [clientId, source]);
+    // Collects answers clients sent through their answer links: when the page opens, when a
+    // client is loaded, every few minutes while one is waiting, and on request.
+    const portalRef = useRef(portal);
+    portalRef.current = portal;
+    const collectPortal = useCallback(async () => {
+      if (!Portal.available()) return 0;
+      try {
+        const got = await Portal.collectAnswers({
+          openId: clientId,
+          openRecord: portalRef.current,
+          applyOpen: (entries, record) => { setAnswers((prev) => ({ ...prev, ...entries })); setPortal(record); },
+        });
+        const n = got.reduce((t, g) => t + g.count, 0);
+        if (n) setNotice(`${got.map((g) => `${g.name} answered ${g.count} question${g.count === 1 ? '' : 's'}`).join('; ')} through the answer link. The answers are under Client answers on the audit tab.`);
+        return n;
+      } catch (e) { window.LedgerProblem.note('error', `answer link: ${e.message}`); return 0; }
+    }, [clientId]);
+    useEffect(() => {
+      collectPortal();
+      const t = setInterval(() => { if (document.visibilityState === 'visible') collectPortal(); }, 3 * 60 * 1000);
+      return () => clearInterval(t);
+    }, [collectPortal]);
     // Match a returned questions spreadsheet to the current questions and keep the answers.
     const applyAnswers = useCallback((file) => {
       if (!result) return '';
@@ -373,7 +398,7 @@
 
         ${!result && analyzing && html`<div class="empty">Working through a large export. The results appear here in a moment.</div>`}
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`} class=${analyzing ? 'stale' : ''} aria-busy=${analyzing ? 'true' : 'false'}>
-          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => { if (!through) setClosed(null); else Promise.resolve(result.closeBooks(through)).then(setClosed); }} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; delete n[key]; return n; })} />`
+          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => { if (!through) setClosed(null); else Promise.resolve(result.closeBooks(through)).then(setClosed); }} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; if (n[key] && n[key].photoKey) { const [c, r] = n[key].photoKey.split('|'); AttachStore.remove(c, r); } delete n[key]; return n; })} />`
             : tab === 'close' ? html`<${CloseTab} result=${result} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${setTab} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} onReview=${setReview} />`
             : tab === 'cash' ? html`<${CashTab} cash=${result.cash} scenarioCash=${result.cashScenario} scenario=${scenario} setScenario=${setScenario} inputs=${cashInputs} setInputs=${setCashInputs} cushion=${cushion} defaultCushion=${defaultCushion} />`
@@ -387,7 +412,7 @@
         <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${signedInSite ? html` · <a href="/auth/logout">Sign out</a>` : ''} · <button class="linkish" onClick=${() => setProblemOpen(true)}>Report a problem</button>${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
       </div>
 
-      ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} answers=${answers} onLoadAnswers=${(file) => applyAnswers(file)} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
+      ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} answers=${answers} portal=${portal} setPortal=${setPortal} canSave=${!!clientId} onCheckPortal=${collectPortal} onLoadAnswers=${(file) => applyAnswers(file)} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
       ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} onReport=${() => setProblemOpen(true)} />`}
       ${problemOpen && html`<${ProblemDrawer} context=${problemContext} onClose=${() => setProblemOpen(false)} />`}
       ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onOpen=${(id) => { setClientsOpen(false); openClient(id); }} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}

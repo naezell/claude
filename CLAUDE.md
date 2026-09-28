@@ -37,12 +37,19 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   When adding a script, add its tag in the right place in `index.html`.
 - `src/engine.js`: all parsing and analysis, pure functions, runs in Node and the browser
   (and in `src/worker.js`). Put logic here and test it in `test/engine.test.js`.
-- `src/store.js`: saved clients in IndexedDB (`ledger-lens`, version 2: `clients`, `meta`,
-  `files`) with an in-memory copy. Changing the shape of a saved client means raising `SCHEMA`
+- `src/store.js`: saved clients in IndexedDB (`ledger-lens`, version 3: `clients`, `meta`,
+  `files`, `attachments`) with an in-memory copy. Changing the shape of a saved client means raising `SCHEMA`
   and adding a step to `upgrade()`. Adding an object store means raising `DB_VERSION`.
 - `src/work.js` / `src/worker.js`: file reading, and analysis of exports with 8,000+ rows, in a
   Web Worker, with the same work on the page as a fallback (always on `file://`).
-- No client data leaves the browser. Only Google (sign-in, Drive backup) is contacted.
+- No client data leaves the browser unsealed. Only Google (sign-in, Drive backup) is contacted,
+  plus the site's own portal endpoints.
+- Client portal: `src/ui/portal.js` (Mark's side), `portal.html` + `portal.js` (the client's
+  page, public, plain DOM), `src/sealed.js` (AES-GCM; the key lives only in the link after `#`),
+  `netlify/functions/portal.mjs` + `lib/portal.mjs` (stores sealed records in Netlify Blobs,
+  deletes them on collection or expiry). The server must never receive the key or anything
+  readable. The link record is kept in the client's profile as `portal`; receipt photos in the
+  `attachments` store (IndexedDB version 3).
 - Pages are arranged by the bookkeeper (`src/ui/arrange.js`): each tab passes its movable
   sections to `<${Arrange} page=... parts=${[[id, label, content], ...]} />`; KPI tiles and
   input panels stay outside it. A new section needs a stable id and a plain label there;

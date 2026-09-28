@@ -7,7 +7,7 @@
   const E = window.LedgerEngine;
   const { fmtMoney, fmtWhole, counterpartyOf, leafAccount } = E;
   const UI = window.LedgerUI;
-  const { useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf, Arrange } = UI;
+  const { useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf, Arrange, AnswerPhotos } = UI;
 
   // ------------------------------------------------------------ audit tab
 
@@ -276,14 +276,14 @@
       <div class="panel-head">
         <h2>Client answers</h2>
         <span class=${`pill ${open ? 'medium' : 'good'}`}>${open ? `${open} to act on` : 'All handled'}</span>
-        <p>Answers from the questions spreadsheet the client sent back. Make the change in QuickBooks, then mark each one <em>Fixed in QuickBooks</em> or <em>Not an issue</em>; answered questions are left out of the next question list.</p>
+        <p>Answers the client sent through the answer link or the questions spreadsheet. Make the change in QuickBooks, then mark each one <em>Fixed in QuickBooks</em> or <em>Not an issue</em>; answered questions are left out of the next question list.</p>
       </div>
       <div class="panel-body flush"><div class="table-wrap"><table>
         <thead><tr><th>Review</th><th>Question</th><th>Client's answer</th><th>Received</th><th></th></tr></thead>
         <tbody>${answers.map((a) => html`<tr key=${a.key} class=${clearedOf(a) ? 'cleared' : ''}>
           <td><${ReviewSelect} item=${a} onReview=${onReview} /></td>
           <td><span class="sub">${a.ref} · ${a.topic}</span>${a.question}</td>
-          <td><strong style=${{ fontWeight: 500 }}>${a.answer || html`<span class="sub">No written answer</span>`}</strong>${a.receipt ? html`<span class="pill good" style=${{ marginTop: '4px' }}>Receipt sent</span>` : ''}</td>
+          <td><strong style=${{ fontWeight: 500 }}>${a.answer || html`<span class="sub">No written answer</span>`}</strong>${a.photos && a.photoKey ? html`<${AnswerPhotos} photoKey=${a.photoKey} count=${a.photos} />` : a.receipt ? html`<span class="pill good" style=${{ marginTop: '4px' }}>Receipt sent</span>` : ''}${a.via === 'portal' ? html`<span class="sub">Through the answer link</span>` : ''}</td>
           <td class="nowrap num">${a.at || ''}</td>
           <td><button class="btn" onClick=${() => onRemove(a.key)}>Remove</button></td>
         </tr>`)}</tbody>

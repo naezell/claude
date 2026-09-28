@@ -19,7 +19,8 @@
 
   const DB_NAME = 'ledger-lens';
   // 1: clients and meta. 2: adds files (each client's exports, for one-click Open).
-  const DB_VERSION = 2;
+  // 3: adds attachments (receipt photos clients send through the portal).
+  const DB_VERSION = 3;
   // Version of the saved client records. Raise it, and add a step to `upgrade`, whenever the
   // shape of a saved client changes in a way older data needs converting for.
   const SCHEMA = 1;
@@ -53,6 +54,7 @@
         if (!db.objectStoreNames.contains('clients')) db.createObjectStore('clients');
         if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta');
         if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
+        if (!db.objectStoreNames.contains('attachments')) db.createObjectStore('attachments');
       };
       r.onsuccess = () => {
         clearTimeout(timer);
@@ -113,6 +115,7 @@
       delete cache[id];
       this.write({ [id]: null });
       FileStore.remove(id);
+      AttachStore.removeClient(id);
       this.changed();
     },
     // Import keeps whichever copy of each client was updated more recently.
@@ -237,6 +240,36 @@
     },
   };
 
+  // Photos clients attach to their answers in the portal, kept per client and question:
+  // key "<client id>|<question ref>", value [{ name, data (a JPEG data URL) }]. Not in backups.
+  const AttachStore = {
+    put(clientId, ref, photos) {
+      if (!db || !clientId || !photos || !photos.length) return Promise.resolve(false);
+      try {
+        const tx = db.transaction('attachments', 'readwrite');
+        tx.objectStore('attachments').put(photos, `${clientId}|${ref}`);
+        return done(tx).then(() => { ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
+      } catch (e) { return Promise.resolve(false); }
+    },
+    get(clientId, ref) {
+      if (!db) return Promise.resolve([]);
+      try { return req(db.transaction('attachments', 'readonly').objectStore('attachments').get(`${clientId}|${ref}`)).then((v) => v || [], () => []); } catch (e) { return Promise.resolve([]); }
+    },
+    remove(clientId, ref) {
+      if (!db) return Promise.resolve(false);
+      try { const tx = db.transaction('attachments', 'readwrite'); tx.objectStore('attachments').delete(`${clientId}|${ref}`); return done(tx).then(() => true, () => false); } catch (e) { return Promise.resolve(false); }
+    },
+    removeClient(clientId) {
+      if (!db || !clientId) return Promise.resolve(false);
+      try {
+        const tx = db.transaction('attachments', 'readwrite');
+        const range = IDBKeyRange.bound(`${clientId}|`, `${clientId}|\uffff`);
+        tx.objectStore('attachments').delete(range);
+        return done(tx).then(() => true, () => false);
+      } catch (e) { return Promise.resolve(false); }
+    },
+  };
+
   function legacyClients() {
     try { return JSON.parse(safeStore.get(LEGACY_KEY) || 'null') || null; } catch (e) { return null; }
   }
@@ -300,5 +333,5 @@
     if (ClientStore.count()) ClientStore.askToKeep(); else ClientStore.estimate();
   });
 
-  window.LedgerStore = { ClientStore, FileStore, safeStore };
+  window.LedgerStore = { ClientStore, FileStore, AttachStore, safeStore };
 })();
