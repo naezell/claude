@@ -874,3 +874,36 @@ test('lender package: statements, ratios, payroll checks, and a report without r
   assert.equal(E.lenderRead('dscr', 1.15), 'Borderline');
   assert.equal(E.lenderRead('leverage', 5), 'Below');
 });
+
+test('landscaping: industry is detected from names, and only landscapers get its checks', () => {
+  assert.equal(E.detectIndustry({ company: 'Greenway Landscape Co.' }, []), 'landscaping');
+  assert.equal(E.detectIndustry({ company: 'Acme LLC' }, ['Snow Removal', 'Irrigation Services', 'Rent']), 'landscaping');
+  assert.equal(E.detectIndustry({ company: 'Harbor & Pine Studio' }, ['Design Income', 'Rent']), 'general');
+  const r = E.analyze(E.parseTransactions(S.build()));
+  assert.equal(r.industry, 'general');
+  assert.equal(r.landscape, undefined);
+  assert.ok(!E.closeChecklist(r, r.closableMonths[r.closableMonths.length - 1], {}, []).items.some((i) => i.id === 'fuelcard'));
+  const forced = E.analyze(E.parseTransactions(S.build()), { industry: 'landscaping' });
+  assert.ok(forced.landscape);
+  assert.ok(E.closeChecklist(forced, forced.closableMonths[forced.closableMonths.length - 1], {}, []).items.some((i) => i.id === 'fuelcard'));
+});
+
+test('landscaping: a contract with a yearly price step is still a contract, and a gap is a missed invoice', () => {
+  const rows = [];
+  const months = [];
+  for (let y = 2024; y <= 2026; y++) for (let m = 1; m <= 12; m++) if (y < 2026 || m <= 8) months.push([y, m]);
+  for (const [y, m] of months) {
+    const d = `${String(m).padStart(2, '0')}/01/${y}`;
+    const price = y === 2024 ? 1000 : y === 2025 ? 1040 : 1090;
+    if (!(y === 2026 && m === 7)) rows.push(['Invoice', d, 'Oak HOA', 'Grounds maintenance', 'Maintenance Contracts', price]);
+    rows.push(['Invoice', d, 'Pine HOA', 'Grounds maintenance', 'Maintenance Contracts', 800]);
+    rows.push(['Expense', d, 'Shell', 'Fuel', 'Fuel', 300]);
+  }
+  const csv = ['Leafy Lawn Care', 'Transaction Detail by Account', '', 'Date,Transaction Type,Num,Name,Memo/Description,Account,Split,Amount',
+    ...rows.map(([type, d, name, memo, acct, amt]) => `${d},${type},,${name},${memo},${acct},Checking,${amt}`)].join('\n');
+  const r = E.analyze(E.parseTransactions(csv), { accountClass: { 'Maintenance Contracts': 'income' } });
+  assert.equal(r.industry, 'landscaping');
+  const L = r.landscape;
+  assert.deepEqual(L.contracts.missed.map((m) => [m.name, m.month]), [['Oak HOA', '2026-07']]);
+  assert.deepEqual(L.contracts.stale.map((m) => m.name), ['Pine HOA']);
+});

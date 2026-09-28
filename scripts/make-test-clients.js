@@ -23,7 +23,7 @@ const r2 = (n) => Math.round(n * 100) / 100;
 // Account types decide which side is the normal balance. QuickBooks' Transaction Detail by
 // Account shows each account's rows in that account's normal sign, so an expense is positive
 // in the expense section and negative in the bank section it was paid from.
-const DEBIT_NORMAL = new Set(['bank', 'ar', 'asset', 'expense', 'cogs']);
+const DEBIT_NORMAL = new Set(['bank', 'ar', 'asset', 'fixed', 'expense', 'cogs']);
 
 function book(company, accounts, opts) {
   const entries = [];
@@ -40,7 +40,7 @@ const q = (v) => {
 const mdY = (iso) => { const [y, m, d] = iso.split('-'); return `${m}/${d}/${y}`; };
 const money = (n) => n.toFixed(2);
 
-function transactionDetail(b, openings, period, withClass) {
+function transactionDetail(b, openings, period, withClass, footerDate) {
   const sections = new Map();
   const push = (acct, row) => {
     if (!b.accounts[acct]) throw new Error(`Unknown account ${acct}`);
@@ -55,7 +55,7 @@ function transactionDetail(b, openings, period, withClass) {
     push(e.cr, { ...base, split: e.dr, amount: cSign * e.amount });
   }
   for (const a of Object.keys(openings || {})) if (!sections.has(a)) sections.set(a, []);
-  const order = ['bank', 'ar', 'asset', 'card', 'ap', 'liab', 'loan', 'equity', 'income', 'cogs', 'expense'];
+  const order = ['bank', 'ar', 'asset', 'fixed', 'card', 'ap', 'liab', 'loan', 'equity', 'income', 'cogs', 'expense'];
   const names = [...sections.keys()].sort((x, y) => order.indexOf(b.accounts[x]) - order.indexOf(b.accounts[y]) || x.localeCompare(y));
   const head = ['', 'Date', 'Transaction Type', 'Num', 'Name', 'Customer', ...(withClass ? ['Class'] : []), 'Memo/Description', 'Split', 'Amount', 'Balance'];
   const lines = [q(b.company), 'Transaction Detail by Account', q(period), '', head.join(',')];
@@ -71,13 +71,13 @@ function transactionDetail(b, openings, period, withClass) {
     lines.push([q(`Total for ${acct}`), '', '', '', '', '', ...(withClass ? [''] : []), '', '', q(`$${bal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`), ''].join(','));
   }
   lines.push('');
-  lines.push(q(`Cash Basis ${new Date(Date.UTC(2026, 8, 1)).toUTCString().slice(0, 16)}`));
+  lines.push(q(`Cash Basis ${(footerDate || new Date(Date.UTC(2026, 8, 1))).toUTCString().slice(0, 16)}`));
   return `${lines.join('\n')}\n`;
 }
 
 const TYPE_LABEL = {
   bank: ['Bank', 'Checking'], ar: ['Accounts receivable (A/R)', 'Accounts Receivable (A/R)'], asset: ['Other Current Assets', 'Other Current Assets'],
-  card: ['Credit Card', 'Credit Card'], ap: ['Accounts payable (A/P)', 'Accounts Payable (A/P)'], liab: ['Other Current Liabilities', 'Other Current Liabilities'],
+  fixed: ['Fixed Assets', 'Machinery & Equipment'], card: ['Credit Card', 'Credit Card'], ap: ['Accounts payable (A/P)', 'Accounts Payable (A/P)'], liab: ['Other Current Liabilities', 'Other Current Liabilities'],
   loan: ['Long Term Liabilities', 'Notes Payable'], equity: ['Equity', "Owner's Equity"], income: ['Income', 'Service/Fee Income'],
   cogs: ['Cost of Goods Sold', 'Supplies & Materials - COGS'], expense: ['Expenses', 'Other Miscellaneous Service Cost'],
 };
@@ -484,6 +484,214 @@ function cafe() {
   return { b, openings };
 }
 
+
+// ------------------------------------------------------------------ Greenway Landscape Co.
+
+function greenway() {
+  const R = rng(56173);
+  const between = (a, z) => r2(a + R() * (z - a));
+  const pick = (list) => list[Math.floor(R() * list.length)];
+  const A = {
+    'Operating Checking': 'bank', 'Undeposited Funds': 'asset', 'Accounts Receivable (A/R)': 'ar', 'Equipment': 'fixed', 'Accumulated Depreciation': 'fixed',
+    'Chase Ink (4410)': 'card', 'Accounts Payable (A/P)': 'ap', 'Sales Tax Payable': 'liab', 'Payroll Liabilities': 'liab',
+    'Line of Credit - First State Bank': 'loan', 'John Deere Financial': 'loan', 'Ally Truck Loan': 'loan', 'Owner Draws': 'equity',
+    'Maintenance Contracts': 'income', 'Installation & Hardscape': 'income', 'Irrigation Services': 'income', 'Snow Removal': 'income', 'Enhancements': 'income',
+    'Materials - Plants & Mulch': 'cogs', 'Materials - Hardscape': 'cogs', 'Irrigation Parts': 'cogs', 'Salt & Ice Melt': 'cogs', 'Subcontractors': 'cogs', 'Dump Fees': 'cogs',
+    'Payroll Expenses:Wages': 'expense', 'Payroll Expenses:Overtime': 'expense', 'Payroll Expenses:Taxes': 'expense', 'Fuel': 'expense', 'Equipment Repairs': 'expense',
+    'Vehicle Repairs': 'expense', 'Truck Leases': 'expense', 'Professional Fees': 'expense', 'Small Tools': 'expense', 'Insurance': 'expense', 'Shop Rent': 'expense', 'Utilities': 'expense', 'Telephone': 'expense',
+    'Software & Subscriptions': 'expense', 'Advertising': 'expense', 'Uniforms': 'expense', 'Interest Expense': 'expense', 'Depreciation': 'expense',
+    'Office Supplies': 'expense', 'Meals': 'expense', 'Bank Fees': 'expense', 'Uncategorized Expense': 'expense',
+  };
+  const b = book('Greenway Landscape Co.', A);
+  const P = (date, type, num, name, customer, memo, dr, cr, amount, cls) => b.post(date, type, num, name, customer, memo, dr, cr, amount, cls ? { cls } : undefined);
+  const BANK = 'Operating Checking', CARD = 'Chase Ink (4410)', AR = 'Accounts Receivable (A/R)', AP = 'Accounts Payable (A/P)', UF = 'Undeposited Funds', LOC = 'Line of Credit - First State Bank';
+  const TAX = 0.0625; // on materials in installs
+  let inv = 5101, chk = 3301;
+  const M = months(2024, 1, 32);
+  const inSeason = (m) => m >= 4 && m <= 11;
+  const invoice = (date, cust, job, memo, acct, cls, amount, days, tax) => {
+    const num = String(inv++);
+    P(date, 'Invoice', num, cust, job || cust, memo, AR, acct, amount, cls);
+    if (tax) P(date, 'Invoice', num, cust, job || cust, 'Sales tax on materials', AR, 'Sales Tax Payable', tax);
+    const total = r2(amount + (tax || 0));
+    const paid = addDays(date, days + Math.round(R() * 8 - 4));
+    if (within(paid)) {
+      P(paid, 'Payment', '', cust, job || cust, 'Payment received', UF, AR, total);
+      P(addDays(paid, 1), 'Deposit', '', '', '', `Deposit - ${cust}`, BANK, UF, total);
+    }
+    return num;
+  };
+
+  // Maintenance contracts: billed on the 1st, April to November (a few commercial accounts
+  // all year). Most prices go up each spring; four have not changed since 2024.
+  const contracts = [
+    ['Oak Hills HOA', 3680, true], ['Lakeview Office Park', 2420, true], ['Sunset Villas HOA', 2950, false], ['Maple Ridge HOA', 2180, false],
+    ['Dr. Patel Dental', 640, false], ['Riverside Church', 920, false], ['Hartman Residence', 360, false], ['Cole Residence', 410, false],
+    ['Prairie Bank', 960, true], ['Brookfield Apartments', 2390, false], ['Summit Medical Plaza', 2340, true], ['Greene Residence', 395, false],
+    ['Walnut Creek Condos', 2160, false], ['Fischer Residence', 430, false], ['Elm Street Deli', 410, false], ['Kingsley Residence', 450, false],
+    ['Heritage Senior Living', 2860, true], ['Crossroads Shopping Center', 3120, true], ['Birchwood Townhomes', 1840, false], ['Nolan Residence', 385, false],
+  ];
+  const frozen = new Set(['Maple Ridge HOA', 'Dr. Patel Dental', 'Riverside Church', 'Hartman Residence']);
+  const missed = new Set(['2026-08|Lakeview Office Park', '2026-07|Sunset Villas HOA']);
+  for (const mo of M) {
+    for (const [cust, base, yearRound] of contracts) {
+      if (!yearRound && !inSeason(mo.m)) continue;
+      if (missed.has(`${mo.y}-${pad2(mo.m)}|${cust}`)) continue;
+      const rise = frozen.has(cust) ? 1 : mo.y === 2024 ? 1 : mo.y === 2025 ? 1.04 : 1.04 * 1.05;
+      const amt = r2(base * rise);
+      invoice(mo.d(1), cust, '', `Grounds maintenance - ${new Date(Date.UTC(mo.y, mo.m - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })}`, 'Maintenance Contracts', 'Maintenance', amt, cust === 'Brookfield Apartments' ? 55 : 24);
+    }
+    if (inSeason(mo.m)) {
+      P(mo.d(9), 'Expense', '', 'Menards', '', 'Mulch, fertilizer, seed', 'Materials - Plants & Mulch', CARD, between(420, 900) * (mo.m === 5 ? 2.4 : 1), 'Maintenance');
+      P(mo.d(18), 'Expense', '', 'County Compost Site', '', 'Green waste dump fees', 'Dump Fees', CARD, between(140, 260), 'Maintenance');
+    }
+  }
+
+  // Installation and hardscape jobs: April to October, deposits and completion invoices.
+  const installCustomers = ['Bauer Residence', 'Quinn Residence', 'Northgate Library', 'Alvarez Residence', 'Delgado Residence', 'Pinewood School', 'Harper Residence', 'Tanaka Residence', 'Lincoln Park District', 'Moreno Residence', 'Ellis Residence', 'Castle Rock Winery'];
+  const projects = ['Paver patio', 'Retaining wall', 'Front bed renovation', 'Flagstone walkway', 'Outdoor kitchen', 'Tree and shrub planting', 'Drainage and grading'];
+  for (const mo of M) {
+    if (mo.m < 4 || mo.m > 10) continue;
+    const n = mo.m >= 5 && mo.m <= 9 ? 4 : 2;
+    for (let i = 0; i < n; i++) {
+      const cust = pick(installCustomers), proj = pick(projects), job = `${cust}:${proj}`;
+      const price = between(7400, 24800) * (mo.y === 2026 ? 1.06 : 1);
+      const day = 3 + i * 6;
+      invoice(mo.d(day), cust, job, `${proj} - deposit`, 'Installation & Hardscape', 'Install', r2(price * 0.4), 5);
+      const mat = r2(price * between(0.26, 0.34));
+      invoice(mo.d(day + 12), cust, job, `${proj} - completion`, 'Installation & Hardscape', 'Install', r2(price * 0.6), 18, r2(mat * TAX));
+      const billNo = `RS-${mo.y % 100}${pad2(mo.m)}${i}`;
+      P(mo.d(day + 2), 'Bill', billNo, 'Rock Solid Stone Supply', job, `Pavers, block and base - ${proj}`, 'Materials - Hardscape', AP, mat, 'Install');
+      if (within(addDays(mo.d(day + 2), 30))) P(addDays(mo.d(day + 2), 30), 'Bill Payment (Check)', String(chk++), 'Rock Solid Stone Supply', '', `Pay ${billNo}`, AP, BANK, mat);
+      if (i === 0 && mo.m % 2 === 0) P(mo.d(day + 4), 'Check', String(chk++), 'Precision Grading LLC', job, `Excavation - ${proj}`, 'Subcontractors', BANK, between(900, 2400), 'Install');
+      if (i === 1) P(mo.d(day + 3), 'Expense', '', 'Sunbelt Rentals', job, 'Skid steer rental', 'Subcontractors', CARD, between(380, 720), 'Install');
+    }
+  }
+
+  // Irrigation: spring start-ups in April, winterizations in October, repairs in between.
+  const homes = ['Adams', 'Brennan', 'Carver', 'Dunn', 'Ewing', 'Frost', 'Gill', 'Hale', 'Irwin', 'Joyce', 'Kerr', 'Lang', 'Mercer', 'Nolan', 'Olsen', 'Pruitt', 'Reid', 'Sutter', 'Tully', 'Vance'];
+  for (const mo of M) {
+    const count = mo.m === 4 || mo.m === 10 ? 24 : inSeason(mo.m) ? 8 : 0;
+    for (let i = 0; i < count; i++) {
+      const who = `${pick(homes)} Residence`;
+      const memo = mo.m === 4 ? 'Irrigation spring start-up' : mo.m === 10 ? 'Irrigation winterization (blow-out)' : 'Irrigation repair - heads and valves';
+      invoice(mo.d(2 + i), who, '', memo, 'Irrigation Services', 'Irrigation', mo.m === 4 || mo.m === 10 ? between(85, 140) : between(180, 620), 15);
+    }
+    if (count) P(mo.d(12), 'Expense', '', 'SiteOne Landscape Supply', '', 'Irrigation heads, valves, fittings', 'Irrigation Parts', CARD, between(160, 520), 'Irrigation');
+  }
+
+  // Enhancements: spring clean-ups, mulch, fall aeration and leaf clean-ups.
+  for (const mo of M) {
+    const count = { 4: 18, 5: 14, 9: 10, 10: 8, 11: 16 }[mo.m] || 0;
+    for (let i = 0; i < count; i++) {
+      const who = `${pick(homes)} Residence`;
+      const memo = { 4: 'Spring clean-up', 5: 'Mulch installation', 9: 'Core aeration and overseed', 10: 'Fall clean-up', 11: 'Leaf removal' }[mo.m];
+      invoice(mo.d(3 + i), who, '', memo, 'Enhancements', 'Enhancements', between(240, 780), 12);
+    }
+  }
+
+  // Snow: seasonal contracts billed monthly December to March, plus per-push invoices for
+  // storms; salt and overtime make the 2025-26 winter a loss.
+  const snowContracts = [['Oak Hills HOA', 2250], ['Summit Medical Plaza', 2500], ['Prairie Bank', 1150], ['Lakeview Office Park', 1900], ['Heritage Senior Living', 2400], ['Crossroads Shopping Center', 3100]];
+  for (const mo of M) {
+    if (inSeason(mo.m)) continue;
+    const winter2526 = (mo.y === 2025 && mo.m === 12) || (mo.y === 2026 && mo.m <= 3);
+    // Contract prices go up about 4% each winter.
+    const seasonRise = 1.04 ** ((mo.m === 12 ? mo.y : mo.y - 1) - 2023);
+    for (const [cust, amt] of snowContracts) invoice(mo.d(1), cust, '', 'Seasonal snow contract', 'Snow Removal', 'Snow', r2(amt * seasonRise), 20);
+    const storms = winter2526 ? 5 : 3;
+    for (let s2 = 0; s2 < storms; s2++) {
+      const day = 3 + s2 * 5;
+      for (const cust of ['Walnut Creek Condos', 'Brookfield Apartments', 'Elm Street Deli', 'Birchwood Townhomes', 'Sunset Villas HOA']) invoice(mo.d(day), cust, '', 'Snow plowing and salting - per push', 'Snow Removal', 'Snow', between(260, 620) * (winter2526 ? 0.85 : 1), 18);
+      const salt = r2(between(1300, 1900) * (winter2526 ? 1.55 : 1));
+      const saltNo = `SL-${mo.y % 100}${pad2(mo.m)}${s2}`;
+      P(mo.d(day), 'Bill', saltNo, 'Midwest Salt Co.', '', 'Bulk rock salt', 'Salt & Ice Melt', AP, salt, 'Snow');
+      if (within(addDays(mo.d(day), 25))) P(addDays(mo.d(day), 25), 'Bill Payment (Check)', String(chk++), 'Midwest Salt Co.', '', `Pay ${saltNo}`, AP, BANK, salt);
+    }
+    if (R() < 0.5) P(mo.d(20), 'Expense', '', 'Boss Snowplow Dealer', '', 'Plow blade cutting edge', 'Equipment Repairs', CARD, between(260, 640), 'Snow');
+  }
+
+  // Payroll: a year-round core of three, a seasonal crew March to November. Wages are
+  // tagged to the service lines; peak weeks bring overtime, heaviest in June 2026.
+  for (const mo of M) {
+    const crew = ({ 3: 5, 4: 8, 10: 8, 11: 6 })[mo.m] || (inSeason(mo.m) ? 9 : 4);
+    const split = inSeason(mo.m) ? [['Maintenance', 0.52], ['Install', 0.35], ['Irrigation', 0.05], ['Enhancements', 0.08]] : [['Snow', 1]];
+    const otRate = mo.y === 2026 && mo.m === 6 ? 0.42 : [5, 6, 10].includes(mo.m) ? 0.14 : !inSeason(mo.m) ? 0.22 : 0.05;
+    for (const day of [15, mo.days]) {
+      const gross = r2(crew * between(1650, 1760) * (mo.y === 2026 ? 1.05 : 1) * (inSeason(mo.m) ? 1 : 1.1));
+      for (const [cls, share] of split) {
+        const w = r2(gross * share), ot = r2(w * otRate);
+        P(mo.d(day), 'Payroll Check', '', 'Gusto', '', 'Payroll', 'Payroll Expenses:Wages', BANK, r2(w * 0.8), cls);
+        P(mo.d(day), 'Journal Entry', '', 'Gusto', '', 'Payroll withholding', 'Payroll Expenses:Wages', 'Payroll Liabilities', r2(w * 0.2), cls);
+        if (ot) P(mo.d(day), 'Payroll Check', '', 'Gusto', '', 'Overtime', 'Payroll Expenses:Overtime', BANK, ot, cls);
+        P(mo.d(day), 'Journal Entry', '', 'Gusto', '', 'Employer payroll taxes', 'Payroll Expenses:Taxes', 'Payroll Liabilities', r2((w + ot) * 0.0765), cls);
+      }
+    }
+  }
+  const liab = new Map();
+  for (const e of b.entries) if (e.cr === 'Payroll Liabilities') liab.set(e.date.slice(0, 7), r2((liab.get(e.date.slice(0, 7)) || 0) + e.amount));
+  for (const mo of M.slice(1)) P(mo.d(12), 'Tax Payment', '', 'IRS / State EFTPS', '', 'Payroll tax deposit', 'Payroll Liabilities', BANK, liab.get(`${M[mo.k - 1].y}-${pad2(M[mo.k - 1].m)}`) || 0);
+  // Sales tax: quarterly.
+  const st = new Map();
+  for (const e of b.entries) if (e.cr === 'Sales Tax Payable') { const qk = `${e.date.slice(0, 4)}-Q${Math.ceil(+e.date.slice(5, 7) / 3)}`; st.set(qk, r2((st.get(qk) || 0) + e.amount)); }
+  for (const [qk, date] of Object.entries({ '2024-Q2': '2024-07-20', '2024-Q3': '2024-10-20', '2024-Q4': '2025-01-20', '2025-Q2': '2025-07-20', '2025-Q3': '2025-10-20', '2025-Q4': '2026-01-20', '2026-Q2': '2026-07-20' })) {
+    if (st.get(qk)) P(date, 'Sales Tax Payment', '', 'State Dept. of Revenue', '', `Sales tax ${qk}`, 'Sales Tax Payable', BANK, st.get(qk));
+  }
+
+  // Equipment, vehicles and fuel.
+  for (const mo of M) {
+    const summer = inSeason(mo.m);
+    for (const day of [5, 12, 19, 26]) P(mo.d(day), 'Expense', '', 'WEX Fleet Card', '', 'Fuel - trucks and mowers', 'Fuel', CARD, between(summer ? 520 : 210, summer ? 780 : 340) * (mo.y === 2026 ? 1.12 : 1));
+    if (summer && mo.k % 2 === 0) P(mo.d(16), 'Expense', '', 'Midwest Turf Equipment', '', 'Mower blades, belts, filters', 'Equipment Repairs', CARD, between(280, 760));
+    if (mo.k % 5 === 3) P(mo.d(23), 'Expense', '', 'Jiffy Truck Service', '', 'Truck service', 'Vehicle Repairs', CARD, between(180, 520));
+    // Loans: John Deere (mowers) and Ally (crew truck); interest shrinking over time.
+    P(mo.d(10), 'Check', String(chk++), 'John Deere Financial', '', 'Equipment loan - interest', 'Interest Expense', BANK, r2(310 - mo.k * 5));
+    P(mo.d(10), 'Check', String(chk - 1), 'John Deere Financial', '', 'Equipment loan - principal', 'John Deere Financial', BANK, r2(1140 + mo.k * 5));
+    P(mo.d(14), 'Check', String(chk++), 'Ally Financial', '', 'Truck loan - interest', 'Interest Expense', BANK, r2(190 - mo.k * 3));
+    P(mo.d(14), 'Check', String(chk - 1), 'Ally Financial', '', 'Truck loan - principal', 'Ally Truck Loan', BANK, r2(790 + mo.k * 3));
+  }
+  // One mower keeps breaking down in 2026.
+  for (const [date, amt, memo] of [['2026-04-22', 1180, 'Exmark Lazer Z #3 - hydrostatic pump'], ['2026-05-30', 960, 'Exmark Lazer Z #3 - deck spindle and belts'], ['2026-06-24', 1420, 'Exmark Lazer Z #3 - engine repair'], ['2026-08-05', 1260, 'Exmark Lazer Z #3 - hydraulic lines']]) P(date, 'Check', String(chk++), 'Midwest Turf Equipment', '', memo, 'Equipment Repairs', BANK, amt);
+  // A trailer bought and recorded properly, and a new mower recorded as a repair.
+  P('2025-03-15', 'Check', String(chk++), 'Big Tex Trailers', '', '16 ft enclosed trailer', 'Equipment', BANK, 8900);
+  P('2026-04-08', 'Check', String(chk++), 'Midwest Turf Equipment', '', 'Exmark Lazer Z 60in zero-turn mower (new)', 'Equipment Repairs', BANK, 12480);
+  P('2026-03-20', 'Expense', '', 'Stihl Dealer', '', 'Backpack blowers (5)', 'Small Tools', CARD, 3150);
+  P('2024-12-31', 'Journal Entry', 'YE24', '', '', 'Depreciation 2024', 'Depreciation', 'Accumulated Depreciation', 14200);
+  P('2025-12-31', 'Journal Entry', 'YE25', '', '', 'Depreciation 2025', 'Depreciation', 'Accumulated Depreciation', 15650);
+  // The line of credit carries the spring ramp-up each year and is paid back in summer.
+  for (const [draw, pay1, pay2] of [['2024-03-18', '2024-07-15', '2024-08-15'], ['2025-03-17', '2025-07-15', '2025-08-15'], ['2026-03-16', '2026-07-15', '2026-08-17']]) {
+    P(draw, 'Deposit', '', 'First State Bank', '', 'Line of credit draw', BANK, LOC, 25000);
+    P(pay1, 'Check', String(chk++), 'First State Bank', '', 'Line of credit payment', LOC, BANK, 12500);
+    P(pay2, 'Check', String(chk++), 'First State Bank', '', 'Line of credit payment', LOC, BANK, 12500);
+  }
+
+  // Overhead.
+  for (const mo of M) {
+    P(mo.d(1), 'Check', String(chk++), 'Hawthorne Properties', '', 'Shop and yard rent', 'Shop Rent', BANK, mo.y === 2024 ? 4600 : 4850);
+    P(mo.d(4), 'Expense', '', 'Enterprise Fleet', '', 'Crew truck leases (2)', 'Truck Leases', BANK, 1780);
+    P(mo.d(15), 'Check', String(chk++), 'Keller CPA Group', '', 'Bookkeeping and tax prep', 'Professional Fees', BANK, 1150);
+    P(mo.d(8), 'Expense', '', 'Ameren', '', 'Shop utilities', 'Utilities', BANK, between(210, 420));
+    P(mo.d(11), 'Expense', '', 'Verizon Wireless', '', 'Crew phones', 'Telephone', CARD, inSeason(mo.m) ? 412 : 238);
+    P(mo.d(3), 'Expense', '', 'LMN Software', '', 'Estimating and scheduling', 'Software & Subscriptions', CARD, 299);
+    P(mo.d(5), 'Expense', '', 'Intuit QuickBooks', '', 'QuickBooks Online Plus', 'Software & Subscriptions', CARD, 99);
+    P(mo.d(10), 'Expense', '', 'Acuity Insurance', '', 'Workers comp and auto', 'Insurance', BANK, inSeason(mo.m) ? between(2300, 2550) : between(900, 1050));
+    if (mo.m === 3 || mo.m === 9) P(mo.d(6), 'Expense', '', 'Cintas', '', 'Crew uniforms', 'Uniforms', CARD, between(640, 980));
+    if (mo.m >= 2 && mo.m <= 5) P(mo.d(20), 'Expense', '', 'Facebook Ads', '', 'Spring booking ads', 'Advertising', CARD, between(350, 700));
+    P(mo.d(28), 'Check', String(chk++), 'Tom Greenway', '', 'Owner draw', 'Owner Draws', BANK, inSeason(mo.m) ? 13000 : 7500);
+  }
+  P('2024-01-15', 'Check', String(chk++), 'Acuity Insurance', '', 'General liability - annual', 'Insurance', BANK, 5980);
+  P('2025-01-15', 'Check', String(chk++), 'Acuity Insurance', '', 'General liability - annual', 'Insurance', BANK, 6420);
+  P('2026-01-15', 'Check', String(chk++), 'Acuity Insurance', '', 'General liability - annual', 'Insurance', BANK, 6890);
+  // Ordinary bookkeeping slips.
+  P('2026-06-09', 'Expense', '', '', '', 'POS DEBIT 0609 FARM & FLEET', 'Uncategorized Expense', CARD, 286.4);
+  P('2026-07-21', 'Expense', '', 'WEX Fleet Card', '', 'Fuel - trucks and mowers', 'Fuel', CARD, 612.18);
+  P('2026-07-21', 'Expense', '', 'WEX Fleet Card', '', 'Fuel - trucks and mowers', 'Fuel', CARD, 612.18);
+
+  payCard(b, CARD, BANK, 'Chase', M);
+  const openings = { 'Operating Checking': 45000, 'John Deere Financial': 68000, 'Ally Truck Loan': 41000, 'Equipment': 142000, 'Accumulated Depreciation': -48000 };
+  return { b, openings };
+}
+
 // ------------------------------------------------------------------ write everything
 
 function edited(csv) {
@@ -515,8 +723,14 @@ function main() {
   write('bloom-basil-chart-of-accounts.csv', chartOfAccounts(cf.b, { 'Sales Tax Payable': 'Sales Tax Payable', 'Payroll Liabilities': 'Payroll Tax Payable', 'Opening Balance Equity': 'Opening Balance Equity' }));
   write('bloom-basil-profit-and-loss.csv', profitAndLoss(cf.b, period.replace(/"/g, '')));
   write('bloom-basil-expenses-with-attachments.csv', expenseList(cf.b, '2025-09-01', (e) => ['2026-08-12', '2026-06-21', '2026-04-15'].includes(e.date)));
+  const gw = greenway();
+  const gwPeriod = 'January 2024 - August 2026';
+  write('greenway-transaction-detail.csv', transactionDetail(gw.b, gw.openings, gwPeriod, true));
+  write('greenway-chart-of-accounts.csv', chartOfAccounts(gw.b, { 'Undeposited Funds': 'Undeposited Funds', 'Sales Tax Payable': 'Sales Tax Payable', 'Payroll Liabilities': 'Payroll Tax Payable', 'Line of Credit - First State Bank': 'Line of Credit', 'Accumulated Depreciation': 'Accumulated Depreciation' }));
+  write('greenway-profit-and-loss.csv', profitAndLoss(gw.b, gwPeriod));
+  write('greenway-expenses-with-attachments.csv', expenseList(gw.b, '2025-09-01', () => false));
   console.log(`Wrote test clients to ${path.relative(process.cwd(), OUT)}`);
 }
 
 if (require.main === module) main();
-module.exports = { riverbend, cafe, transactionDetail };
+module.exports = { riverbend, cafe, greenway, transactionDetail };

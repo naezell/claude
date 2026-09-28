@@ -28,7 +28,9 @@
     if (c.loanRequest && c.loanRequest.requested && !c.loanRequest.builtAt) add('you', 3, 'Loan package requested', `Asked ${ago(c.loanRequest.requestedAt)}; create it on the Tax & lending tab`);
     if (portal && portal.status === 'expired') add('you', 4, 'Answer link expired without answers', 'Send a new link from Client questions');
     if (s && s.open && s.openTotal) add('you', 5, `${s.openTotal} flag${s.openTotal === 1 ? '' : 's'} to review`, [s.open.uncategorized && `${s.open.uncategorized} uncategorized`, s.open.duplicates && `${s.open.duplicates} possible duplicates`, s.open.balance && `${s.open.balance} balance sheet`, s.open.receipts && `${s.open.receipts} receipts`].filter(Boolean).join(', ') || 'On the audit tab');
+    if (s && s.landscape && s.landscape.missed) add('you', 5, `${s.landscape.missed} contract invoice${s.landscape.missed === 1 ? '' : 's'} not sent`, 'Customers billed every month with no invoice lately; see the Landscaping tab');
     if (s && s.close && s.close.done < s.close.total) add('you', 6, `${monthName(s.close.month)} close: ${s.close.done} of ${s.close.total} done`, 'On the Month-end close tab');
+    if (s && s.landscape && s.landscape.stale) add('you', 8, `${s.landscape.stale} contract price${s.landscape.stale === 1 ? '' : 's'} unchanged for a year`, 'Worth raising at renewal; see the Landscaping tab');
     if (daysAgo(c.loadedAt) > 35) add('you', 7, 'Due for a new export', s ? `Books loaded run to ${s.periodEnd}` : 'Upload their latest export');
     if (portal && portal.status === 'waiting' && portal.expiresAt > Date.now()) {
       const d = daysAgo(portal.createdAt);

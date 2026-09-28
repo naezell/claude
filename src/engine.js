@@ -634,8 +634,11 @@
       if (!v) continue;
       if (!vendorNames.has(v)) vendorNames.set(v, new Map());
       vendorNames.get(v).set(who, (vendorNames.get(v).get(who) || 0) + 1);
-      const cat = ['expense', 'cogs'].includes(cls(t.account)) ? t.account : ['expense', 'cogs'].includes(cls(t.split)) ? t.split : '';
-      if (!cat || RX.uncategorized.test(cat)) continue;
+      const acct = ['expense', 'cogs'].includes(cls(t.account)) ? t.account : ['expense', 'cogs'].includes(cls(t.split)) ? t.split : '';
+      if (!acct || RX.uncategorized.test(acct)) continue;
+      // Sub-accounts of one parent count as the same place: a paycheck split between
+      // Payroll Expenses:Wages and Payroll Expenses:Overtime is coded consistently.
+      const cat = acct.includes(':') ? acct.slice(0, acct.lastIndexOf(':')) : acct;
       if (!byVendor.has(v)) byVendor.set(v, new Map());
       const m = byVendor.get(v);
       if (!m.has(cat)) m.set(cat, []);
@@ -2475,6 +2478,262 @@
     return { statement, balance, ratios, payroll, issues, asOf: isoDate(range.last) };
   }
 
+  // ---------------------------------------------------------------- landscaping
+
+  const LANDSCAPE_RX = /landscap|lawn|mow|snow|hardscape|irrigat|turf|sprinkler|mulch|tree (care|service)|grounds maint/i;
+  // Guesses the industry from the company name and account names.
+  function detectIndustry(meta, accounts) {
+    if (LANDSCAPE_RX.test((meta && meta.company) || '')) return 'landscaping';
+    const hits = (accounts || []).filter((a) => LANDSCAPE_RX.test(a)).length;
+    return hits >= 2 ? 'landscaping' : 'general';
+  }
+
+  const SERVICE_LINES = [
+    { key: 'snow', label: 'Snow & ice', rx: /snow|plow|salt|ice melt|de-?ic/i },
+    { key: 'irrigation', label: 'Irrigation', rx: /irrigat|sprinkler|drip|backflow/i },
+    { key: 'install', label: 'Installation & hardscape', rx: /install|hardscape|design|construct|patio|paver|retaining|planting project|landscape project/i },
+    { key: 'enhance', label: 'Enhancements', rx: /enhanc|clean.?up|aerat|overseed|prun|tree|leaf|fertiliz|weed control|lighting/i },
+    { key: 'maintenance', label: 'Maintenance', rx: /maint|mow|lawn care|grounds|contract|mulch|plants/i },
+  ];
+  const lineOf = (text) => { const l = SERVICE_LINES.find((x) => x.rx.test(text || '')); return l ? l.key : null; };
+  const OVERTIME_ACCOUNT = /overtime|\bot\b/i;
+  const EQUIP_WORD = /mower|zero.?turn|trimmer|blower|edger|skid|loader|trailer|truck|plow|spreader|aerator|tractor|excavator|chipper|stump|utv|atv|sprayer/i;
+  const EXPENSE_EQUIP_ACCOUNT = /repair|maint|tool|supplies|equipment(?! rental)|small|materials/i;
+  const EQUIP_LOAN = /deere|kubota|caterpillar|\bcat\b|bobcat|toro|exmark|equipment|truck|vehicle|ally|ford credit|gm financial|financial/i;
+
+  function landscapeAnalysis(txns, accountClass, result, opts) {
+    opts = opts || {};
+    const range = dateRange(txns, result.meta);
+    const ttm = trailingYear(range.first, range.last);
+    const postings = toPostings(txns, accountClass);
+    const inTtm = (d) => (ttm ? d >= ttm.start && d <= ttm.end : true);
+    const mk = (d) => d.toISOString().slice(0, 7);
+    const lastFull = (() => { const e = ttm ? ttm.end : range.last; return mk(e); })();
+    const monthName = (m) => new Date(Date.UTC(2020, m - 1, 1)).toLocaleString('en-US', { month: 'short', timeZone: 'UTC' });
+    const addMonth = (key, n) => { const [y, m] = key.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return mk(d); };
+
+    // ---- 1. Off-season cash: history of monthly cash flow (before line-of-credit draws and
+    // repayments, and transfers between the business's own accounts) by calendar month.
+    const flows = new Map(), revByMonth = new Map();
+    for (const t of txns) {
+      if (roleOf(accountClass, t.account) !== 'cash') continue;
+      const sr = roleOf(accountClass, t.split);
+      if (sr === 'cash') continue;
+      if (sr === 'loan' && LINE_OF_CREDIT.test(t.split || '')) continue;
+      const k = t.dateStr.slice(0, 7);
+      flows.set(k, (flows.get(k) || 0) + t.amount);
+    }
+    for (const p of postings) if (p.cls === 'income') revByMonth.set(p.t.dateStr.slice(0, 7), (revByMonth.get(p.t.dateStr.slice(0, 7)) || 0) + p.value);
+    const fullKeys = [...new Set([...flows.keys(), ...revByMonth.keys()])].filter((k) => k <= lastFull).sort();
+    let offSeason = null;
+    if (fullKeys.length >= 12) {
+      const recent = fullKeys.slice(-24);
+      const profile = Array.from({ length: 12 }, (_, i) => {
+        const ks = recent.filter((k) => +k.slice(5) === i + 1);
+        const avg = (m) => (ks.length ? ks.reduce((t, k) => t + (m.get(k) || 0), 0) / ks.length : 0);
+        return { m: i + 1, label: monthName(i + 1), revenue: round2(avg(revByMonth)), flow: round2(avg(flows)), years: ks.length };
+      });
+      const avgRev = profile.reduce((t, p) => t + p.revenue, 0) / 12;
+      const offMonths = profile.filter((p) => p.revenue < avgRev * 0.6).map((p) => p.m);
+      const cash = result.balanceSheet && result.balanceSheet.available ? round2(result.balanceSheet.balances.filter((b) => b.role === 'cash').reduce((t, b) => t + b.balance, 0)) : result.cash ? result.cash.startingCash : 0;
+      const projection = [];
+      let run = cash, low = { cash, key: lastFull };
+      for (let i = 1; i <= 12; i++) {
+        const key = addMonth(lastFull, i);
+        const p = profile[+key.slice(5) - 1];
+        run = round2(run + p.flow);
+        projection.push({ key, label: `${p.label} ${key.slice(2, 4)}`, flow: p.flow, cash: run, off: offMonths.includes(p.m) });
+        if (run < low.cash) low = { cash: run, key, label: `${p.label} ${key.slice(0, 4)}` };
+      }
+      const be = result.breakeven;
+      const cushion = opts.cushion != null && !isNaN(+opts.cushion) && opts.cushion !== '' ? +opts.cushion : be ? Math.round(be.base.fixed / 1000) * 1000 : 0;
+      const offBurn = offMonths.length ? -profile.filter((p) => offMonths.includes(p.m)).reduce((t, p) => t + p.flow, 0) / offMonths.length : 0;
+      const firstOff = projection.findIndex((x) => x.off);
+      const peakLeft = firstOff > 0 ? projection.slice(0, firstOff).filter((x) => !x.off).length : 0;
+      const needed = round2(Math.max(0, cushion - low.cash));
+      const locDraws = txns.filter((t) => roleOf(accountClass, t.account) === 'cash' && t.amount > 0 && roleOf(accountClass, t.split) === 'loan' && LINE_OF_CREDIT.test(t.split || '')).map((t) => ({ date: t.dateStr, amount: round2(t.amount) }));
+      const ramp = profile.filter((p, i) => !offMonths.includes(p.m) && offMonths.includes(profile[(i + 11) % 12].m) && p.flow < 0);
+      offSeason = {
+        profile, offMonths, cash, asOf: lastFull, projection, low, cushion, needed,
+        runway: offBurn > 0 ? cash / offBurn : null, offBurn: round2(offBurn),
+        setAside: peakLeft ? round2(needed / peakLeft) : null, peakLeft, locDraws,
+        ramp: ramp.map((p) => ({ label: p.label, flow: p.flow })), years: Math.min(2, Math.floor(fullKeys.length / 12)),
+      };
+    }
+
+    // ---- 2. Service lines: revenue and direct costs by line, from the class when the export
+    // has one, else from the account name. Costs with no line are shared overhead.
+    const lines = new Map();
+    const line = (key) => { if (!lines.has(key)) lines.set(key, { key, revenue: 0, labor: 0, materials: 0, other: 0, prior: 0, months: new Map() }); return lines.get(key); };
+    let overhead = 0, revenue = 0;
+    const priorStart = ttm ? new Date(Date.UTC(ttm.start.getUTCFullYear() - 1, ttm.start.getUTCMonth(), 1)) : null;
+    for (const p of postings) {
+      const key = lineOf(p.t.className) || (p.cls === 'income' ? lineOf(p.category) : (p.cls === 'cogs' || p.cls === 'expense') && !WAGE_ACCOUNT.test(p.category) && !PAYROLL_TAX_ACCOUNT.test(p.category) && !OVERTIME_ACCOUNT.test(p.category) ? lineOf(p.category) : null);
+      if (priorStart && p.cls === 'income' && p.t.date >= priorStart && p.t.date < ttm.start) { if (key) line(key).prior += p.value; continue; }
+      if (!inTtm(p.t.date)) continue;
+      if (p.cls === 'income') {
+        revenue += p.value;
+        const l = line(key || 'other');
+        l.revenue += p.value;
+        const mm = p.t.dateStr.slice(0, 7); l.months.set(mm, (l.months.get(mm) || 0) + p.value);
+        continue;
+      }
+      if (!key) { overhead += p.value; continue; }
+      const l = line(key);
+      if (WAGE_ACCOUNT.test(p.category) || PAYROLL_TAX_ACCOUNT.test(p.category) || OVERTIME_ACCOUNT.test(p.category)) l.labor += p.value;
+      else if (p.cls === 'cogs') l.materials += p.value;
+      else l.other += p.value;
+    }
+    const known = [...lines.values()].filter((l) => l.key !== 'other' && l.revenue > 0);
+    let serviceLines = null;
+    if (known.length >= 2) {
+      const rows = [...lines.values()].filter((l) => l.revenue > 0 || l.labor + l.materials + l.other > 0).map((l) => {
+        const def = SERVICE_LINES.find((x) => x.key === l.key);
+        const direct = l.labor + l.materials + l.other;
+        const share = revenue ? l.revenue / revenue : 0;
+        const net = l.revenue - direct - overhead * share;
+        return {
+          key: l.key, label: def ? def.label : 'Other income', revenue: round2(l.revenue), labor: round2(l.labor), materials: round2(l.materials), other: round2(l.other),
+          direct: round2(direct), gross: round2(l.revenue - direct), grossMargin: l.revenue ? (l.revenue - direct) / l.revenue : null,
+          overhead: round2(overhead * share), net: round2(net), netMargin: l.revenue ? net / l.revenue : null, share,
+          prior: round2(l.prior), change: l.prior > 0 ? (l.revenue - l.prior) / l.prior : null,
+          activeMonths: [...l.months.entries()].filter(([, v]) => v > 0).map(([k]) => +k.slice(5)).sort((a, b) => a - b),
+        };
+      }).sort((a, b) => b.revenue - a.revenue);
+      const losing = rows.filter((r) => r.revenue > 0 && r.net < 0);
+      serviceLines = { rows, overhead: round2(overhead), revenue: round2(revenue), window: ttm ? `${isoDate(ttm.start)} to ${isoDate(ttm.end)}` : `${isoDate(range.first)} to ${isoDate(range.last)}`, losing, byClass: txns.some((t) => lineOf(t.className)) };
+    }
+
+    // ---- 3. Contract billing: customers billed a steady amount most months. Flags months a
+    // contract customer was expected but not billed, and prices unchanged for a year or more.
+    const inv = new Map();
+    for (const p of postings) {
+      if (p.cls !== 'income' || !/invoice|sales receipt/i.test(p.t.type) || p.value <= 0) continue;
+      const who = customerOf(p.t, 'income') || p.t.name;
+      if (!who) continue;
+      const cust = who.split(':')[0];
+      const k = `${cust}|${lineOf(p.t.className) || lineOf(p.category) || 'other'}`;
+      if (!inv.has(k)) inv.set(k, { name: cust, line: k.split('|')[1], rows: [] });
+      inv.get(k).rows.push({ key: p.t.dateStr.slice(0, 7), date: p.t.dateStr, amount: p.value });
+    }
+    const customers = [], missed = [], stale = [];
+    const windowStart = addMonth(lastFull, -11);
+    for (const c of inv.values()) {
+      const byMonth = new Map();
+      for (const r of c.rows) byMonth.set(r.key, round2((byMonth.get(r.key) || 0) + r.amount));
+      const recentMonths = [...byMonth.keys()].filter((k) => k >= windowStart && k <= lastFull).sort();
+      if (recentMonths.length < 4) continue;
+      // Steady: the amount repeats from one bill to the next, allowing a yearly price change.
+      const amts = recentMonths.map((k) => byMonth.get(k));
+      const changes = amts.slice(1).filter((a, i) => Math.abs(a - amts[i]) > amts[i] * 0.03).length;
+      if (changes > (amts.length >= 6 ? Math.max(1, Math.floor(amts.length / 5)) : 0)) continue;
+      const current = byMonth.get(recentMonths[recentMonths.length - 1]);
+      // When the price last changed: walk back while the monthly amount stays the same.
+      const all = [...byMonth.keys()].sort();
+      let since = all[all.length - 1];
+      for (let i = all.length - 1; i >= 0; i--) { if (Math.abs(byMonth.get(all[i]) - current) <= current * 0.005) since = all[i]; else break; }
+      const perYear = recentMonths.length;
+      const line2 = SERVICE_LINES.find((x) => x.key === c.line);
+      customers.push({ name: c.name, line: line2 ? line2.label : 'Other', amount: current, perYear, since });
+      // Missed: the last three full months, where the customer was billed a year earlier or
+      // on both sides of the gap.
+      for (let i = 0; i < 3; i++) {
+        const key = addMonth(lastFull, -i);
+        if (byMonth.has(key)) continue;
+        const lastYear = byMonth.has(addMonth(key, -12));
+        const gap = byMonth.has(addMonth(key, -1)) && byMonth.has(addMonth(key, 1));
+        if (lastYear || gap) missed.push({ name: c.name, line: line2 ? line2.label : 'Other', month: key, amount: current });
+      }
+      const monthsSince = (() => { const [y1, m1] = since.split('-').map(Number), [y2, m2] = lastFull.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); })();
+      if (monthsSince >= 12) stale.push({ name: c.name, line: line2 ? line2.label : 'Other', amount: current, since, months: monthsSince, perYear, yearly: round2(current * perYear * 0.05) });
+    }
+    missed.sort((a, b) => b.month.localeCompare(a.month) || b.amount - a.amount);
+    stale.sort((a, b) => b.yearly - a.yearly);
+    const contracts = customers.length ? { customers: customers.sort((a, b) => b.amount * b.perYear - a.amount * a.perYear), missed, stale, missedTotal: round2(missed.reduce((t, x) => t + x.amount, 0)), staleYearly: round2(stale.reduce((t, x) => t + x.yearly, 0)) } : null;
+
+    // ---- 4. Labor through the season.
+    const labor = new Map(), ot = new Map(), wages = new Map();
+    for (const p of postings) {
+      if (p.cls !== 'expense' && p.cls !== 'cogs') continue;
+      const k = p.t.dateStr.slice(0, 7);
+      if (k > lastFull) continue;
+      const isOt = OVERTIME_ACCOUNT.test(p.category), isTax = PAYROLL_TAX_ACCOUNT.test(p.category), isWage = !isTax && (WAGE_ACCOUNT.test(p.category) || isOt);
+      if (!isOt && !isTax && !isWage) continue;
+      labor.set(k, (labor.get(k) || 0) + p.value);
+      if (isOt) ot.set(k, (ot.get(k) || 0) + p.value);
+      if (isWage) wages.set(k, (wages.get(k) || 0) + p.value);
+    }
+    let laborSeason = null;
+    const lKeys = [...labor.keys()].sort().slice(-24);
+    if (lKeys.length >= 6) {
+      const band = { low: 0.3, high: 0.45 };
+      const monthsL = lKeys.map((k) => {
+        const rev = revByMonth.get(k) || 0, cost = labor.get(k) || 0, o = ot.get(k) || 0, w = wages.get(k) || 0;
+        return { key: k, label: `${monthName(+k.slice(5))} ${k.slice(2, 4)}`, revenue: round2(rev), labor: round2(cost), ratio: rev > 0 ? cost / rev : null, overtime: round2(o), otShare: w > 0 ? o / w : null };
+      });
+      const otVals = monthsL.map((m) => m.overtime).filter((v) => v > 0).sort((a, b) => a - b);
+      const otMed = otVals.length ? otVals[Math.floor(otVals.length / 2)] : 0;
+      const flags = [];
+      for (const m of monthsL.slice(-12)) {
+        if (m.revenue > 0 && m.labor > m.revenue) flags.push({ key: m.key, kind: 'Labor above revenue', text: `${m.label}: crews cost ${fmtWhole(m.labor)} against ${fmtWhole(m.revenue)} of revenue.` });
+        else if (m.ratio != null && m.ratio > band.high) flags.push({ key: m.key, kind: 'Labor high', text: `${m.label}: labor was ${fmtPct(m.ratio)} of revenue.` });
+        if (m.overtime > 0 && otMed > 0 && m.overtime > otMed * 1.8 && m.otShare > 0.15) flags.push({ key: m.key, kind: 'Overtime spike', text: `${m.label}: ${fmtWhole(m.overtime)} of overtime, ${fmtPct(m.otShare)} of wages.` });
+      }
+      const ttmMonths = monthsL.slice(-12);
+      const tRev = ttmMonths.reduce((t, m) => t + m.revenue, 0), tLab = ttmMonths.reduce((t, m) => t + m.labor, 0), tOt = ttmMonths.reduce((t, m) => t + m.overtime, 0);
+      laborSeason = { months: monthsL, band, flags, ratio: tRev ? tLab / tRev : null, overtime: round2(tOt), hasOvertime: ot.size > 0 };
+    }
+
+    // ---- 5. Equipment and fuel.
+    const eq = { fuel: 0, repairs: 0, vehicle: 0, rental: 0, depreciation: 0 };
+    const eqPrior = { fuel: 0, revenue: 0 };
+    for (const p of postings) {
+      if (p.cls !== 'expense' && p.cls !== 'cogs') continue;
+      const c = p.category;
+      const kind = /fuel|gas(oline)?\b|diesel/i.test(c) ? 'fuel' : NON_CASH_ACCOUNT.test(c) ? 'depreciation' : /rental|lease/i.test(c) ? 'rental' : /vehicle|truck|auto/i.test(c) && /repair|maint/i.test(c) ? 'vehicle' : /repair|maint/i.test(c) ? 'repairs' : null;
+      if (!kind) continue;
+      if (inTtm(p.t.date)) eq[kind] += p.value;
+      else if (priorStart && p.t.date >= priorStart && kind === 'fuel') eqPrior.fuel += p.value;
+    }
+    if (priorStart) for (const p of postings) if (p.cls === 'income' && p.t.date >= priorStart && p.t.date < ttm.start) eqPrior.revenue += p.value;
+    let loanPay = 0;
+    const loanNames = new Set();
+    for (const t of txns) {
+      if (t.amount >= 0 || !inTtm(t.date) || roleOf(accountClass, t.account) !== 'cash') continue;
+      const sr = roleOf(accountClass, t.split);
+      if (sr === 'loan' && !LINE_OF_CREDIT.test(t.split || '') && EQUIP_LOAN.test(t.split || '')) { loanPay += -t.amount; loanNames.add(t.split); }
+      else if (sr === 'expense' && INTEREST_ACCOUNT.test(t.split || '') && EQUIP_LOAN.test(counterpartyOf(t) || '')) loanPay += -t.amount;
+    }
+    // Repeat repairs on one machine: grouped by the machine named in the memo, else vendor.
+    const repairs = new Map();
+    const capitalize = [];
+    for (const p of postings) {
+      if ((p.cls !== 'expense' && p.cls !== 'cogs') || !inTtm(p.t.date)) continue;
+      const memo = p.t.memo || '';
+      if (p.value >= 2500 && EXPENSE_EQUIP_ACCOUNT.test(p.category) && !/rental|fuel|wage|payroll/i.test(p.category) && (EQUIP_WORD.test(memo) || EQUIP_WORD.test(p.t.name || '')) && !/repair|service|rebuild|replace|parts?\b/i.test(memo.replace(/\(new\)/i, ''))) {
+        capitalize.push({ date: p.t.dateStr, vendor: counterpartyOf(p.t) || '', memo, account: p.category, amount: round2(p.value) });
+      }
+      if (!/repair|maint/i.test(p.category) || /vehicle|truck|auto/i.test(p.category)) continue;
+      const m = memo.match(/^(.*?#\s?\d+)/) || memo.match(/^([^-]{4,40}?)\s-\s/);
+      const machine = m ? m[1].trim() : null;
+      if (!machine || !EQUIP_WORD.test(`${machine} ${memo}`) && !/#/.test(machine)) continue;
+      if (!repairs.has(machine)) repairs.set(machine, { machine, count: 0, total: 0, first: p.t.dateStr, last: p.t.dateStr });
+      const r = repairs.get(machine);
+      r.count++; r.total += p.value; if (p.t.dateStr < r.first) r.first = p.t.dateStr; if (p.t.dateStr > r.last) r.last = p.t.dateStr;
+    }
+    const repeat = [...repairs.values()].filter((r) => r.count >= 3 && r.total >= 2500).map((r) => ({ ...r, total: round2(r.total) })).sort((a, b) => b.total - a.total);
+    const eqRev = revenue || (result.profit && result.profit.totals.revenue) || 0;
+    const equipment = {
+      fuel: round2(eq.fuel), repairs: round2(eq.repairs), vehicle: round2(eq.vehicle), rental: round2(eq.rental), depreciation: round2(eq.depreciation), loanPayments: round2(loanPay), loans: [...loanNames],
+      total: round2(eq.fuel + eq.repairs + eq.vehicle + eq.rental + eq.depreciation + loanPay), revenue: round2(eqRev),
+      perDollar: eqRev ? (eq.fuel + eq.repairs + eq.vehicle + eq.rental + eq.depreciation + loanPay) / eqRev : null,
+      fuelShare: eqRev ? eq.fuel / eqRev : null, fuelSharePrior: eqPrior.revenue ? eqPrior.fuel / eqPrior.revenue : null,
+      repeat, capitalize,
+    };
+
+    return { offSeason, serviceLines, contracts, labor: laborSeason, equipment, asOf: lastFull };
+  }
+
   // ---------------------------------------------------------------- tax set-aside & owner pay
 
   const ENTITY = {
@@ -3206,6 +3465,12 @@
     { id: 'balance', label: 'Balance sheet check cleared', auto: true },
     { id: 'unusual', label: 'Unusual activity reviewed', auto: true },
     { id: 'jobs', label: 'Job costs assigned to jobs', auto: true },
+    { id: 'contractbilling', label: 'Every maintenance and snow contract billed for the month', auto: true, industry: 'landscaping' },
+    { id: 'snowbilled', label: 'Snow pushes and salting billed for every storm', industry: 'landscaping', months: [11, 12, 1, 2, 3, 4] },
+    { id: 'fuelcard', label: 'Fuel card statement matched and fuel coded', industry: 'landscaping' },
+    { id: 'equiploans', label: 'Equipment and truck loan statements matched, interest split from principal', industry: 'landscaping' },
+    { id: 'equipbuys', label: 'Equipment bought over $2,500 recorded as a fixed asset', auto: true, industry: 'landscaping' },
+    { id: 'crew', label: 'Seasonal crew hires and layoffs recorded in payroll', industry: 'landscaping', months: [3, 4, 5, 10, 11, 12] },
     { id: 'receipts', label: 'Receipts collected for meals, travel and large purchases', auto: true },
     { id: 'payroll', label: 'Payroll recorded and payroll liabilities checked' },
     { id: 'salestax', label: 'Sales tax reviewed and filed' },
@@ -3235,6 +3500,18 @@
       case 'receipts':
         if (!result.receipts || !result.receipts.items.length) return { status: 'na', note: 'No expenses need a receipt' };
         return count(result.receipts.open, 'still needed');
+      case 'contractbilling': {
+        const c = result.landscape && result.landscape.contracts;
+        if (!c) return { status: 'na', note: 'No regular contract billing found' };
+        const miss = c.missed.filter((x) => x.month === month);
+        return miss.length ? { status: 'open', note: `${miss.length} contract${miss.length === 1 ? '' : 's'} not billed` } : { status: 'clear', note: 'All contracts billed' };
+      }
+      case 'equipbuys': {
+        const e = result.landscape && result.landscape.equipment;
+        if (!e) return { status: 'na', note: '' };
+        const n = e.capitalize.filter((x) => x.date.slice(0, 7) === month).length;
+        return n ? { status: 'open', note: `${n} purchase${n === 1 ? '' : 's'} expensed` } : { status: 'clear', note: 'None expensed' };
+      }
       case 'tieout':
         if (!result.tieOut) return { status: 'open', note: 'Add the P&L export to check' };
         return result.tieOut.ties ? { status: 'clear', note: `Ties for ${result.tieOut.period}` } : { status: 'open', note: 'Differences found' };
@@ -3257,6 +3534,8 @@
     const items = [];
     for (const s of CLOSE_STEPS) {
       if (s.id === 'salestax' && !hasSalesTax && !done.salestax) continue;
+      if (s.industry && s.industry !== result.industry && !done[s.id]) continue;
+      if (s.months && !s.months.includes(+String(month).slice(5)) && !done[s.id]) continue;
       const auto = s.auto ? autoStatus(result, s.id, month) : null;
       if (auto && auto.status === 'na') continue;
       const doneAt = done[s.id] || null;
@@ -3306,6 +3585,8 @@
       netIncome12: last12.length ? round2(last12.reduce((s, m) => s + m.netIncome, 0)) : result.profit.totals.netIncome,
       months12: last12.length,
       close: cl ? { month: cl.month, done: cl.done, total: cl.total } : null,
+      industry: result.industry || 'general',
+      landscape: result.landscape && result.landscape.contracts ? { missed: result.landscape.contracts.missed.length, stale: result.landscape.contracts.stale.length } : null,
     };
   }
 
@@ -3733,6 +4014,10 @@
     const cushion = opts.cushion != null && opts.cushion !== '' && !isNaN(+opts.cushion) ? +opts.cushion : breakeven ? Math.round(breakeven.base.fixed / 1000) * 1000 : 0;
     out.tax = taxPlan(txns, accountClass, out, Object.assign({ cushion }, opts.tax));
     out.lender = lenderPackage(txns, accountClass, out);
+    // Industry: what the bookkeeper chose for this client, else a guess from the names.
+    out.detectedIndustry = detectIndustry(parsed.meta, out.accounts ? out.accounts.map((a) => a.name || a.account || a) : []);
+    out.industry = opts.industry || out.detectedIndustry;
+    if (out.industry === 'landscaping') out.landscape = landscapeAnalysis(txns, accountClass, out, { cushion: opts.cushion });
     return out;
   }
 
@@ -4475,6 +4760,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });
