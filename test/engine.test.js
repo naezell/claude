@@ -840,3 +840,37 @@ test('readExport recognizes each QuickBooks report', () => {
   assert.equal(read('harbor-pine-expenses-with-attachments.csv'), 'attachments');
   assert.throws(() => E.readExport('Date,Amount\n'), /no dated transactions/);
 });
+
+test('lender package: statements, ratios, payroll checks, and a report without review notes by default', () => {
+  const load = (name) => {
+    const dir = path.join(__dirname, '..', 'sample-data', name.startsWith('harbor') ? '' : 'test-clients');
+    const read = (f) => fs.readFileSync(path.join(dir, `${name}-${f}.csv`), 'utf8');
+    return E.analyze(E.parseTransactions(read('transaction-detail')), { chart: E.parseChartOfAccounts(read('chart-of-accounts')), loan: { amount: 150000, rate: 10.5, years: 10 } });
+  };
+  const rb = load('riverbend');
+  const L = rb.lender;
+  assert.deepEqual(L.statement.columns.map((c) => c.label), ['2025', '2026 (8 mo)', 'Last 12 months']);
+  // The statement adds up.
+  for (const c of L.statement.columns) assert.ok(Math.abs(L.statement.totals.income[c.key] - L.statement.totals.cogs[c.key] - L.statement.totals.expenses[c.key] - L.statement.totals.net[c.key]) < 1);
+  assert.ok(L.ratios.current > 2 && L.ratios.current < 4, `current ${L.ratios.current}`);
+  assert.equal(L.balance.longTerm[0].account, 'Ford Credit Truck Loan');
+  assert.ok(Math.abs(L.payroll.taxRate - 0.0765) < 0.001);
+  // Riverbend's payroll lines up; its balance sheet problems are listed.
+  assert.ok(!L.issues.some((x) => /payroll/i.test(x.title)), L.issues.map((x) => x.title).join('; '));
+  assert.ok(L.issues.some((x) => x.title === 'Undeposited Funds'));
+  assert.ok(L.issues.some((x) => /Sales Tax Payable/.test(x.title)));
+  // Harbor & Pine records wages through Gusto with no employer payroll taxes.
+  const hp = load('harbor-pine');
+  const pay = hp.lender.issues.find((x) => x.title === 'Wages without employer payroll taxes');
+  assert.ok(pay && pay.severity === 'high');
+  assert.equal(hp.lender.issues[0].severity, 'high');
+  // The report: key measures, the request, statements; review notes only when asked.
+  const opts = { firm: { name: '7D Business Solutions' }, request: { amount: 150000, purpose: 'Second truck', lender: 'First Community Bank' } };
+  const doc = E.buildLenderReport(rb, opts);
+  for (const s of ['Key measures lenders test', 'Debt service coverage', 'Coverage with the new loan', 'Income statement', 'Balance summary', 'Debt schedule', 'First Community Bank', 'without audit or review']) assert.ok(doc.includes(s), s);
+  assert.ok(!doc.includes('Review notes'));
+  assert.ok(E.buildLenderReport(rb, { ...opts, includeReview: true }).includes('Review notes (not for the lender)'));
+  assert.equal(E.lenderRead('dscr', 1.3), 'Meets');
+  assert.equal(E.lenderRead('dscr', 1.15), 'Borderline');
+  assert.equal(E.lenderRead('leverage', 5), 'Below');
+});

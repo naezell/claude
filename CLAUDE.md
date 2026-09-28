@@ -54,6 +54,12 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   sections to `<${Arrange} page=... parts=${[[id, label, content], ...]} />`; KPI tiles and
   input panels stay outside it. A new section needs a stable id and a plain label there;
   never rename an existing id, or saved layouts lose it. Layouts live in `ll.layout`.
+- The page opens on **Home** (`src/ui/home.js`, `source.kind === 'home'`), built from saved
+  client profiles: tasks waiting on Mark and on clients. Tests reach the sample data through
+  `showSample(page)`.
+- Lender-ready package: `lenderPackage()` in the engine (statements by year, ratios, payroll
+  and balance checks, `result.lender`) and `buildLenderReport()`; the Tax & lending tab's
+  `PackagePanel` and `LenderDrawer`. The lender copy must never include the review notes.
 - Branding comes from `src/firm.js`. Settings (Google client ID, support email) are in
   `src/config.js`.
 

@@ -2340,6 +2340,141 @@
     };
   }
 
+  // ---------------------------------------------------------------- lender package
+
+  const WAGE_ACCOUNT = /wage|salar|officer comp|payroll(?!.*tax)/i;
+  const PAYROLL_TAX_ACCOUNT = /payroll.*tax|employer tax|fica|futa|suta|social security|medicare/i;
+  const TAX_PAYEE = /\birs\b|eftps|internal revenue|dept\.? of (revenue|labor)|department of (revenue|labor)|state tax|employment dev/i;
+  const CURRENT_ASSET_NAME = /undeposited|inventory|prepaid|receivable|deposit|petty cash/i;
+  const CURRENT_LIAB_NAME = /payable|accrued|deferred|liabilit|gift card|customer deposit/i;
+  const LINE_OF_CREDIT = /line of credit|credit line|\bloc\b|revolv/i;
+
+  // Everything a lender-ready package needs beyond the loan readiness figures: statements by
+  // year, a balance summary, ratios lenders test, and problems to fix before the bank sees them
+  // (payroll that doesn't line up with payroll taxes, balances that look wrong, and so on).
+  function lenderPackage(txns, accountClass, result) {
+    const ln = result.loan;
+    if (!ln) return null;
+    const range = dateRange(txns, result.meta);
+    const ttm = trailingYear(range.first, range.last);
+    const postings = toPostings(txns, accountClass);
+
+    // Income statement: one column per calendar year in the export (the last may be partial),
+    // plus the trailing twelve months when there is enough history.
+    const years = [...new Set(postings.map((p) => p.t.date.getUTCFullYear()))].sort();
+    const cols = years.map((y) => {
+      const start = new Date(Date.UTC(y, 0, 1)), end = new Date(Date.UTC(y, 11, 31));
+      const from = start < range.first ? range.first : start, to = end > range.last ? range.last : end;
+      const months = Math.max(1, Math.round(monthsCovered(from, to)));
+      return { key: String(y), label: months >= 12 ? String(y) : `${y} (${months} mo)`, from, to, months };
+    });
+    if (ttm) cols.push({ key: 'ttm', label: 'Last 12 months', from: ttm.start, to: ttm.end, months: 12 });
+    const lines = new Map();
+    for (const p of postings) {
+      const k = `${p.cls}|${p.category}`;
+      if (!lines.has(k)) lines.set(k, { cls: p.cls, name: p.category, v: {} });
+      const line = lines.get(k);
+      for (const c of cols) {
+        if (p.t.date < c.from || p.t.date > c.to) continue;
+        line.v[c.key] = (line.v[c.key] || 0) + p.value;
+      }
+    }
+    const group = (cls) => [...lines.values()].filter((l) => l.cls === cls && cols.some((c) => Math.abs(l.v[c.key] || 0) >= 0.5)).sort((a, b) => a.name.localeCompare(b.name))
+      .map((l) => ({ name: l.name, v: Object.fromEntries(cols.map((c) => [c.key, round2(l.v[c.key] || 0)])) }));
+    const sum = (rows) => Object.fromEntries(cols.map((c) => [c.key, round2(rows.reduce((t, r) => t + (r.v[c.key] || 0), 0))]));
+    const income = group('income'), cogs = group('cogs'), expenses = group('expense');
+    const totals = { income: sum(income), cogs: sum(cogs), expenses: sum(expenses) };
+    totals.gross = Object.fromEntries(cols.map((c) => [c.key, round2(totals.income[c.key] - totals.cogs[c.key])]));
+    totals.net = Object.fromEntries(cols.map((c) => [c.key, round2(totals.gross[c.key] - totals.expenses[c.key])]));
+    const statement = { columns: cols.map(({ key, label, months }) => ({ key, label, months })), income, cogs, expenses, totals };
+
+    // Balance summary from the account balances at the end of the export.
+    const bs = result.balanceSheet && result.balanceSheet.available ? result.balanceSheet : null;
+    let balance = null, ratios = {};
+    if (bs) {
+      const rows = bs.balances.filter((b) => Math.abs(b.balance) >= 0.5);
+      const assets = [], currentLiabs = [], longTerm = [];
+      for (const b of rows) {
+        if (b.role === 'cash' || b.role === 'ar') assets.push({ ...b, current: true });
+        else if (b.role === 'otherbalance' && CURRENT_ASSET_NAME.test(b.account) && b.balance > 0) assets.push({ ...b, current: true });
+        else if (b.role === 'ap' || b.role === 'card' || b.role === 'salestax' || b.role === 'payrolltax') currentLiabs.push(b);
+        else if (b.role === 'loan') (LINE_OF_CREDIT.test(b.account) ? currentLiabs : longTerm).push(b);
+        else if (b.role === 'otherbalance' && CURRENT_LIAB_NAME.test(b.account)) currentLiabs.push(b);
+      }
+      const total = (xs) => round2(xs.reduce((t, b) => t + b.balance, 0));
+      const cash = total(assets.filter((b) => b.role === 'cash'));
+      const ar = total(assets.filter((b) => b.role === 'ar'));
+      const ca = total(assets), cl = total(currentLiabs), ltd = total(longTerm);
+      const debt = round2(total(rows.filter((b) => b.role === 'loan')));
+      balance = { asOf: bs.asOf, assets, currentLiabs, longTerm, currentAssets: ca, currentLiabilities: cl, longTermDebt: ltd, totalDebt: debt };
+      ratios.current = cl > 0 ? ca / cl : null;
+      ratios.quick = cl > 0 ? (cash + ar) / cl : null;
+      ratios.workingCapital = round2(ca - cl);
+      const ebitda = round2(ln.netIncome + ln.interest + ln.nonCash);
+      ratios.ebitda = ebitda;
+      ratios.leverage = debt > 0 && ebitda > 0 ? debt / ebitda : null;
+    }
+
+    // Payroll: wages against employer payroll taxes, tax payments, and what is still owed.
+    const inTtm = (d) => (ttm ? d >= ttm.start && d <= ttm.end : true);
+    let wages = 0, ptax = 0;
+    const wageMonths = new Map();
+    for (const p of postings) {
+      if (p.cls !== 'expense' && p.cls !== 'cogs') continue;
+      const isTax = PAYROLL_TAX_ACCOUNT.test(p.category);
+      const isWage = !isTax && WAGE_ACCOUNT.test(p.category);
+      if (!inTtm(p.t.date)) continue;
+      if (isTax) ptax += p.value;
+      if (isWage) { wages += p.value; const m = p.t.dateStr.slice(0, 7); wageMonths.set(m, (wageMonths.get(m) || 0) + p.value); }
+    }
+    const taxPaidMonths = new Set();
+    for (const t of txns) {
+      if (t.amount >= 0 || roleOf(accountClass, t.account) !== 'cash') continue;
+      if (roleOf(accountClass, t.split) === 'payrolltax' || /tax payment|liability check|payroll tax/i.test(t.type) || TAX_PAYEE.test(counterpartyOf(t) || '')) taxPaidMonths.add(t.dateStr.slice(0, 7));
+    }
+    const nextMonth = (m) => { const [y, mo] = m.split('-').map(Number); return mo === 12 ? `${y + 1}-01` : `${y}-${String(mo + 1).padStart(2, '0')}`; };
+    const lastMonth = isoDate(range.last).slice(0, 7);
+    const unpaidMonths = [...wageMonths.keys()].filter((m) => m < lastMonth && !taxPaidMonths.has(m) && !taxPaidMonths.has(nextMonth(m))).sort();
+    const payrollBal = bs ? bs.balances.filter((b) => b.role === 'payrolltax').reduce((t, b) => t + b.balance, 0) : null;
+    const payroll = { wages: round2(wages), taxes: round2(ptax), taxRate: wages > 0 ? ptax / wages : null, unpaidMonths, liability: payrollBal == null ? null : round2(payrollBal) };
+
+    // Things to fix before the package goes to a lender, most serious first.
+    const issues = [];
+    const add = (severity, title, detail) => issues.push({ severity, title, detail });
+    if (result.tieOut && !result.tieOut.ties) add('high', 'Numbers do not tie to the QuickBooks P&L', 'The figures here differ from the Profit and Loss report exported from QuickBooks. Lenders will compare the two; find the difference first (Ties to QuickBooks on the audit tab).');
+    if (wages > 0 && ptax <= 0) add('high', 'Wages without employer payroll taxes', `${fmtWhole(wages)} of wages but no employer payroll tax expense in ${ln.windowLabel}. Lenders check payroll against the quarterly 941 filings; if a payroll service pays the taxes, their entries are missing from the books.`);
+    else if (payroll.taxRate != null && (payroll.taxRate < 0.05 || payroll.taxRate > 0.16)) add('medium', 'Payroll taxes look out of line with wages', `Employer payroll taxes are ${fmtPct(payroll.taxRate)} of wages; about 8 to 12% is usual. Check that wages and taxes are coded to the right accounts and match the payroll reports.`);
+    if (unpaidMonths.length && ptax > 0) add('medium', 'Months with wages but no payroll tax payment', `No payment to the IRS or state was found in or just after ${unpaidMonths.slice(0, 6).map(monthLabel).join(', ')}${unpaidMonths.length > 6 ? ` and ${unpaidMonths.length - 6} more` : ''}. Confirm the deposits were made and recorded.`);
+    if (payrollBal != null && ptax > 0) {
+      // What normally goes into the liability each month (employer taxes plus withholding); a
+      // month or so owed at any time is normal, since deposits follow the payroll.
+      let accrued = 0;
+      for (const t of txns) if (roleOf(accountClass, t.account) === 'payrolltax' && t.amount > 0 && inTtm(t.date)) accrued += t.amount;
+      const monthly = accrued / 12;
+      if (monthly > 0 && payrollBal > Math.max(1000, monthly * 2)) add('high', 'Payroll liabilities are building up', `${fmtWhole(payrollBal)} owed in payroll liabilities, about ${(payrollBal / monthly).toFixed(1)} months of what normally builds up. Unpaid payroll taxes stop most loans; confirm they were paid or fix the entries.`);
+      else if (payrollBal < -100) add('medium', 'Payroll liabilities are negative', `${fmtWhole(payrollBal)}: more paid than recorded as owed. Usually tax payments coded to the liability without the matching payroll entries.`);
+    }
+    for (const it of (bs ? bs.items : []).filter((x) => !(x.review && (x.review.status === 'ok' || x.review.status === 'fixed')))) add(/undeposited|opening balance|negative|below zero/i.test(`${it.kind} ${it.detail || ''}`) ? 'medium' : 'low', it.kind === it.account ? it.kind : `${it.kind}: ${it.account}`, it.detail || fmtMoney(it.amount));
+    const openFlags = result.audit.open.uncategorized + result.audit.open.duplicates + result.audit.open.mismatches;
+    if (openFlags) add(openFlags > 5 ? 'high' : 'medium', 'Open bookkeeping flags', `${result.audit.open.uncategorized} uncategorized, ${result.audit.open.duplicates} possible duplicates and ${result.audit.open.mismatches} miscoded entries are still open. Clear them so the statements match the bank statements.`);
+    if (result.closed && result.closed.changedMonths) add('medium', 'Closed months were changed', `${result.closed.changedEntries} entries in months already closed have changed since the close. A lender who sees two versions of the same period will ask why.`);
+    if (bs) {
+      const loans = bs.balances.filter((b) => b.role === 'loan' && b.balance > 1);
+      if (loans.length && ln.interest <= 0) add('medium', 'Loans with no interest expense', `${loans.map((b) => b.account).join(', ')} ${loans.length === 1 ? 'has' : 'have'} a balance but no interest was recorded. Payments may be coded entirely to principal.`);
+      if (!loans.length && ln.interest > 0) add('low', 'Interest with no loan on the books', `${fmtWhole(ln.interest)} of interest but no loan balance. Add the loan to the balance sheet so the debt schedule is complete.`);
+      for (const b of bs.balances.filter((x) => x.role === 'cash' && x.balance < -1)) add('medium', `${b.account} is overdrawn on the books`, `${fmtMoney(b.balance)} at ${bs.asOf}. Reconcile the account before sending statements.`);
+    }
+    if (ln.draws > Math.max(0, ln.netIncome) && ln.draws > 0) add('medium', 'Owner draws exceed profit', `${fmtWhole(ln.draws)} taken against ${fmtWhole(ln.netIncome)} of net income. Lenders read this as cash leaving the business.`);
+    const personal = result.subs ? result.subs.list.filter((x) => (x.flags || []).some((f) => /personal/i.test(f.kind || f))) : [];
+    if (personal.length) add('low', 'Possible personal expenses', `${personal.map((x) => x.vendor).join(', ')} ${personal.length === 1 ? 'looks' : 'look'} personal. Reclassify ${personal.length === 1 ? 'it' : 'them'} or be ready to add ${personal.length === 1 ? 'it' : 'them'} back.`);
+    const age = Math.round((Date.now() - range.last) / DAY);
+    if (age > 90) add('medium', 'Statements are not current', `The books run to ${isoDate(range.last)}. Most lenders want interim statements within 60 to 90 days.`);
+    const order = { high: 0, medium: 1, low: 2 };
+    issues.sort((a, b) => order[a.severity] - order[b.severity]);
+
+    return { statement, balance, ratios, payroll, issues, asOf: isoDate(range.last) };
+  }
+
   // ---------------------------------------------------------------- tax set-aside & owner pay
 
   const ENTITY = {
@@ -3597,6 +3732,7 @@
     out.loan = loanReadiness(txns, accountClass, out, opts.loan);
     const cushion = opts.cushion != null && opts.cushion !== '' && !isNaN(+opts.cushion) ? +opts.cushion : breakeven ? Math.round(breakeven.base.fixed / 1000) * 1000 : 0;
     out.tax = taxPlan(txns, accountClass, out, Object.assign({ cushion }, opts.tax));
+    out.lender = lenderPackage(txns, accountClass, out);
     return out;
   }
 
@@ -3707,6 +3843,46 @@
     return firm.name && !lower(who).includes(lower(firm.name)) ? `${who}, ${firm.name}` : who;
   };
 
+  // Styles shared by the client report and the lender package: plain, printable, the firm's
+  // colors on the header.
+  function reportCss(firm) {
+    return `
+      @page { margin: 16mm 14mm; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fff; color: ${RC.ink}; font: 13px/1.5 -apple-system, "Segoe UI", system-ui, Roboto, sans-serif; }
+      main { max-width: 760px; margin: 0 auto; padding: 28px 20px 40px; }
+      header { border-bottom: 3px solid ${firm.color}; padding-bottom: 12px; margin-bottom: 18px; display: flex; align-items: center; gap: 16px; }
+      .head-text { flex: 1; min-width: 0; }
+      .logo { width: 84px; height: auto; flex: none; }
+      .brand { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: ${firm.color}; font-weight: 600; }
+      .firm { margin-top: 28px; font-size: 12px; font-weight: 600; color: ${firm.color}; }
+      .firm a { color: ${firm.color2}; text-decoration: none; }
+      h1 { margin: 4px 0 2px; font-size: 26px; line-height: 1.2; }
+      .meta { color: ${RC.ink2}; font-size: 12px; }
+      h2 { font-size: 16px; margin: 22px 0 8px; }
+      h2.part { margin-top: 30px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: ${RC.ink2}; }
+      h3 { font-size: 14px; margin: 18px 0 6px; }
+      .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+      .tile { border: 1px solid ${RC.hair}; border-radius: 8px; padding: 10px 12px; }
+      .tile.bad { border-color: ${RC.neg}; } .tile.warn { border-color: ${RC.warn}; } .tile.good { border-color: ${RC.good}; }
+      .tl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: ${RC.muted}; }
+      .tv { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+      .ts { font-size: 11.5px; color: ${RC.ink2}; }
+      .legend { display: flex; gap: 14px; font-size: 11.5px; color: ${RC.ink2}; margin-bottom: 4px; }
+      .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+      ul.points { padding-left: 18px; margin: 8px 0 0; } ul.points li { margin: 3px 0; }
+      ul.points li.bad::marker { color: ${RC.neg}; } ul.points li.good::marker { color: ${RC.good}; }
+      ol.steps { padding-left: 20px; margin: 6px 0; } ol.steps li { margin: 4px 0; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 6px; }
+      th { text-align: left; font-weight: 600; color: ${RC.ink2}; border-bottom: 1.5px solid ${RC.ink2}; padding: 5px 6px; font-size: 11px; }
+      td { border-bottom: 1px solid ${RC.hair}; padding: 5px 6px; vertical-align: top; }
+      th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .small { font-size: 11px; color: ${RC.muted}; }
+      section.keep, svg, tr { break-inside: avoid; }
+      footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 11px; color: ${RC.muted}; }
+    `;
+  }
+
   function buildHtmlReport(result, opts) {
     opts = opts || {};
     const firm = firmOf(opts);
@@ -3785,42 +3961,143 @@
     if (firm.name || firm.website) h.push(`<div class="firm">${esc(by || firm.name)}${firm.website ? ` · <a href="${esc(firm.href)}">${esc(firm.website)}</a>` : ''}</div>`);
     h.push(`<footer>Figures come from the client's QuickBooks exports. Flags are leads for review, not confirmed errors. Tax and loan figures are planning estimates, not tax, legal or lending advice.</footer>`);
 
-    const css = `
-      @page { margin: 16mm 14mm; }
-      * { box-sizing: border-box; }
-      body { margin: 0; background: #fff; color: ${RC.ink}; font: 13px/1.5 -apple-system, "Segoe UI", system-ui, Roboto, sans-serif; }
-      main { max-width: 760px; margin: 0 auto; padding: 28px 20px 40px; }
-      header { border-bottom: 3px solid ${firm.color}; padding-bottom: 12px; margin-bottom: 18px; display: flex; align-items: center; gap: 16px; }
-      .head-text { flex: 1; min-width: 0; }
-      .logo { width: 84px; height: auto; flex: none; }
-      .brand { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: ${firm.color}; font-weight: 600; }
-      .firm { margin-top: 28px; font-size: 12px; font-weight: 600; color: ${firm.color}; }
-      .firm a { color: ${firm.color2}; text-decoration: none; }
-      h1 { margin: 4px 0 2px; font-size: 26px; line-height: 1.2; }
-      .meta { color: ${RC.ink2}; font-size: 12px; }
-      h2 { font-size: 16px; margin: 22px 0 8px; }
-      h2.part { margin-top: 30px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: ${RC.ink2}; }
-      h3 { font-size: 14px; margin: 18px 0 6px; }
-      .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
-      .tile { border: 1px solid ${RC.hair}; border-radius: 8px; padding: 10px 12px; }
-      .tile.bad { border-color: ${RC.neg}; } .tile.warn { border-color: ${RC.warn}; } .tile.good { border-color: ${RC.good}; }
-      .tl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: ${RC.muted}; }
-      .tv { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-      .ts { font-size: 11.5px; color: ${RC.ink2}; }
-      .legend { display: flex; gap: 14px; font-size: 11.5px; color: ${RC.ink2}; margin-bottom: 4px; }
-      .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-      ul.points { padding-left: 18px; margin: 8px 0 0; } ul.points li { margin: 3px 0; }
-      ul.points li.bad::marker { color: ${RC.neg}; } ul.points li.good::marker { color: ${RC.good}; }
-      ol.steps { padding-left: 20px; margin: 6px 0; } ol.steps li { margin: 4px 0; }
-      table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 6px; }
-      th { text-align: left; font-weight: 600; color: ${RC.ink2}; border-bottom: 1.5px solid ${RC.ink2}; padding: 5px 6px; font-size: 11px; }
-      td { border-bottom: 1px solid ${RC.hair}; padding: 5px 6px; vertical-align: top; }
-      th.n, td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-      .small { font-size: 11px; color: ${RC.muted}; }
-      section.keep, svg, tr { break-inside: avoid; }
-      footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 11px; color: ${RC.muted}; }
-    `;
+    const css = reportCss(firm);
     return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(client)}: ${full ? 'financial review' : 'financial summary'}</title><style>${css}</style></head><body><main>${h.join('\n')}</main></body></html>`;
+  }
+
+  // How a ratio reads against what lenders usually look for.
+  const LENDER_TESTS = {
+    dscr: { label: 'Debt service coverage', target: 1.25, better: 'higher', note: 'Cash available for debt payments ÷ yearly loan payments. SBA and most banks look for 1.25 or more.' },
+    proForma: { label: 'Coverage with the new loan', target: 1.25, better: 'higher', note: 'The same test including the requested loan’s payments.' },
+    current: { label: 'Current ratio', target: 1.2, better: 'higher', note: 'Current assets ÷ current liabilities. 1.2 or more is usually expected.' },
+    quick: { label: 'Quick ratio', target: 1.0, better: 'higher', note: 'Cash and receivables ÷ current liabilities.' },
+    leverage: { label: 'Debt to EBITDA', target: 3.0, better: 'lower', note: 'Total debt ÷ earnings before interest, taxes, depreciation and amortization. Under 3 is comfortable for most lenders.' },
+  };
+  function lenderRead(key, value) {
+    const t = LENDER_TESTS[key];
+    if (value == null || !isFinite(value)) return 'n/a';
+    const ok = t.better === 'higher' ? value >= t.target : value <= t.target;
+    const close = t.better === 'higher' ? value >= t.target * 0.9 : value <= t.target * 1.25;
+    return ok ? 'Meets' : close ? 'Borderline' : 'Below';
+  }
+
+  // The lender-ready package: statements, ratios and a debt schedule laid out the way a bank's
+  // underwriter reads them. Review notes (problems to fix first) are only included when asked,
+  // for the bookkeeper's own copy; the version for the bank leaves them out.
+  function buildLenderReport(result, opts) {
+    opts = opts || {};
+    const L = result.lender, ln = result.loan;
+    if (!L || !ln) return '';
+    const firm = firmOf(opts);
+    const client = opts.clientName || result.meta.company || 'Client';
+    const req = opts.request || {};
+    const today = new Date().toISOString().slice(0, 10);
+    const by = signature(opts);
+    const cols = L.statement.columns;
+    const h = [];
+    const pill = (read) => `<span class="read ${read === 'Meets' ? 'ok' : read === 'Borderline' ? 'mid' : read === 'Below' ? 'bad' : ''}">${esc(read)}</span>`;
+    const ratio = (v, digits) => (v == null || !isFinite(v) ? 'n/a' : `${v.toFixed(digits == null ? 2 : digits)}x`);
+
+    h.push(`<header><div class="head-text"><div class="brand">${esc(firm.name || opts.preparer || 'Financial package')}</div><h1>${esc(client)}</h1><div class="meta">Lender-ready financial package · books through ${esc(L.asOf)} · prepared ${esc(today)}${by ? ` by ${esc(by)}` : ''}</div></div>${firm.logo ? `<img class="logo" src="${esc(firm.logo)}" alt="${esc(firm.name || 'Logo')}">` : ''}</header>`);
+
+    // The request.
+    const amount = +req.amount || ln.proposal.amount || 0;
+    if (amount || req.purpose || req.lender) {
+      h.push(`<section class="keep request"><h2>Loan request</h2>${table(['', ''], [
+        amount ? ['Amount requested', fmtWhole(amount)] : null,
+        req.purpose ? ['Purpose', req.purpose] : null,
+        req.lender ? ['Lender', req.lender] : null,
+        amount ? ['Assumed terms', `${ln.proposal.rate.toFixed(2)}% over ${ln.proposal.years} years, about ${fmtWhole(ln.proposal.payment)} a month`] : null,
+      ].filter(Boolean), 2)}</section>`);
+    }
+
+    // Key measures.
+    const measures = [
+      ['dscr', ln.dscr, ln.dscr == null ? 'No existing loan payments found' : `${fmtWhole(ln.cashAvailable)} available ÷ ${fmtWhole(ln.debtService)} of payments`],
+      amount ? ['proForma', ln.proposal.proForma, `Adds ${fmtWhole(ln.proposal.payment * 12)} a year of payments`] : null,
+      ['current', L.ratios.current, L.balance ? `${fmtWhole(L.balance.currentAssets)} ÷ ${fmtWhole(L.balance.currentLiabilities)}` : 'Needs the Transaction Detail by Account export'],
+      ['quick', L.ratios.quick, ''],
+      ['leverage', L.ratios.leverage, L.balance ? `${fmtWhole(L.balance.totalDebt)} of debt ÷ ${fmtWhole(L.ratios.ebitda)} EBITDA` : ''],
+    ].filter(Boolean);
+    h.push('<section class="keep"><h2>Key measures lenders test</h2><table><thead><tr><th>Measure</th><th class="n">Result</th><th class="n">Looks for</th><th>Read</th><th>How it is worked out</th></tr></thead><tbody>');
+    for (const [key, v, how] of measures) {
+      const t = LENDER_TESTS[key];
+      h.push(`<tr><td>${esc(t.label)}</td><td class="n">${esc(ratio(v))}</td><td class="n">${t.better === 'higher' ? '≥' : '≤'} ${esc(t.target.toFixed(2))}</td><td>${pill(lenderRead(key, v))}</td><td class="small">${esc(how || t.note)}</td></tr>`);
+    }
+    h.push('</tbody></table>');
+    const ttmKey = cols.some((c) => c.key === 'ttm') ? 'ttm' : cols[cols.length - 1].key;
+    const rev = L.statement.totals.income[ttmKey], net = L.statement.totals.net[ttmKey];
+    h.push(`<p class="small">${ttmKey === 'ttm' ? 'Last 12 months' : esc(cols[cols.length - 1].label)}: revenue ${esc(fmtWhole(rev))}, net income ${esc(fmtWhole(net))} (${esc(fmtPct(rev ? net / rev : null))} of revenue)${L.balance ? `, working capital ${esc(fmtWhole(L.ratios.workingCapital))}` : ''}. Largest supportable new loan at 1.25 coverage and these terms: about ${esc(fmtWhole(ln.maxLoan))}.</p></section>`);
+
+    // Review notes: only in the bookkeeper's copy.
+    if (opts.includeReview && L.issues.length) {
+      h.push(`<section class="review"><h2>Review notes (not for the lender)</h2><p class="small">Problems to fix or be ready to explain before sending. Remove this page, or download the lender copy, before it goes out.</p><ol class="steps">${L.issues.map((x) => `<li><strong>${esc(x.title)}</strong> <span class="sev ${x.severity}">${esc(x.severity)}</span><br>${esc(x.detail)}</li>`).join('')}</ol></section>`);
+    }
+
+    // Income statement.
+    const money = (v) => (Math.abs(v || 0) < 0.5 ? '-' : fmtWhole(v));
+    const row = (label, v, cls) => `<tr${cls ? ` class="${cls}"` : ''}><td>${esc(label)}</td>${cols.map((c) => `<td class="n">${money(v[c.key])}</td>`).join('')}</tr>`;
+    const head = `<tr><th></th>${cols.map((c) => `<th class="n">${esc(c.label)}</th>`).join('')}</tr>`;
+    const st = L.statement;
+    const pl = [];
+    pl.push(`<tr class="sub"><td colspan="${cols.length + 1}">Income</td></tr>`, ...st.income.map((r) => row(r.name, r.v)), row('Total income', st.totals.income, 'tot'));
+    if (st.cogs.length) pl.push(`<tr class="sub"><td colspan="${cols.length + 1}">Cost of goods sold</td></tr>`, ...st.cogs.map((r) => row(r.name, r.v)), row('Total cost of goods sold', st.totals.cogs, 'tot'), row('Gross profit', st.totals.gross, 'tot'));
+    pl.push(`<tr class="sub"><td colspan="${cols.length + 1}">Expenses</td></tr>`, ...st.expenses.map((r) => row(r.name, r.v)), row('Total expenses', st.totals.expenses, 'tot'), row('Net income', st.totals.net, 'grand'));
+    h.push(`<section><h2>Income statement</h2><table class="stmt"><thead>${head}</thead><tbody>${pl.join('')}</tbody></table><p class="small">Cash basis as recorded in the books; partial years show the months covered.</p></section>`);
+
+    // Cash available for debt service.
+    h.push(`<section class="keep"><h2>Cash available for debt service (${esc(ln.windowLabel)})</h2>${table(['', 'Amount'], [
+      ['Net income', fmtWhole(ln.netIncome)],
+      ['Add back: interest', fmtWhole(ln.interest)],
+      ['Add back: depreciation and amortization', fmtWhole(ln.nonCash)],
+      ln.addBacks ? ['Add back: other (owner items, one-time costs)', fmtWhole(ln.addBacks)] : null,
+      ['Cash available for debt service', fmtWhole(ln.cashAvailable)],
+      ['Existing loan payments (principal and interest)', fmtWhole(ln.debtService)],
+      ['Debt service coverage', ln.dscr == null ? 'No existing payments' : ratio(ln.dscr)],
+    ].filter(Boolean))}</section>`);
+
+    // Balance summary.
+    if (L.balance) {
+      const b = L.balance;
+      const lines = (xs) => xs.map((x) => [x.account, fmtWhole(x.balance)]);
+      h.push(`<section class="keep"><h2>Balance summary as of ${esc(b.asOf)}</h2>${table(['Current assets', ''], [...lines(b.assets), ['Total current assets', fmtWhole(b.currentAssets)]])}${table(['Current liabilities', ''], [...lines(b.currentLiabs), ['Total current liabilities', fmtWhole(b.currentLiabilities)]])}${b.longTerm.length ? table(['Long-term debt', ''], [...lines(b.longTerm), ['Total long-term debt', fmtWhole(b.longTermDebt)]]) : ''}<p class="small">From the account balances in the books; fixed assets and equity are not shown. Confirm against the QuickBooks Balance Sheet report for the same date.</p></section>`);
+      const loans = [...b.currentLiabs.filter((x) => x.role === 'loan'), ...b.longTerm];
+      h.push(`<section class="keep"><h2>Debt schedule</h2>${table(['Lender / account', 'Balance', 'Yearly payments found'], [
+        ...loans.map((x) => [x.account, fmtWhole(x.balance), '']),
+        ['Total existing debt', fmtWhole(b.totalDebt), fmtWhole(ln.debtService)],
+        amount ? ['Requested loan', fmtWhole(amount), fmtWhole(ln.proposal.payment * 12)] : null,
+      ].filter(Boolean))}<p class="small">Yearly payments are the principal and interest paid over ${esc(ln.windowLabel)}. Add each loan’s rate, maturity and collateral from the loan statements.</p></section>`);
+    }
+
+    // Monthly trend.
+    const months = result.trend ? result.trend.months.filter((m) => !m.partial).slice(-12) : [];
+    if (months.length >= 3) h.push(`<section class="keep"><h2>Month by month</h2>${table(['Month', 'Revenue', 'Gross profit', 'Net income'], months.map((m) => [m.label, fmtWhole(m.revenue), fmtWhole(m.grossProfit), fmtWhole(m.netIncome)]))}</section>`);
+
+    // Receivables, payables, concentration.
+    const cash = result.cash;
+    if (cash && cash.ar.buckets) h.push(`<section class="keep"><h2>Receivables aging</h2>${table(['Age', 'Invoices', 'Amount'], [...cash.ar.buckets.map((x) => [x.label, String(x.count), fmtWhole(x.amount)]), ['Total', '', fmtWhole(cash.ar.total)]])}</section>`);
+    const vb = result.vendors && result.vendors.buckets;
+    if (vb) h.push(`<section class="keep"><h2>Payables aging</h2>${table(['Age', 'Bills', 'Amount'], vb.map((x) => [x.label, String(x.count != null ? x.count : ''), fmtWhole(x.amount)]))}</section>`);
+    const cr = result.customers;
+    if (cr && cr.rows.length) h.push(`<section class="keep"><h2>Largest customers (${esc(cr.windowLabel)})</h2>${table(['Customer', 'Revenue', 'Share'], cr.rows.slice(0, 5).map((r) => [r.name, fmtWhole(r.revenue), fmtPct(r.share)]))}<p class="small">The top customer is ${esc(fmtPct(cr.top1Share))} of revenue; the top three ${esc(fmtPct(cr.top3Share))}.</p></section>`);
+
+    // What else the lender will ask for.
+    h.push(`<section class="keep"><h2>Documents to include</h2><ul class="check"><li>Business tax returns, last 3 years</li><li>Personal tax returns for each owner of 20% or more, last 3 years</li><li>Interim statements for this year (this package)</li><li>Business bank statements, last 3 to 6 months</li><li>Personal financial statement for each owner (SBA Form 413 for SBA loans)</li><li>Debt schedule with rates, maturities and collateral</li><li>Receivables and payables aging (above; full detail from QuickBooks if asked)</li><li>Business licenses, articles of organization, and any leases</li></ul></section>`);
+
+    if (firm.name || firm.website) h.push(`<div class="firm">${esc(by || firm.name)}${firm.website ? ` · <a href="${esc(firm.href)}">${esc(firm.website)}</a>` : ''}</div>`);
+    h.push(`<footer>Prepared from the company’s accounting records${firm.name ? ` by ${esc(firm.name)}` : ''}, without audit or review. Figures are as recorded in the books through ${esc(L.asOf)}; ratios are calculated from those figures and are not a lending decision.</footer>`);
+    const css = `${reportCss(firm)}
+      .read { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: ${RC.hair}; }
+      .read.ok { background: #e3f3e3; color: #1f6b1f; } .read.mid { background: #fdf3dc; color: #8a5a00; } .read.bad { background: #fbeaea; color: #b02a2a; }
+      table.stmt tr.sub td { font-weight: 600; padding-top: 10px; border-bottom: 1px solid ${RC.ink2}; }
+      table.stmt tr.tot td { font-weight: 600; } table.stmt tr.grand td { font-weight: 700; border-top: 1.5px solid ${RC.ink}; border-bottom: 3px double ${RC.ink}; }
+      section.review { border: 2px solid #b02a2a; border-radius: 8px; padding: 4px 14px 10px; margin-top: 16px; }
+      .sev { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; padding: 0 6px; border-radius: 8px; background: ${RC.hair}; }
+      .sev.high { background: #fbeaea; color: #b02a2a; } .sev.medium { background: #fdf3dc; color: #8a5a00; }
+      ul.check { padding-left: 20px; } ul.check li { margin: 3px 0; }
+      .request td:first-child { width: 34%; color: ${RC.ink2}; }
+    `;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(client)}: lender package</title><style>${css}</style></head><body><main>${h.join('\n')}</main></body></html>`;
   }
 
   // Action items shared by the text and formatted reports; open (not cleared) flags only.
@@ -4198,6 +4475,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, buildReport, buildHtmlReport, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

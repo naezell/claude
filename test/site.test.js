@@ -8,6 +8,12 @@ const site = require('./helpers/site-server.js');
 
 const ROOT = path.join(__dirname, '..');
 const SAMPLE = path.join(ROOT, 'sample-data', 'harbor-pine-transaction-detail.csv');
+// The page opens on Home; most tests work on the sample data.
+async function showSample(page) {
+  await page.locator('button', { hasText: /sample data/i }).first().click();
+  await page.waitForSelector('#tab-audit');
+}
+
 let chromium = null;
 try { ({ chromium } = require('playwright-core')); } catch (e) { /* not installed */ }
 
@@ -73,7 +79,7 @@ test('netlify.toml sets a Content-Security-Policy that only allows this site and
 test('the app works under the policy: every tab, a report preview, an Excel upload', async (t) => {
   if (skip) return t.skip(skip);
   const { page, errors } = await open('/');
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   for (const tab of ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory']) {
     await page.click(`#tab-${tab}`);
     await page.waitForSelector(`main[aria-labelledby="tab-${tab}"] section`);
@@ -111,7 +117,7 @@ test('large exports are read and analyzed in the background worker', async (t) =
   if (skip) return t.skip(skip);
   // Treat anything over 100 rows as large, so the sample goes through the worker.
   const { page, errors } = await open('/', null, { backgroundRows: 100 });
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   assert.equal(await page.evaluate(() => window.LedgerWork.available()), true);
   // Count messages to the worker to prove the work happens there.
   await page.evaluate(() => {
@@ -146,7 +152,7 @@ test('if the worker cannot start, the page does the work itself', async (t) => {
   const { page, errors } = await open('/', null, { backgroundRows: 100 });
   // A browser that refuses to start the worker (blocked by policy, out of memory).
   await page.evaluate(() => { window.Worker = function () { throw new Error('workers are blocked'); }; });
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.waitForSelector('button:has-text("Load sample")');
   await page.waitForFunction(() => !document.querySelector('.working'));
@@ -162,7 +168,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAGUlEQVR
 test('answer link: Mark sends it, the client answers with a photo, the answers come into Ledger Lens', async (t) => {
   if (skip) return t.skip(skip);
   const { page, errors } = await open('/');
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.waitForSelector('button:has-text("Load sample")');
   await page.click('button:has-text("Client questions")');
@@ -207,7 +213,7 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   await client.page.locator('h1', { hasText: 'can\u2019t be opened' }).waitFor();
   // Kept after a reload, photo included.
   await page.reload();
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.waitForSelector('button:has-text("Load sample")');
   await panel.locator('.answer-photos img').waitFor();

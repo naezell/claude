@@ -9,9 +9,36 @@
 
   // ------------------------------------------------------------ tax & lending tab
 
+  // When the client asks for help with a loan: mark it, then build the lender-ready package.
+  function PackagePanel({ result, request, setRequest, onPackage, canSave }) {
+    const req = request || {};
+    const L = result.lender;
+    const ln = result.loan;
+    const high = L ? L.issues.filter((x) => x.severity === 'high').length : 0;
+    const pillFor = (key, v) => {
+      const read = E.lenderRead(key, v);
+      return html`<span class=${`pill ${read === 'Meets' ? 'good' : read === 'Borderline' ? 'medium' : read === 'Below' ? 'high' : 'low'}`}><span class="dot"></span>${E.LENDER_TESTS[key].label} ${v == null || !isFinite(v) ? 'n/a' : `${v.toFixed(2)}x`}</span>`;
+    };
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Lender-ready package</h2>
+        ${req.requested ? html`<span class=${`pill ${req.builtAt ? 'good' : 'medium'}`}><span class="dot"></span>${req.builtAt ? `Created ${shortDate(req.builtAt)}` : 'Requested, not created yet'}</span>` : ''}
+        <p>When the client is applying for a loan: statements by year, the ratios underwriters test (debt coverage, current ratio, debt to EBITDA), a balance summary and debt schedule, formatted for the bank. It also checks for problems a lender would catch, such as wages without payroll taxes, before anything is sent.</p>
+      </div>
+      <div class="panel-body">
+        <label class="check" for="loan-requested" style=${{ paddingTop: 0 }}><input id="loan-requested" type="checkbox" disabled=${!canSave} checked=${!!req.requested} onChange=${(e) => setRequest(e.target.checked ? { ...req, requested: true, requestedAt: req.requestedAt || new Date().toISOString().slice(0, 10) } : { ...req, requested: false })} />The client has asked for a loan package${req.requestedAt && req.requested ? ` (since ${shortDate(req.requestedAt)})` : ''}</label>
+        ${!canSave && html`<p class="hint">Upload a client's export to use this; it is saved with the client.</p>`}
+        ${req.requested && L && html`<div class="package-summary">
+          <div class="chips">${pillFor('dscr', ln.dscr)}${ln.proposal.amount ? pillFor('proForma', ln.proposal.proForma) : ''}${pillFor('current', L.ratios.current)}${pillFor('leverage', L.ratios.leverage)}</div>
+          <p>${L.issues.length ? `${L.issues.length} thing${L.issues.length === 1 ? '' : 's'} to check before it goes to the bank${high ? `, ${high} to fix first` : ''}.` : 'No problems found.'}</p>
+          <button class="btn primary" onClick=${onPackage}>${UI.Icon.report}Create lender-ready package</button>
+        </div>`}
+      </div>
+    </section>`;
+  }
+
   const CHECK_PILL = { pass: ['good', 'Ready'], warn: ['medium', 'Watch'], fail: ['high', 'Fix first'] };
 
-  function AdvisoryTab({ result, loanInputs, setLoanInputs, taxInputs, setTaxInputs }) {
+  function AdvisoryTab({ result, loanInputs, setLoanInputs, taxInputs, setTaxInputs, loanRequest, setLoanRequest, onPackage, canSave }) {
     const t = useTokens();
     const ln = result.loan;
     const tx = result.tax;
@@ -30,6 +57,7 @@
     const barMax = Math.max(...bars.map((b) => b.v), 1);
     return html`
       <${Arrange} page="advisory" parts=${[
+        ["package", "Lender-ready package", html`<${PackagePanel} result=${result} request=${loanRequest} setRequest=${setLoanRequest} onPackage=${onPackage} canSave=${canSave} />`],
         ["loan", "Loan readiness", html`
         <section class="panel">
           <div class="panel-head"><h2>Loan readiness</h2><p>How a lender will size up the business: cash it generates before interest and non-cash costs, against yearly loan payments (the debt service coverage ratio). Most lenders want at least ${ln.target.toFixed(2)}; SBA 7(a) small loans now require this analysis for every application.</p></div>

@@ -12,6 +12,12 @@ const PAGE = `file://${path.join(ROOT, 'index.html')}`;
 const SAMPLE = path.join(ROOT, 'sample-data', 'harbor-pine-transaction-detail.csv');
 const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory'];
 
+// The page opens on Home; most tests work on the sample data.
+async function showSample(page) {
+  await page.locator('button', { hasText: /sample data/i }).first().click();
+  await page.waitForSelector('#tab-audit');
+}
+
 let chromium = null;
 try { ({ chromium } = require('playwright-core')); } catch (e) { /* not installed */ }
 
@@ -57,7 +63,7 @@ async function openPage(opts, setup, serve) {
     return route.abort();
   });
   await page.goto(PAGE);
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   return { page, errors, outside };
 }
 
@@ -476,7 +482,7 @@ test('saved clients move from the old storage into the browser database and surv
   assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'indexeddb');
   assert.equal(await page.evaluate(() => localStorage.getItem('ll.clients.v1')), null, 'old copy removed once moved');
   await page.reload();
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   await page.click('button:has-text("Clients")');
   await page.waitForSelector('.dash-row:has-text("Old Co")');
   assert.match(await page.locator('.storage-note').innerText(), /browser's database/);
@@ -518,7 +524,7 @@ test('a client saved in one tab shows up in another open tab', async (t) => {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.route('**/*', (route) => (route.request().url().startsWith('file:') ? route.continue() : route.abort()));
     await page.goto(PAGE);
-    await page.waitForSelector('#tab-audit');
+    await showSample(page);
     return page;
   };
   const a = await open();
@@ -609,7 +615,7 @@ test('Open reloads a client from the files kept in this browser, even after a re
   // Switch away to the sample, then come back with one click.
   await page.click('button:has-text("Load sample")');
   await page.reload();
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   await page.click('button:has-text("Clients")');
   const row = page.locator('.dash-row', { hasText: 'Riverbend' });
   assert.equal(await row.locator('button', { hasText: 'Open' }).count(), 1);
@@ -668,7 +674,7 @@ test('a browser database from the previous version is upgraded with clients inta
     del.onerror = () => reject(del.error);
   }));
   await page.reload();
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'indexeddb');
   await page.click('button:has-text("Clients")');
   await page.waitForSelector('.dash-row:has-text("Earlier Co")');
@@ -695,7 +701,7 @@ test('Customize: move and hide sections and tabs, kept after a reload, Reset res
   assert.equal(await page.locator('#tab-benchmarks').count(), 0);
   // Kept after a reload.
   await page.reload();
-  await page.waitForSelector('#tab-audit');
+  await showSample(page);
   const reloaded = await titles();
   assert.deepEqual(reloaded, after);
   assert.equal(await page.locator('#tab-benchmarks').count(), 0);
@@ -724,6 +730,88 @@ test('Customize works on every page without errors or sideways scrolling on a ph
     assert.equal(sideways, false, `${tab} scrolls sideways while customizing`);
     await page.click('.customize-bar button:has-text("Done")');
   }
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Home: opens first, lists clients with what is waiting on Mark and on clients', async (t) => {
+  if (skip) return t.skip(skip);
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.route('**/*', (route) => (route.request().url().startsWith('file:') ? route.continue() : route.abort()));
+  await page.goto(PAGE);
+  // A new browser: a welcome, no tabs.
+  await page.locator('.home-empty', { hasText: 'Welcome to Ledger Lens' }).waitFor();
+  assert.equal(await page.locator('#tab-audit').count(), 0);
+  // Load a client, then go Home.
+  const D = path.join(ROOT, 'sample-data', 'test-clients');
+  await page.setInputFiles('#csv-upload', ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments'].map((f) => path.join(D, `riverbend-${f}.csv`)));
+  await page.locator('.banner', { hasText: '4 files uploaded' }).waitFor();
+  // The client asked for a loan package.
+  await page.click('#tab-advisory');
+  await page.check('#loan-requested');
+  await page.waitForTimeout(300);
+  // An answer link is out with them (as the portal leaves it in the profile).
+  await page.evaluate(() => {
+    const S = window.LedgerStore.ClientStore;
+    const id = Object.keys(S.all())[0];
+    S.put(id, { ...S.get(id), portal: { id: 'x', key: 'y', status: 'waiting', count: 6, createdAt: Date.now() - 9 * 864e5, expiresAt: Date.now() + 21 * 864e5, email: 'office@riverbend.test', refs: {} } });
+  });
+  await page.click('button:has-text("Home")');
+  const mine = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Waiting on you' }) });
+  await mine.waitFor();
+  const mineText = await mine.innerText();
+  assert.match(mineText, /Loan package requested/);
+  assert.match(mineText, /flags? to review/);
+  const theirs = await page.locator('section.panel', { has: page.locator('h2', { hasText: 'Waiting on clients' }) }).innerText();
+  assert.match(theirs, /6 questions sent, no answers yet/);
+  assert.match(theirs, /Consider a reminder/);
+  assert.match(await page.locator('.client-card').innerText(), /Riverbend Plumbing/);
+  // Open from Home goes back to the client.
+  await page.locator('.client-card button', { hasText: 'Open' }).click();
+  await page.locator('.banner', { hasText: 'Opened Riverbend' }).waitFor();
+  await page.waitForSelector('#tab-audit');
+  // After a reload it opens on Home again, with the client still there.
+  await page.reload();
+  await page.locator('.client-card', { hasText: 'Riverbend' }).waitFor();
+  const sideways = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  assert.equal(sideways, false);
+  await page.setViewportSize({ width: 400, height: 900 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, 'phone width');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('Loan package: flag the request, see what to fix, download the lender copy without review notes', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.click('#tab-advisory');
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Lender-ready package' }) });
+  assert.equal(await panel.locator('button', { hasText: 'Create lender-ready package' }).count(), 0);
+  await page.check('#loan-requested');
+  await panel.locator('.pill', { hasText: 'Requested, not created yet' }).waitFor();
+  await panel.locator('button', { hasText: 'Create lender-ready package' }).click();
+  const drawer = page.locator('.drawer', { has: page.locator('h2', { hasText: 'Lender-ready package' }) });
+  await drawer.waitFor();
+  assert.match(await drawer.locator('.lender-issues').innerText(), /Wages without employer payroll taxes/);
+  await page.fill('#l-lender', 'First Community Bank');
+  await page.fill('#l-amount', '60000');
+  await page.fill('#l-purpose', 'Studio build-out');
+  const preview = () => page.evaluate(() => document.querySelector('.report-shadow').shadowRoot.textContent);
+  await page.waitForFunction(() => /First Community Bank/.test(document.querySelector('.report-shadow').shadowRoot.textContent));
+  assert.ok(!(await preview()).includes('Review notes'));
+  const [download] = await Promise.all([page.waitForEvent('download'), drawer.locator('button', { hasText: 'Download for the lender' }).click()]);
+  const doc = fs.readFileSync(await download.path(), 'utf8');
+  assert.match(download.suggestedFilename(), /lender-package/);
+  for (const s of ['Key measures lenders test', 'Studio build-out', '$60,000', 'Income statement']) assert.ok(doc.includes(s), s);
+  assert.ok(!doc.includes('Review notes'));
+  const [mine] = await Promise.all([page.waitForEvent('download'), drawer.locator('button', { hasText: 'Download my copy with notes' }).click()]);
+  assert.ok(fs.readFileSync(await mine.path(), 'utf8').includes('Review notes (not for the lender)'));
+  await page.click('.drawer-head button');
+  await panel.locator('.pill', { hasText: 'Created' }).waitFor();
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -336,5 +336,53 @@
     </div>`;
   }
 
-  Object.assign(UI, { QuestionsDrawer, ClientsDrawer, ReportDrawer });
+
+  // The lender-ready package: problems to fix first, a preview, and two downloads (the copy
+  // for the lender, and the bookkeeper's copy with the review notes).
+  function LenderDrawer({ result, request, setRequest, loanInputs, setLoanInputs, onClose }) {
+    const [clientName, setClientName] = useState(() => result.meta.company || '');
+    const [preparer, setPreparer] = useState(() => safeStore.get('ll.preparer') || '');
+    const [withNotes, setWithNotes] = useState(false);
+    const [status, setStatus] = useState('');
+    const req = request || {};
+    const L = result.lender;
+    useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
+    useEscape(onClose);
+    const opts = { clientName, preparer, firm: Firm, request: { amount: loanInputs.amount, purpose: req.purpose, lender: req.lender } };
+    const doc = useMemo(() => E.buildLenderReport(result, { ...opts, includeReview: withNotes }), [result, clientName, preparer, req.purpose, req.lender, loanInputs.amount, withNotes]);
+    const base = `${slug(clientName)}-lender-package-${result.period.end}`;
+    const download = async (notes) => {
+      const file = notes ? `${base}-with-review-notes.html` : `${base}.html`;
+      const msg = await saveTextFile(file, E.buildLenderReport(result, { ...opts, includeReview: notes }));
+      if (/^(Saved|Downloaded)/.test(msg) && !notes) setRequest({ ...req, requested: true, builtAt: new Date().toISOString().slice(0, 10) });
+      setStatus(`${msg}. Open it in a browser and choose Print → Save as PDF.`);
+    };
+    const high = L ? L.issues.filter((x) => x.severity === 'high').length : 0;
+    const set = (k) => (e) => setRequest({ ...req, [k]: e.target.value });
+    return html`<div class="scrim" onClick=${(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <aside class="drawer wide" role="dialog" aria-modal="true" aria-labelledby="lender-title">
+        <div class="drawer-head"><h2 id="lender-title">Lender-ready package</h2><button class="btn" onClick=${onClose}>Close</button></div>
+        <div class="drawer-fields">
+          <label class="field" for="l-client">Client name<input id="l-client" value=${clientName} onInput=${(e) => setClientName(e.target.value)} /></label>
+          <label class="field" for="l-preparer">Prepared by<input id="l-preparer" value=${preparer} onInput=${(e) => setPreparer(e.target.value)} placeholder="Your name" /></label>
+          <label class="field" for="l-lender">Lender<input id="l-lender" value=${req.lender || ''} onInput=${set('lender')} placeholder="e.g. First Community Bank" /></label>
+          <label class="field" for="l-amount">Amount requested<input id="l-amount" inputmode="decimal" value=${loanInputs.amount} onInput=${(e) => setLoanInputs({ ...loanInputs, amount: e.target.value.replace(/[^0-9.]/g, '') })} placeholder="e.g. 150000" /></label>
+          <label class="field" for="l-purpose" style=${{ gridColumn: '1 / -1' }}>Purpose<input id="l-purpose" value=${req.purpose || ''} onInput=${set('purpose')} placeholder="e.g. Second service truck and equipment" /></label>
+        </div>
+        ${L && L.issues.length > 0 && html`<div class="lender-issues">
+          <h3>Before it goes to the bank${high ? html` <span class="pill high"><span class="dot"></span>${high} to fix first</span>` : ''}</h3>
+          <ul>${L.issues.map((x, i) => html`<li key=${i}><span class=${`pill ${x.severity === 'high' ? 'high' : x.severity === 'medium' ? 'medium' : 'low'}`}>${x.severity === 'high' ? 'Fix first' : x.severity === 'medium' ? 'Check' : 'Minor'}</span> <strong>${x.title}</strong> <span class="sub">${x.detail}</span></li>`)}</ul>
+          <label class="check" for="l-notes" style=${{ paddingTop: '4px' }}><input id="l-notes" type="checkbox" checked=${withNotes} onChange=${(e) => setWithNotes(e.target.checked)} />Show these notes in the preview (your copy only)</label>
+        </div>`}
+        <div class="report-frame"><${ShadowPreview} html=${doc} /></div>
+        <div class="drawer-foot">
+          <button class="btn primary" onClick=${() => download(false)}>${Icon.download}Download for the lender</button>
+          <button class="btn" onClick=${() => download(true)}>${Icon.download}Download my copy with notes</button>
+          <span class="status" role="status">${status || 'The lender copy leaves out the review notes. Open the file in any browser and print it to PDF.'}</span>
+        </div>
+      </aside>
+    </div>`;
+  }
+
+  Object.assign(UI, { QuestionsDrawer, ClientsDrawer, ReportDrawer, LenderDrawer, clientStatus });
 })();
