@@ -13,7 +13,8 @@ blanked out (`src/ui/ticket.js`, `netlify/functions/ticket.mjs`).
    else). Generate and copy it.
 2. On Netlify: **Project configuration → Environment variables → Add a variable**. Key
    `GITHUB_TOKEN`, value the token. Tick "Contains secret values". Save, then **Deploys →
-   Trigger deploy → Deploy site** so the site picks it up.
+   Trigger deploy → Deploy project** (older screens: Deploy site) so the site picks it up. Any
+   later update to the site also picks it up, so Claude can do this step instead.
 3. Try it: open any client, press **Flag a problem**, tap a panel, type a test note, **Send
    ticket**. It should say "Ticket #N is in", and the issue appears on GitHub.
 
