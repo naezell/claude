@@ -16,6 +16,7 @@ const FILES = {
   'react-is.production.min.js': 'react-is/umd/react-is.production.min.js',
   'Recharts.js': 'recharts/umd/Recharts.js',
   'htm.umd.js': 'htm/dist/htm.umd.js',
+  'html2canvas-pro.min.js': 'html2canvas-pro/dist/html2canvas-pro.min.js',
   'xlsx.full.min.js': 'xlsx/dist/xlsx.full.min.js',
 };
 // Font family → [package, weights]. Latin only, which covers English text and the $ and € signs.

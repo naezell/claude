@@ -65,6 +65,12 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   `industry` ('' = detected) is passed as `opts.industry`. `src/ui/landscape.js` is the tab, added
   by `tabsFor()` in `app.js` only for landscapers. Close steps with `industry`/`months` only show
   when they apply. Test client: Greenway in `sample-data/test-clients/`.
+- Flag a problem: `src/ui/ticket.js` (pick a part of the page, take a picture of a redacted copy
+  with `html2canvas-pro`, send) and `netlify/functions/ticket.mjs` + `lib/ticket.mjs` (files a
+  GitHub issue labeled `ticket` using the `GITHUB_TOKEN` env var; pictures in Netlify Blobs,
+  public under `/api/ticket/img/<random>.jpg`). `redactTree()` must keep blanking amounts and
+  client names. Movable sections carry `data-part` for it (the `.part` wrapper in arrange.js).
+  The daily ticket check follows `docs/tickets.md`.
 - Branding comes from `src/firm.js`. Settings (Google client ID, support email) are in
   `src/config.js`.
 

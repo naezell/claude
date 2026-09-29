@@ -145,6 +145,15 @@
   .source strong { color: var(--ink); font-weight: 600; }
   .sub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; font: 600 15px/1.2 var(--cond); }
   tr.total td { font-weight: 600; background: var(--surface-2); }
+  .part { display: contents; }
+  body.flagging main, body.flagging .home { cursor: crosshair; }
+  .flag-hover { outline: 3px solid var(--accent) !important; outline-offset: 2px; border-radius: 8px; }
+  .flag-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 60; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; width: min(720px, calc(100vw - 24px)); padding: 12px 14px; border-radius: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--hair); box-shadow: 0 8px 28px rgba(0,0,0,.18); font-size: 14px; }
+  .flag-bar > span:first-child { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+  .flag-bar svg { width: 16px; height: 16px; flex: none; }
+  .flag-actions { display: flex; gap: 8px; margin-left: auto; }
+  .ticket-shot { margin: 0 0 12px; }
+  .ticket-shot img { display: block; max-width: 100%; max-height: 320px; object-fit: contain; object-position: left top; border: 1px solid var(--hair); border-radius: 6px; }
   .industry-pick { display: inline-flex; align-items: center; gap: 6px; }
   .industry-pick .select { width: auto; padding: 4px 8px; font-size: 13px; }
   .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--surface-2); color: var(--ink-2); white-space: nowrap; }
@@ -524,6 +533,7 @@
 <script src="vendor/react-is.production.min.js"></script>
 <script src="vendor/Recharts.js"></script>
 <script src="vendor/htm.umd.js"></script>
+<script src="vendor/html2canvas-pro.min.js"></script>
 <script src="src/config.js"></script>
 <script src="src/version.js"></script>
 <script src="src/firm.js"></script>
@@ -552,4 +562,5 @@
 <script src="src/ui/home.js"></script>
 <script src="src/ui/help.js"></script>
 <script src="src/ui/problem.js"></script>
+<script src="src/ui/ticket.js"></script>
 <script src="src/app.js"></script>

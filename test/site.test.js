@@ -34,6 +34,7 @@ let browser = null;
 let server = null;
 let base = '';
 let portalStore = null;
+let tickets = null;
 let skip = chromium ? false : 'playwright-core is not installed (run npm install)';
 
 before(async () => {
@@ -43,7 +44,7 @@ before(async () => {
   }
   if (!browser) { skip = 'no Chromium build found (set CHROMIUM_PATH)'; return; }
   site.build();
-  ({ server, url: base, portalStore } = await site.start());
+  ({ server, url: base, portalStore, tickets } = await site.start());
 });
 after(async () => { if (browser) await browser.close(); if (server) server.close(); });
 
@@ -220,5 +221,48 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   assert.deepEqual(await page.evaluate(() => window.__csp), []);
   assert.deepEqual(errors, []);
   await client.page.close();
+  await page.close();
+});
+
+test('Flag a problem: pick a panel, the picture has amounts and names blanked, and it is filed as a ticket', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await open('/');
+  await showSample(page);
+  // The redaction itself: digits and client names go, the app's own labels stay.
+  const red = await page.evaluate(() => {
+    const div = document.createElement('div');
+    div.innerHTML = '<section class="panel"><div class="panel-head"><h2>Top customers</h2><p>Last 12 months, 3 customers</p></div><table><thead><tr><th>Customer</th></tr></thead><tbody><tr><td>Acme Dental</td><td class="num">$12,480.00</td></tr></tbody></table><svg><text>Acme Dental $4k</text></svg></section>';
+    window.LedgerUI.redactTree(div, ['Acme Dental']);
+    return { text: div.textContent, bars: div.querySelectorAll('.redacted').length };
+  });
+  assert.ok(!/\d|Acme/.test(red.text), red.text);
+  assert.match(red.text, /Top customers/);
+  assert.match(red.text, /Customer/);
+  assert.equal(red.bars, 2);
+  // The real thing, on the cash forecast.
+  await page.click('#tab-cash');
+  await page.click('button.flag-toggle');
+  await page.waitForSelector('.flag-bar');
+  await page.locator('main section.panel').first().click();
+  await page.waitForSelector('#ticket-what');
+  const shot = await page.locator('.ticket-shot img').getAttribute('src');
+  assert.match(shot, /^data:image\/jpeg;base64,/);
+  assert.ok(shot.length > 5000, 'a real picture');
+  await page.fill('#ticket-what', 'The forecast line stops early.');
+  await page.click('button:has-text("Send ticket")');
+  await page.waitForSelector('text=Ticket #1 is in');
+  assert.equal(tickets.length, 1);
+  const issue = tickets[0];
+  assert.equal(issue.url, 'https://api.github.com/repos/owner/repo/issues');
+  assert.deepEqual(issue.labels, ['ticket']);
+  assert.match(issue.title, /^Cash forecast › .+: The forecast line stops early\.$/);
+  assert.match(issue.body, /> The forecast line stops early\./);
+  assert.match(issue.body, /Version: /);
+  const img = issue.body.match(/\((http[^)]+\.jpg)\)/)[1];
+  const res = await fetch(img);
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  assert.deepEqual(errors, []);
   await page.close();
 });
