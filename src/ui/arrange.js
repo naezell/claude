@@ -58,7 +58,8 @@
     const hidden = new Set(saved.hidden || []);
     const shownIds = order.filter((id) => byId.get(id).node);
     const shown = new Set(shownIds);
-    if (!customizing) return shownIds.filter((id) => !hidden.has(id)).map((id) => html`<${React.Fragment} key=${id}>${byId.get(id).node}</${React.Fragment}>`);
+    // The wrapper takes no space (display: contents); it names the section for Flag a problem.
+    if (!customizing) return shownIds.filter((id) => !hidden.has(id)).map((id) => html`<div key=${id} class="part" data-part=${`${page}:${id}`} data-part-label=${byId.get(id).label}>${byId.get(id).node}</div>`);
     const update = (next) => setLayout({ ...layout, pages: { ...layout.pages, [page]: { order: next.order || order, hidden: next.hidden || [...hidden] } } });
     return shownIds.map((id, i) => {
       const { label, node } = byId.get(id);

@@ -856,3 +856,25 @@ test('a landscaper gets the Landscaping tab: winter cash, service lines, contrac
     await page.close();
   }
 });
+
+test('Flag a problem: pick mode on a phone, then the email fallback away from the site', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage({ viewport: { width: 400, height: 900 } }, (p) => p.addInitScript(() => { window.LedgerConfig = { ...(window.LedgerConfig || {}), supportEmail: 'help@example.com' }; }));
+  await page.click('#tab-trends');
+  await page.click('button.flag-toggle');
+  await page.waitForSelector('.flag-bar');
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, 'pick mode scrolls sideways');
+  // Taps pick instead of pressing buttons underneath.
+  await page.locator('main .kpi').first().click();
+  await page.waitForSelector('#ticket-what');
+  assert.match(await page.locator('.drawer').innerText(), /Trends › /);
+  assert.equal(await page.locator('button:has-text("Send ticket")').count(), 0, 'no ticket endpoint on file://');
+  await page.fill('#ticket-what', 'This tile looks wrong');
+  const mailto = decodeURIComponent(await page.locator('a:has-text("Email the report")').getAttribute('href'));
+  assert.match(mailto, /^mailto:help@example\.com/);
+  assert.match(mailto, /Flagged: Trends › .*This tile looks wrong/s);
+  await page.click('.drawer-head button');
+  await page.waitForSelector('.drawer', { state: 'detached' });
+  assert.deepEqual(errors, []);
+  await page.close();
+});

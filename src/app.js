@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -73,6 +73,8 @@
     const [clientsOpen, setClientsOpen] = useState(false);
     const [helpOpen, setHelpOpen] = useState(false);
     const [problemOpen, setProblemOpen] = useState(false);
+    // Flag a problem: picking a part of the page to send as a ticket (src/ui/ticket.js).
+    const [flagging, setFlagging] = useState(false);
     // The bookkeeper's arrangement of pages and tabs (src/ui/arrange.js).
     const [layout, setLayoutState] = useState(() => Layout.load());
     const setLayout = useCallback((next) => { Layout.save(next); setLayoutState(next); }, []);
@@ -355,6 +357,18 @@
       'Message on screen': error,
     }), [tab, source, uploadedBudget, result, error]);
     useEffect(() => { if (error) window.LedgerProblem.note('shown', error); }, [error]);
+    // Client words to blank out of a ticket's picture: company, customers, vendors, file names.
+    const flagNames = useCallback(() => {
+      const out = new Set();
+      if (parsed.ok) {
+        out.add(parsed.ok.meta.company);
+        for (const t of parsed.ok.transactions) for (const v of [t.name, t.customer, t.vendor, t.project]) if (v) { out.add(v); for (const piece of String(v).split(':')) out.add(piece); }
+      }
+      if (source.files) for (const f of source.files) out.add(f.name);
+      for (const f of [source.chart, source.pnl, source.budget, source.attachments]) if (f && f.name) out.add(f.name);
+      for (const c of Object.values(ClientStore.all())) out.add(c.name);
+      return [...out];
+    }, [parsed, source]);
     const auditCount = result ? result.audit.open.uncategorized + result.audit.open.duplicates + result.audit.open.mismatches : 0;
 
     return html`<${LayoutContext.Provider} value=${layoutCtx}>
@@ -414,6 +428,7 @@
           <div class="tabs" role="tablist">
             ${tabOrder.filter((id) => !hiddenTabs.has(id) || id === tab).map((id) => html`<button key=${id} class="tab" role="tab" id=${`tab-${id}`} aria-selected=${tab === id} onClick=${() => setTab(id)}>${tabs.find((t) => t[0] === id)[1]}${id === 'audit' ? html`<span class="count">${auditCount}</span>` : id === 'close' && closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>`)}
           </div>
+          ${result && !customizing && html`<button class="btn flag-toggle" onClick=${() => setFlagging(true)}>${Icon.flag}Flag a problem</button>`}
           ${result && !customizing && html`<button class="btn customize-toggle" onClick=${() => setCustomizing(true)}>${Icon.sliders}Customize</button>`}
         </div>`}
         ${customizing && result && html`<${CustomizeBar} tabs=${tabs} current=${tab} pageLabel=${(tabs.find((t) => t[0] === tab) || tabs[0])[1]} onDone=${() => setCustomizing(false)} />`}
@@ -432,11 +447,12 @@
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
             : html`<${AdvisoryTab} result=${result} loanRequest=${loanRequest} setLoanRequest=${setLoanRequest} onPackage=${() => setLenderOpen(true)} canSave=${!!clientId} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
         </main>`}
-        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${signedInSite ? html` · <a href="/auth/logout">Sign out</a>` : ''} · <button class="linkish" onClick=${() => setProblemOpen(true)}>Report a problem</button>${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
+        <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${signedInSite ? html` · <a href="/auth/logout">Sign out</a>` : ''} · <button class="linkish" onClick=${() => setFlagging(true)}>Flag a problem</button> · <button class="linkish" onClick=${() => setProblemOpen(true)}>Report a problem</button>${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>
       </div>
 
       ${questionsOpen && result && html`<${QuestionsDrawer} result=${result} answers=${answers} portal=${portal} setPortal=${setPortal} canSave=${!!clientId} onCheckPortal=${collectPortal} onLoadAnswers=${(file) => applyAnswers(file)} onClose=${() => setQuestionsOpen(false)} onMarkAsked=${(keys) => setReview(keys, 'asked')} />`}
       ${helpOpen && html`<${HelpDrawer} onClose=${() => setHelpOpen(false)} onOpenClients=${() => setClientsOpen(true)} onReport=${() => setProblemOpen(true)} />`}
+      ${flagging && html`<${FlagFlow} tab=${home ? { id: 'home', label: 'Home' } : { id: tab, label: (tabs.find((t) => t[0] === tab) || tabs[0])[1] }} names=${flagNames} context=${problemContext} onDone=${() => setFlagging(false)} />`}
       ${problemOpen && html`<${ProblemDrawer} context=${problemContext} onClose=${() => setProblemOpen(false)} />`}
       ${clientsOpen && html`<${ClientsDrawer} currentId=${clientId} onOpen=${(id) => { setClientsOpen(false); openClient(id); }} onClose=${() => { setClientsOpen(false); setBackupDue(Backup.overdue()); }} onForget=${(id) => { if (id === clientId) { setAccountClass({}); setReviewed({}); setBenchPrefs(null); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setRestored(null); } }} />`}
       ${lenderOpen && result && html`<${LenderDrawer} result=${result} request=${loanRequest} setRequest=${setLoanRequest} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} onClose=${() => setLenderOpen(false)} />`}

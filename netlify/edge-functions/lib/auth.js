@@ -98,4 +98,7 @@ export async function verifyGoogleToken(token, { clientId, keys, nowSec = Math.f
 // client uses) is public: the client has no sign-in, and the data is sealed with the key in
 // their link. Mark's portal endpoints stay behind sign-in.
 export const PUBLIC_PATHS = ['/login', '/login.html', '/login.js', '/portal', '/portal.html', '/portal.js', '/src/sealed.js', '/api/portal/q', '/api/portal/answer', '/auth/verify', '/auth/logout', '/src/config.js', '/assets/7d-logo.png', '/assets/7d-mark.png', '/favicon.ico'];
-export const isPublic = (path) => PUBLIC_PATHS.includes(path);
+// Ticket screenshots (already blanked out) are shown in GitHub issues, so they open without
+// sign-in; each has a long random name that can't be guessed.
+export const PUBLIC_PREFIXES = ['/api/ticket/img/'];
+export const isPublic = (path) => PUBLIC_PATHS.includes(path) || PUBLIC_PREFIXES.some((p) => path.startsWith(p) && !path.includes('..'));

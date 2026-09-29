@@ -35,16 +35,34 @@ async function portalApi() {
   return { store: m, handle: portalHandler({ store, verifySession: async () => 'mark@example.com' }) };
 }
 
+// The ticket endpoint, with GitHub replaced by a list of the issues it would have filed.
+async function ticketApi() {
+  const { pathToFileURL } = require('url');
+  const { ticketHandler } = await import(pathToFileURL(path.join(ROOT, 'netlify', 'functions', 'lib', 'ticket.mjs')).href);
+  const m = new Map();
+  const issues = [];
+  const store = {
+    async get(k) { return m.has(k) ? JSON.parse(m.get(k)) : null; },
+    async setJSON(k, v) { m.set(k, JSON.stringify(v)); },
+    async delete(k) { m.delete(k); },
+    async list() { return { blobs: [...m.keys()].map((key) => ({ key })) }; },
+  };
+  const send = async (url, init) => { issues.push({ url, ...JSON.parse(init.body) }); return new Response(JSON.stringify({ number: issues.length }), { status: 201 }); };
+  return { issues, handle: ticketHandler({ store, verifySession: async () => 'mark@example.com', token: 'test-token', repo: 'owner/repo', send }) };
+}
+
 async function start() {
   const headers = siteHeaders();
   const portal = await portalApi();
+  const ticket = await ticketApi();
   const server = http.createServer(async (req, res) => {
-    if (req.url.startsWith('/api/portal/')) {
+    const api = req.url.startsWith('/api/portal/') ? portal : req.url.startsWith('/api/ticket') ? ticket : null;
+    if (api) {
       const chunks = [];
       for await (const c of req) chunks.push(c);
-      const r = await portal.handle(new Request(`http://x${req.url}`, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks) }));
-      res.writeHead(r.status, { ...headers, 'Content-Type': 'application/json' });
-      res.end(await r.text());
+      const r = await api.handle(new Request(`http://${req.headers.host}${req.url}`, { method: req.method, headers: req.headers, body: ['GET', 'HEAD'].includes(req.method) ? undefined : Buffer.concat(chunks) }));
+      res.writeHead(r.status, { ...headers, 'Content-Type': r.headers.get('Content-Type') || 'application/json' });
+      res.end(Buffer.from(await r.arrayBuffer()));
       return;
     }
     let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
@@ -56,7 +74,7 @@ async function start() {
     res.writeHead(200, { ...headers, 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream' });
     fs.createReadStream(file).pipe(res);
   });
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}`, headers, portalStore: portal.store })));
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve({ server, url: `http://127.0.0.1:${server.address().port}`, headers, portalStore: portal.store, tickets: ticket.issues })));
 }
 
 module.exports = { build, start, siteHeaders };
