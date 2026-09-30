@@ -240,6 +240,39 @@
     </section>`;
   }
 
+
+  // Route density: how close together the recurring customers are, from the Customer Contact List.
+  function Routes({ r }) {
+    if (!r) return html`<section class="panel">
+      <div class="panel-head"><h2>Route density</h2><p>How close together the lawn and maintenance customers are. Customers on the same street save loading, unloading and drive time.</p></div>
+      <div class="panel-body">
+        <p>Add the client's customer addresses to see it. In QuickBooks Online: <strong>Reports → Customer Contact List → Customize</strong>, turn on the billing and shipping address columns, then <strong>Export to Excel</strong>. In QuickBooks Desktop: <strong>Reports → List → Customer Contact List → Excel</strong>. Upload it with <em>Add export</em>.</p>
+        <p class="hint">Put the property address in each customer's shipping address when the bill goes somewhere else, such as an HOA's management company.</p>
+      </div>
+    </section>`;
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Route density</h2><p>${r.routeCount} customers were billed in three or more months of the last year (the route customers); ${r.placed} have a site address.${r.aloneShare != null ? ` ${r.alone} of them (${fmtPct(r.aloneShare)}) are the only customer on their street.` : ''}</p></div>
+      ${r.clusters.length > 0 && html`<div class="panel-body"><h3 class="sub-head">Streets with three or more customers</h3></div>
+      <div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Street</th><th>ZIP</th><th class="num">Customers</th><th class="num">Last 12 months</th><th>Customers</th></tr></thead>
+        <tbody>${r.clusters.map((c) => html`<tr key=${`${c.street}${c.zip}`}><td class="nowrap">${c.street}</td><td>${c.zip}</td><td class="num">${c.count}</td><td class="num">${wholeMoney(c.revenue)}</td><td class="names-cell">${c.names.join(', ')}</td></tr>`)}</tbody>
+      </table></div></div>`}
+      <div class="panel-body"><h3 class="sub-head">By ZIP code</h3></div>
+      <div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>ZIP</th><th class="num">Customers</th><th class="num">Streets</th><th class="num">Alone on their street</th><th class="num">Last 12 months</th></tr></thead>
+        <tbody>${r.zips.map((z) => html`<tr key=${z.zip}><td>${z.zip}</td><td class="num">${z.count}</td><td class="num">${z.streets}</td><td class="num">${z.alone}</td><td class="num">${wholeMoney(z.revenue)}</td></tr>`)}</tbody>
+      </table></div></div>
+      <div class="panel-body">
+        ${r.fillIn.length > 0 && html`<h3 class="sub-head">Where a neighbor discount would fill in the route</h3>
+          <p class="hint">Homes alone on their street in the busiest ZIP codes. Offer these customers a discount for each neighbor who signs up, or hang door hangers on the street.</p>
+          <ul class="compact-list">${r.fillIn.map((f) => html`<li key=${`${f.street}${f.zip}`}><strong>${f.street}</strong> (${f.zip}): ${f.names.join(', ')}</li>`)}</ul>`}
+        ${r.missing.length > 0 && html`<h3 class="sub-head" style=${{ marginTop: '16px' }}>Route customers without a usable address</h3>
+          <ul class="compact-list">${r.missing.map((m) => html`<li key=${m.name}><strong>${m.name}</strong>: ${m.reason}</li>`)}</ul>
+          <p class="hint">Add the property address in QuickBooks (the shipping address when bills go elsewhere) and export the list again.</p>`}
+      </div>
+    </section>`;
+  }
+
   function LandscapeTab({ result, inputs, setInputs }) {
     const t = useTokens();
     const L = result.landscape;
@@ -259,6 +292,7 @@
         ['contracts', 'Contract billing and prices', html`<${Contracts} c=${c} />`],
         ['labor', 'Labor through the season', html`<${Labor} l=${L.labor} t=${t} />`],
         ['equipment', 'Equipment and fuel', html`<${Equipment} e=${e} />`],
+        ['routes', 'Route density', html`<${Routes} r=${L.routes} />`],
         ['playbook', 'Profit playbook', html`<${Playbook} pb=${L.playbook} />`],
       ]} />`;
   }

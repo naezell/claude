@@ -962,3 +962,17 @@ test('fixed assets: disposal stops depreciation, and the journal entry imports i
   assert.equal(list[1].category, 'furniture');
   assert.equal(E.parseAssetList('Date,Amount\n01/01/2025,5'), null);
 });
+
+test('customer addresses: both QuickBooks formats are read, and addresses reduce to a street', () => {
+  const report = E.readExport('Acme Lawn\nCustomer Contact List\nAll Dates\n\nCustomer,Phone Numbers,Email,Full Name,Billing Address,Shipping Address\nAdams Residence,555,,,"1412 Oak Ridge Drive\nSpringfield, IL 62704",\nOak HOA,,,,"c/o Summit Mgmt, 400 S 5th St Ste 210, Springfield, IL 62701","1 Oak Hills Pkwy, Springfield, IL 62711"\n');
+  assert.equal(report.kind, 'customers');
+  const [adams, hoa] = report.data.customers;
+  assert.deepEqual([adams.billing.street, adams.billing.city, adams.billing.zip], ['1412 Oak Ridge Drive', 'Springfield', '62704']);
+  assert.equal(hoa.billing.office, true);
+  assert.equal(hoa.shipping.zip, '62711');
+  const exported = E.parseCustomerList('Name,Company name,Street Address,City,State,Zip,Phone\nCole Residence,,22 Oak Ridge Dr. Apt 4,Springfield,IL,62704,555');
+  assert.equal(exported.customers[0].billing.zip, '62704');
+  assert.equal(E.streetKey(exported.customers[0].billing.street), E.streetKey(adams.billing.street));
+  assert.equal(E.streetKey('12 North Main Street'), 'n main st');
+  assert.equal(E.parseCustomerList('Date,Name,Amount\n01/01/2025,Cole,5'), null);
+});

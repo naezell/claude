@@ -2183,7 +2183,7 @@
   // Combines several parsed exports (for example two years exported separately).
   // Rows repeated in a later file, as happens when date ranges overlap, are dropped.
   // Works out which QuickBooks report a file is and parses it: { kind, data } with kind one of
-  // chart, budget, pnl, answers, attachments or parsed (transactions). Throws with a message
+  // chart, budget, pnl, answers, attachments, customers or parsed (transactions). Throws with a message
   // that follows the file name ("has a header row but no dated transactions.").
   function readExport(text) {
     // A chart of accounts has Account and Type columns and no dates.
@@ -2199,6 +2199,8 @@
     if (ans) return { kind: 'answers', data: ans };
     const att = parseAttachmentList(text);
     if (att) return { kind: 'attachments', data: att };
+    const custs = parseCustomerList(text);
+    if (custs) return { kind: 'customers', data: custs };
     const p = parseTransactions(text);
     if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
     return { kind: 'parsed', data: p };
@@ -2626,6 +2628,107 @@
     ],
   };
 
+  // ---- Route density: how close together the recurring customers are, from the QuickBooks
+  // Customer Contact List (or a customer list export) with addresses.
+  const STREET_WORDS = { street: 'st', avenue: 'ave', av: 'ave', road: 'rd', drive: 'dr', lane: 'ln', court: 'ct', circle: 'cir', boulevard: 'blvd', place: 'pl', parkway: 'pkwy', terrace: 'ter', trail: 'trl', highway: 'hwy', square: 'sq', north: 'n', south: 's', east: 'e', west: 'w' };
+  const OFFICE_ADDRESS = /\bp\.?\s?o\.?\s?box\b|\bsuite\b|\bste\.?\s|\bfloor\b|\bc\/o\b/i;
+
+  // Splits "1412 Oak Ridge Dr, Springfield, IL 62704" (or the same on several lines) into parts.
+  function splitAddress(s) {
+    const text = norm(String(s || '').replace(/\r/g, '').replace(/\n/g, ', '));
+    if (!text) return null;
+    const zip = (text.match(/\b(\d{5})(?:-\d{4})?\s*(?:,?\s*(?:usa|us|united states))?\s*$/i) || [])[1] || '';
+    const parts = text.split(',').map((x) => x.trim()).filter(Boolean);
+    const streetPart = parts.find((p) => /^\d+[a-z]?\s+\S/i.test(p)) || '';
+    const cityIdx = parts.length >= 2 ? parts.length - (zip && /^[A-Z]{2}\s+\d{5}/i.test(parts[parts.length - 1]) ? 2 : 1) : -1;
+    const city = cityIdx >= 0 && parts[cityIdx] !== streetPart ? parts[cityIdx].replace(/\s+[A-Z]{2}(\s+\d{5}.*)?$/, '') : '';
+    return { text, street: streetPart, city, zip, office: OFFICE_ADDRESS.test(text) };
+  }
+  // "1412 Oak Ridge Drive Apt 3" → "oak ridge dr": the street without the house number or unit.
+  function streetKey(street) {
+    return lower(street).replace(/^\d+[a-z]?\s+/, '').replace(/\s*(#|apt\.?|unit|ste\.?|suite|lot)\s*\S+$/, '').replace(/[.,]/g, '')
+      .split(/\s+/).map((w) => STREET_WORDS[w] || w).join(' ').trim();
+  }
+  const titleStreet = (k) => k.split(' ').map((w) => (w.length <= 2 && /^[nsew]$/.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+
+  // Reads a customer list with addresses: the Customer Contact List report, or the customer list
+  // exported from Sales > Customers. Returns { customers: [{ name, billing, shipping }] } or null.
+  function parseCustomerList(text) {
+    const rows = parseCSV(text);
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      const lc = rows[i].map(lower);
+      const col = (rx) => { const j = lc.findIndex((h) => rx.test(h)); return j === -1 ? null : j; };
+      const name = col(/^(customer|customer name|name|display name|customer full name)$/);
+      if (name == null || col(/^(amount|split|debit|credit|account|transaction type|date)$/) != null) continue;
+      const bill = col(/^(billing address|bill to|bill address|address)$/), ship = col(/^(shipping address|ship to|ship address|service address|job site)$/);
+      const part = (kind, what) => col(new RegExp(`^${kind ? `${kind}\\s*` : ''}(${what})$`));
+      const pieces = (kind) => ({ street: part(kind, 'street|street address|address 1|address line 1|address'), city: part(kind, 'city'), state: part(kind, 'state|province|region'), zip: part(kind, 'zip|zip code|postal code') });
+      const bp = pieces('billing'), sp = pieces('shipping'), plain = pieces('');
+      const fromPieces = (r, p) => (p.street != null ? [r[p.street], r[p.city], [r[p.state], r[p.zip]].filter(Boolean).join(' ')].filter((x) => norm(x)).join(', ') : '');
+      if (bill == null && ship == null && bp.street == null && sp.street == null && plain.street == null) continue;
+      const customers = [];
+      for (const r of rows.slice(i + 1)) {
+        const n = norm(r[name]);
+        if (!n || /^total/i.test(n)) continue;
+        const billing = splitAddress(bill != null ? r[bill] : fromPieces(r, bp.street != null ? bp : plain));
+        const shipping = splitAddress(ship != null ? r[ship] : fromPieces(r, sp));
+        customers.push({ name: n, billing, shipping });
+      }
+      return customers.length ? { customers } : null;
+    }
+    return null;
+  }
+
+  // Groups the recurring customers (billed in three or more months of the last year) by street.
+  function routeDensity(list, postings, inTtm) {
+    const cust = new Map();
+    for (const p of postings) {
+      if (p.cls !== 'income' || p.value <= 0 || !inTtm(p.t.date)) continue;
+      const who = (customerOf(p.t, 'income') || p.t.name || '').split(':')[0].trim();
+      if (!who) continue;
+      const e = cust.get(who) || { name: who, revenue: 0, months: new Set() };
+      e.revenue += p.value; e.months.add(p.t.dateStr.slice(0, 7));
+      cust.set(who, e);
+    }
+    const route = [...cust.values()].filter((c) => c.months.size >= 3);
+    const byName = new Map(list.customers.map((c) => [lower(c.name), c]));
+    const find = (n) => byName.get(lower(n)) || list.customers.find((c) => lower(c.name).split(':')[0].trim() === lower(n));
+    const missing = [], placed = [];
+    for (const c of route) {
+      const rec = find(c.name);
+      const pick = rec && ((rec.shipping && rec.shipping.street && !rec.shipping.office && rec.shipping) || (rec.billing && rec.billing.street && !rec.billing.office && rec.billing));
+      if (!rec) missing.push({ name: c.name, revenue: round2(c.revenue), reason: 'Not in the customer list' });
+      else if (!pick) missing.push({ name: c.name, revenue: round2(c.revenue), reason: rec.billing && rec.billing.office ? 'Only a billing office or PO box, no site address' : 'No address' });
+      else placed.push({ ...c, street: streetKey(pick.street), zip: pick.zip, city: pick.city });
+    }
+    const streets = new Map();
+    for (const c of placed) {
+      const k = `${c.street}|${c.zip || lower(c.city)}`;
+      const e = streets.get(k) || { street: titleStreet(c.street), zip: c.zip, city: c.city, count: 0, revenue: 0, names: [] };
+      e.count++; e.revenue += c.revenue; e.names.push(c.name);
+      streets.set(k, e);
+    }
+    const streetList = [...streets.values()].map((s) => ({ ...s, revenue: round2(s.revenue) })).sort((a, b) => b.count - a.count || b.revenue - a.revenue);
+    const zips = new Map();
+    for (const s of streetList) {
+      const k = s.zip || s.city || 'Unknown';
+      const e = zips.get(k) || { zip: k, count: 0, revenue: 0, streets: 0, alone: 0 };
+      e.count += s.count; e.revenue += s.revenue; e.streets++; if (s.count === 1) e.alone++;
+      zips.set(k, e);
+    }
+    const zipList = [...zips.values()].map((z) => ({ ...z, revenue: round2(z.revenue) })).sort((a, b) => b.count - a.count);
+    const busy = new Set(zipList.filter((z) => z.count >= 5).map((z) => z.zip));
+    const alone = streetList.filter((s) => s.count === 1);
+    return {
+      routeCount: route.length, placed: placed.length, missing: missing.sort((a, b) => b.revenue - a.revenue),
+      clusters: streetList.filter((s) => s.count >= 3), streets: streetList, zips: zipList,
+      alone: alone.length, aloneShare: placed.length ? alone.length / placed.length : null,
+      // Homes (smaller yearly amounts) alone on a street in a busy area: where a neighbor
+      // discount or door hangers would fill in the route.
+      fillIn: streetList.filter((s) => s.count <= 2 && s.revenue / s.count < 10000 && busy.has(s.zip || s.city)).sort((a, b) => (zips.get(b.zip || b.city).count - zips.get(a.zip || a.city).count)).slice(0, 12),
+    };
+  }
+
   function landscapeAnalysis(txns, accountClass, result, opts) {
     opts = opts || {};
     const range = dateRange(txns, result.meta);
@@ -2857,7 +2960,8 @@
     };
 
     const playbook = landscapePlaybook(txns, accountClass, postings, inTtm, ttm);
-    return { offSeason, serviceLines, contracts, labor: laborSeason, equipment, playbook, asOf: lastFull };
+    const routes = opts.customers && opts.customers.customers ? routeDensity(opts.customers, postings, inTtm) : null;
+    return { offSeason, serviceLines, contracts, labor: laborSeason, equipment, playbook, routes, asOf: lastFull };
   }
 
   // ---------------------------------------------------------------- fixed assets & depreciation
@@ -4496,7 +4600,7 @@
     // Industry: what the bookkeeper chose for this client, else a guess from the names.
     out.detectedIndustry = detectIndustry(parsed.meta, out.accounts ? out.accounts.map((a) => a.name || a.account || a) : []);
     out.industry = opts.industry || out.detectedIndustry;
-    if (out.industry === 'landscaping') out.landscape = landscapeAnalysis(txns, accountClass, out, { cushion: opts.cushion });
+    if (out.industry === 'landscaping') out.landscape = landscapeAnalysis(txns, accountClass, out, { cushion: opts.cushion, customers: opts.customers });
     // Fixed assets: what the books show, and the saved register's schedule through the last full month.
     out.fixedAssets = fixedAssetFacts(txns, accountClass);
     if (out.balanceSheet && out.balanceSheet.available) {
@@ -5265,6 +5369,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

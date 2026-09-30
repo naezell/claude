@@ -145,7 +145,7 @@
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const analyzeOpts = useMemo(() => (parsed.ok ? ({
-      accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined, assets,
+      accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined, assets, customers: source.customers ? source.customers.parsed : null,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
@@ -204,7 +204,7 @@
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
-      const list = [...source.files, source.chart, source.pnl, source.budget, source.attachments].filter(Boolean);
+      const list = [...source.files, source.chart, source.pnl, source.budget, source.attachments, source.customers].filter(Boolean);
       if (!list.every((f) => typeof f.text === 'string')) return;
       FileStore.put(clientId, list.map((f) => ({ name: f.name, text: f.text })));
     }, [clientId, source]);
@@ -292,22 +292,23 @@
       const pnlFile = lastOf('pnl');
       const budgetFile = lastOf('budget');
       const attachFile = lastOf('attachments');
+      const customersFile = lastOf('customers');
       const answersFile = lastOf('answers');
       if (answersFile) setPendingAnswers(answersFile);
       const errors = bad.map((b) => `${b.name} ${b.error}`);
-      const KIND = { parsed: 'transactions', chart: 'chart of accounts', pnl: 'Profit and Loss', budget: 'budget', attachments: 'expense list with attachments', answers: "client's answers" };
+      const KIND = { parsed: 'transactions', chart: 'chart of accounts', pnl: 'Profit and Loss', budget: 'budget', attachments: 'expense list with attachments', customers: 'customer contact list', answers: "client's answers" };
       const seen = results.filter((r) => !r.error).map((r) => `${r.name} (${KIND[Object.keys(KIND).find((k) => r[k])] || 'file'})`);
       setUploadNote(results.length ? { count: results.length, seen, skipped: bad.length, opened } : null);
       const prev = sourceRef.current;
       if (!good.length) {
         // A chart or P&L on its own attaches to the transactions already loaded.
-        const extra = chartFile || pnlFile || budgetFile || attachFile;
-        if (extra && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl, budget: budgetFile || prev.budget, attachments: attachFile || prev.attachments });
-        else if (extra) errors.push(`${extra.name} is a ${chartFile ? 'chart of accounts' : pnlFile ? 'Profit and Loss report' : budgetFile ? 'budget' : 'list of expenses with attachments'}. Upload the client's Transaction Detail with it.`);
+        const extra = chartFile || pnlFile || budgetFile || attachFile || customersFile;
+        if (extra && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl, budget: budgetFile || prev.budget, attachments: attachFile || prev.attachments, customers: customersFile || prev.customers });
+        else if (extra) errors.push(`${extra.name} is a ${chartFile ? 'chart of accounts' : pnlFile ? 'Profit and Loss report' : budgetFile ? 'budget' : attachFile ? 'list of expenses with attachments' : 'customer contact list'}. Upload the client's Transaction Detail with it.`);
       } else {
         const keepPrev = append && prev.kind === 'upload';
         const kept = keepPrev ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
-        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null), attachments: attachFile || (keepPrev ? prev.attachments : null) });
+        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null), attachments: attachFile || (keepPrev ? prev.attachments : null), customers: customersFile || (keepPrev ? prev.customers : null) });
       }
       setError(errors.join(' '));
     }, []);
@@ -411,6 +412,7 @@
             : source.kind === 'upload' && html`<span class="hint">Add the client's Chart of Accounts export (Account List report) for exact account types.</span>`)}
           ${uploadedBudget && source.kind === 'upload' && html`<span class="pill good"><span class="dot"></span>Budget</span>`}
           ${source.kind === 'upload' && source.attachments && html`<span class="pill good"><span class="dot"></span>Expense list (receipts)</span>`}
+          ${source.kind === 'upload' && source.customers && html`<span class="pill good"><span class="dot"></span>Customer addresses</span>`}
           ${result && (result.tieOut
             ? html`<span class=${`pill ${result.tieOut.ties ? 'good' : 'high'}`}><span class="dot"></span>${result.tieOut.ties ? 'Ties to QuickBooks P&L' : 'Does not tie to QuickBooks P&L'}</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}

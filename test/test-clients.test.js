@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const E = require('../src/engine.js');
-const { riverbend, cafe, greenway, transactionDetail } = require('../scripts/make-test-clients.js');
+const { riverbend, cafe, greenway, greenwayContacts, transactionDetail } = require('../scripts/make-test-clients.js');
 
 const dir = path.join(__dirname, '..', 'sample-data', 'test-clients');
 const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
@@ -25,6 +25,7 @@ test('saved test-client files match the generator', () => {
   assert.equal(read('bloom-basil-transaction-detail.csv'), transactionDetail(cf.b, cf.openings, 'January 2025 - August 2026', true));
   const gw = greenway();
   assert.equal(read('greenway-transaction-detail.csv'), transactionDetail(gw.b, gw.openings, 'January 2024 - August 2026', true));
+  assert.equal(read('greenway-customer-contact-list.csv'), greenwayContacts(gw.b));
 });
 
 test('Riverbend Plumbing: contractor problems are all found', () => {
@@ -121,6 +122,17 @@ test('Greenway Landscape: the landscaping checks find what was planted', () => {
   const cost = E.playbookCost(pb, { crew: 3, wage: 20, stopMinutes: 20 });
   assert.equal(cost.fuelHours, pb.fuel.stops);
   assert.match(E.buildHtmlReport(r, {}), /Ideas to save time and money/);
+  // Route density from the customer contact list: three streets of homes and a row of
+  // businesses, the HOA billed to a PO box, and the church missing from the list.
+  const routed = E.analyze(E.parseTransactions(read('greenway-transaction-detail.csv')), {
+    chart: E.parseChartOfAccounts(read('greenway-chart-of-accounts.csv')), customers: E.parseCustomerList(read('greenway-customer-contact-list.csv')),
+  }).landscape.routes;
+  assert.deepEqual(routed.clusters.map((c) => `${c.street} ${c.count}`), ['Oak Ridge Dr 8', 'Willow Bend Rd 5', 'Wabash Ave 3', 'Maple Hollow Ct 3']);
+  assert.deepEqual(routed.missing.map((m) => m.name), ['Maple Ridge HOA', 'Riverside Church']);
+  assert.match(routed.missing[0].reason, /PO box/);
+  assert.ok(routed.aloneShare > 0.3 && routed.aloneShare < 0.7);
+  assert.ok(routed.fillIn.length > 0 && routed.fillIn.every((f) => f.names.every((n) => /Residence/.test(n))));
+  assert.equal(r.landscape.routes, null, 'no routes without the contact list');
   // The close checklist and the saved summary carry the landscaping items.
   const cl = E.closeChecklist(r, '2026-08', {}, []);
   assert.equal(cl.items.find((i) => i.id === 'contractbilling').auto.status, 'open');

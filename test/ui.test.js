@@ -819,7 +819,7 @@ test('Loan package: flag the request, see what to fix, download the lender copy 
 test('a landscaper gets the Landscaping tab: winter cash, service lines, contracts, labor and equipment', async (t) => {
   if (skip) return t.skip(skip);
   const dir = path.join(ROOT, 'sample-data', 'test-clients');
-  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments'].map((f) => path.join(dir, `greenway-${f}.csv`));
+  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments', 'customer-contact-list'].map((f) => path.join(dir, `greenway-${f}.csv`));
   for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
     const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } });
     assert.equal(await page.locator('#tab-landscape').count(), 0, 'the sample is not a landscaper');
@@ -828,7 +828,7 @@ test('a landscaper gets the Landscaping tab: winter cash, service lines, contrac
     await page.click('#tab-landscape');
     await page.waitForSelector('main[aria-labelledby="tab-landscape"] section');
     const text = await page.locator('main').innerText();
-    for (const want of [/Off-season cash plan/, /Lakeview Office Park/, /Sunset Villas HOA/, /Maple Ridge HOA/, /Snow & ice lost/, /Exmark Lazer Z #3/, /zero-turn mower/, /Overtime spike/, /Profit playbook/, /fill-ups at gas stations/, /Rock Solid Stone Supply/, /turn right/]) assert.match(text, want);
+    for (const want of [/Off-season cash plan/, /Lakeview Office Park/, /Sunset Villas HOA/, /Maple Ridge HOA/, /Snow & ice lost/, /Exmark Lazer Z #3/, /zero-turn mower/, /Overtime spike/, /Profit playbook/, /fill-ups at gas stations/, /Rock Solid Stone Supply/, /turn right/, /Route density/, /Oak Ridge Dr/, /Only a billing office or PO box/]) assert.match(text, want);
     assert.equal(await kpi(page, 'Contract invoices not sent'), '2');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `landscape tab scrolls sideways at ${width}px`);
     // Its sections can be arranged like any other page.
