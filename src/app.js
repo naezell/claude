@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -46,6 +46,7 @@
     ['vendors', 'Vendors'],
     ['benchmarks', 'Benchmarks'],
     ['advisory', 'Tax & lending'],
+    ['assets', 'Fixed assets'],
   ];
   // Tabs for one industry, placed after the profitability tab.
   const INDUSTRY_TABS = { landscaping: ['landscape', 'Landscaping'] };
@@ -104,6 +105,8 @@
     const [portal, setPortal] = useState(null);
     // The client asked for a lender-ready package (Tax & lending tab).
     const [loanRequest, setLoanRequest] = useState(null);
+    // The client's fixed asset register (Fixed assets tab).
+    const [assets, setAssets] = useState([]);
     // The client's industry: '' means detected from the file (landscaping adds its own tab).
     const [industry, setIndustry] = useState('');
     const [lenderOpen, setLenderOpen] = useState(false);
@@ -142,13 +145,13 @@
     const typed = useDebounced(typedNow, 300);
     const startingCash = typed.cash.startingCash === '' ? undefined : parseFloat(typed.cash.startingCash);
     const analyzeOpts = useMemo(() => (parsed.ok ? ({
-      accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined,
+      accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined, assets,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry, assets]);
     // Large exports are analyzed in the background so the page stays responsive (src/work.js).
     const { result, analyzing } = useAnalysis(parsed.ok, analyzeOpts);
     // The industry's own tab shows once the analysis knows the industry.
@@ -176,6 +179,7 @@
       setPortal(saved && saved.portal ? saved.portal : null);
       setLoanRequest(saved && saved.loanRequest ? saved.loanRequest : null);
       setIndustry(saved && saved.industry ? saved.industry : '');
+      setAssets(saved && Array.isArray(saved.assets) ? saved.assets : []);
       setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
@@ -193,10 +197,10 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
@@ -445,6 +449,7 @@
             : tab === 'budget' ? html`<${BudgetTab} bva=${result.budget} uploaded=${uploadedBudget} prefs=${budgetPrefs} setPrefs=${setBudgetPrefs} />`
             : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
+            : tab === 'assets' ? html`<${AssetsTab} result=${result} assets=${assets} setAssets=${setAssets} canSave=${!!clientId} />`
             : html`<${AdvisoryTab} result=${result} loanRequest=${loanRequest} setLoanRequest=${setLoanRequest} onPackage=${() => setLenderOpen(true)} canSave=${!!clientId} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
         </main>`}
         <footer class="foot">Files are processed in your browser and never uploaded. Review settings are saved in this browser only; back them up from Clients. Flags are leads for review, not confirmed errors.${signedInSite ? html` · <a href="/auth/logout">Sign out</a>` : ''} · <button class="linkish" onClick=${() => setFlagging(true)}>Flag a problem</button> · <button class="linkish" onClick=${() => setProblemOpen(true)}>Report a problem</button>${Firm.website ? html` · <a href=${/^https?:/.test(Firm.website) ? Firm.website : `https://${Firm.website}`} target="_blank" rel="noopener">${Firm.website}</a>` : ''}</footer>

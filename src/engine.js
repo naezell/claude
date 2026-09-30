@@ -2734,6 +2734,342 @@
     return { offSeason, serviceLines, contracts, labor: laborSeason, equipment, asOf: lastFull };
   }
 
+  // ---------------------------------------------------------------- fixed assets & depreciation
+
+  // Asset categories: book life (straight-line, years) and the IRS recovery period (MACRS GDS).
+  // Real property uses straight-line mid-month; software is amortized over 36 months.
+  const ASSET_CATEGORIES = [
+    { key: 'equipment', label: 'Machinery and equipment', book: 7, tax: 7 },
+    { key: 'vehicle', label: 'Cars, vans and light trucks', book: 5, tax: 5 },
+    { key: 'trailer', label: 'Trailers and heavy trucks', book: 7, tax: 5 },
+    { key: 'computer', label: 'Computers and office tech', book: 3, tax: 5 },
+    { key: 'furniture', label: 'Furniture and fixtures', book: 7, tax: 7 },
+    { key: 'landimp', label: 'Land improvements (paving, fences, irrigation)', book: 15, tax: 15 },
+    { key: 'qip', label: 'Interior improvements to a building', book: 15, tax: 15 },
+    { key: 'building', label: 'Commercial building', book: 39, tax: 39, real: true },
+    { key: 'rental', label: 'Residential rental building', book: 27.5, tax: 27.5, real: true },
+    { key: 'software', label: 'Off-the-shelf software', book: 3, tax: 3, software: true },
+    { key: 'land', label: 'Land (not depreciated)', book: 0, tax: 0 },
+  ];
+  const categoryOf = (key) => ASSET_CATEGORIES.find((c) => c.key === key) || ASSET_CATEGORIES[0];
+  const TAX_METHODS = { macrs: 'MACRS', bonus: 'MACRS with bonus depreciation', s179: 'Section 179 (all in year one)', sl: 'Straight-line (tax)' };
+
+  // Bonus depreciation allowed for property placed in service on a date: 100% through 2022,
+  // then 80/60/40 stepping down, and 100% again for property acquired after January 19, 2025.
+  // A default only: the tax preparer confirms the election.
+  function defaultBonus(dateStr) {
+    const d = String(dateStr || '');
+    if (d < '2023-01-01') return 100;
+    if (d < '2024-01-01') return 80;
+    if (d < '2025-01-01') return 60;
+    if (d < '2025-01-20') return 40;
+    return 100;
+  }
+
+  // MACRS percentages by year for personal property: 200% declining balance switching to
+  // straight-line (150% for 15 and 20 years), with the first year cut to half a year, or to the
+  // quarter placed in service under the mid-quarter convention (quarter 1-4). Rounded as the
+  // IRS tables are, with the last year taking the remainder.
+  // The published IRS percentages (Pub. 946, tables A-1 to A-5) where the IRS rounded some
+  // straight-line years up and others down; other cases are computed the same way.
+  const MACRS_TABLES = {
+    '3|0': [33.33, 44.45, 14.81, 7.41],
+    '5|0': [20, 32, 19.2, 11.52, 11.52, 5.76],
+    '7|0': [14.29, 24.49, 17.49, 12.49, 8.93, 8.92, 8.93, 4.46],
+    '10|0': [10, 18, 14.4, 11.52, 9.22, 7.37, 6.55, 6.55, 6.56, 6.55, 3.28],
+    '15|0': [5, 9.5, 8.55, 7.7, 6.93, 6.23, 5.9, 5.9, 5.91, 5.9, 5.91, 5.9, 5.91, 5.9, 5.91, 2.95],
+    '20|0': [3.75, 7.219, 6.677, 6.177, 5.713, 5.285, 4.888, 4.522, 4.462, 4.461, 4.462, 4.461, 4.462, 4.461, 4.462, 4.461, 4.462, 4.461, 4.462, 4.461, 2.231],
+    '3|1': [58.33, 27.78, 12.35, 1.54], '3|2': [41.67, 38.89, 14.14, 5.3], '3|3': [25, 50, 16.67, 8.33], '3|4': [8.33, 61.11, 20.37, 10.19],
+    '5|1': [35, 26, 15.6, 11.01, 11.01, 1.38], '5|2': [25, 30, 18, 11.37, 11.37, 4.26], '5|3': [15, 34, 20.4, 12.24, 11.3, 7.06], '5|4': [5, 38, 22.8, 13.68, 10.94, 9.58],
+    '7|1': [25, 21.43, 15.31, 10.93, 8.75, 8.74, 8.75, 1.09], '7|2': [17.85, 23.47, 16.76, 11.97, 8.87, 8.87, 8.87, 3.33],
+    '7|3': [10.71, 25.51, 18.22, 13.02, 9.3, 8.85, 8.86, 5.53], '7|4': [3.57, 27.55, 19.68, 14.06, 10.04, 8.73, 8.73, 7.64],
+  };
+  const macrsCache = new Map();
+  function macrsRates(life, quarter) {
+    const key = `${life}|${quarter || 0}`;
+    if (MACRS_TABLES[key]) return MACRS_TABLES[key].map((r) => r / 100);
+    if (macrsCache.has(key)) return macrsCache.get(key);
+    const rate = (life >= 15 ? 1.5 : 2) / life;
+    const first = quarter ? (12 - (quarter * 3 - 1.5)) / 12 : 0.5;
+    const digits = life >= 20 ? 3 : 2;
+    const out = [];
+    let basis = 1, used = 0;
+    for (let y = 1; basis > 1e-9 && y <= life + 1; y++) {
+      const frac = y === 1 ? first : 1;
+      const remaining = life - used;
+      const db = basis * rate * frac;
+      const sl = remaining > 0 ? basis * Math.min(1, frac / remaining) : basis;
+      const dep = y === life + 1 ? basis : Math.min(basis, Math.max(db, sl));
+      out.push(dep);
+      basis -= dep;
+      used += frac;
+    }
+    const f = 10 ** (digits + 2);
+    const rounded = out.map((r) => Math.round(r * f) / f);
+    rounded[rounded.length - 1] = Math.round((1 - rounded.slice(0, -1).reduce((t, r) => t + r, 0)) * f) / f;
+    macrsCache.set(key, rounded);
+    return rounded;
+  }
+
+  const ym = (d) => (d ? `${d.slice(0, 7)}` : '');
+  const monthsBetween = (a, b) => { const [y1, m1] = a.split('-').map(Number), [y2, m2] = b.split('-').map(Number); return (y2 - y1) * 12 + (m2 - m1); };
+  const addMonths = (key, n) => { const [y, m] = key.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+
+  // One asset's book depreciation by month (straight-line from the month placed in service,
+  // stopping the month before disposal), and tax depreciation by calendar year.
+  function depreciateAsset(a, midQuarterYears) {
+    const cat = categoryOf(a.category);
+    const cost = Math.max(0, +a.cost || 0);
+    const start = ym(a.date);
+    const salvage = Math.min(cost, Math.max(0, +a.salvage || 0));
+    const bookLife = a.bookLife != null && a.bookLife !== '' ? +a.bookLife : cat.book;
+    const disposed = a.disposed ? ym(a.disposed) : null;
+    const book = {};
+    const notes = [];
+    if (cat.key !== 'land' && bookLife > 0 && start) {
+      const months = Math.round(bookLife * 12);
+      const per = (cost - salvage) / months;
+      let left = cost - salvage;
+      for (let i = 0; i < months && left > 0.004; i++) {
+        const k = addMonths(start, i);
+        if (disposed && k >= disposed) break;
+        const amt = i === months - 1 ? left : Math.min(left, per);
+        book[k] = amt;
+        left -= amt;
+      }
+    }
+    const tax = {};
+    let method = a.taxMethod || 'macrs';
+    const year = +String(a.date || '').slice(0, 4);
+    const s179 = method === 's179' ? cost : Math.min(cost, Math.max(0, +a.s179 || 0));
+    let basis = cost - s179;
+    let bonus = 0;
+    if (cat.key === 'land' || !year) method = 'none';
+    else if (!cat.real && method === 'bonus') {
+      const pct = a.bonusPct != null && a.bonusPct !== '' ? Math.min(100, Math.max(0, +a.bonusPct)) : defaultBonus(a.date);
+      bonus = basis * pct / 100;
+      basis -= bonus;
+    }
+    if (method !== 'none' && year) {
+      if (s179 || bonus) tax[year] = s179 + bonus;
+      const add = (y, amt) => { if (amt > 0.004) tax[y] = (tax[y] || 0) + amt; };
+      if (basis > 0.004) {
+        if (cat.real) {
+          const m = +a.date.slice(5, 7);
+          const firstFrac = (12 - m + 0.5) / 12;
+          const perYear = basis / cat.tax;
+          let left = basis;
+          for (let y = year, i = 0; left > 0.004; y++, i++) { const amt = Math.min(left, i === 0 ? perYear * firstFrac : perYear); add(y, amt); left -= amt; }
+        } else if (cat.software || method === 'sl') {
+          const life = cat.software ? 3 : cat.tax;
+          const perYear = basis / life;
+          let left = basis;
+          // Software: 36 months from the month placed in service; straight-line tax: half-year.
+          const firstFrac = cat.software ? (13 - +a.date.slice(5, 7)) / 12 : 0.5;
+          for (let y = year, i = 0; left > 0.004; y++, i++) { const amt = Math.min(left, i === 0 ? perYear * firstFrac : perYear); add(y, amt); left -= amt; }
+        } else {
+          const q = midQuarterYears && midQuarterYears.has(year) ? Math.ceil(+a.date.slice(5, 7) / 3) : 0;
+          macrsRates(cat.tax, q).forEach((r, i) => add(year + i, basis * r));
+        }
+      }
+      // Sold or scrapped: half of that year's normal deduction (half-year convention), none after.
+      if (a.disposed) {
+        const dy = +a.disposed.slice(0, 4);
+        for (const y of Object.keys(tax).map(Number)) {
+          if (y > dy) delete tax[y];
+          else if (y === dy && y > year && !cat.real) tax[y] /= 2;
+        }
+      }
+    }
+    if (cat.key === 'vehicle' && method !== 'none') notes.push('Passenger cars and small trucks under 6,000 lbs have yearly limits on depreciation; the tax preparer applies them.');
+    if (method === 'bonus' && cat.real) notes.push('Buildings do not qualify for bonus depreciation; regular depreciation is used.');
+    return { book, tax, s179, bonus, bookLife, salvage, method };
+  }
+
+  // The asset register as of a month: each asset's book and tax figures, yearly totals, and
+  // whether the mid-quarter rule applies (over 40% of a year's equipment placed in service in
+  // October to December).
+  function assetSchedule(assets, opts) {
+    opts = opts || {};
+    const list = (assets || []).filter((a) => a && a.date && +a.cost > 0);
+    const asOf = opts.asOf || new Date().toISOString().slice(0, 7);
+    const byYear = new Map();
+    for (const a of list) {
+      const cat = categoryOf(a.category);
+      if (cat.real || cat.key === 'land' || cat.software || a.taxMethod === 's179' || a.taxMethod === 'sl') continue;
+      const y = +a.date.slice(0, 4);
+      const basis = Math.max(0, +a.cost - Math.min(+a.cost, +a.s179 || 0));
+      if (!byYear.has(y)) byYear.set(y, { total: 0, q4: 0 });
+      const e = byYear.get(y);
+      e.total += basis;
+      if (+a.date.slice(5, 7) >= 10) e.q4 += basis;
+    }
+    const midQuarterYears = new Set([...byYear.entries()].filter(([, e]) => e.total > 0 && e.q4 / e.total > 0.4).map(([y]) => y));
+    const years = new Set();
+    const rows = list.map((a) => {
+      const d = depreciateAsset(a, midQuarterYears);
+      const bookByYear = {};
+      let accumulated = 0;
+      for (const [k, v] of Object.entries(d.book)) {
+        const y = +k.slice(0, 4);
+        bookByYear[y] = (bookByYear[y] || 0) + v;
+        years.add(y);
+        if (k <= asOf) accumulated += v;
+      }
+      for (const y of Object.keys(d.tax)) years.add(+y);
+      const asOfYear = +asOf.slice(0, 4);
+      const taxTo = Object.entries(d.tax).filter(([y]) => +y <= asOfYear).reduce((t, [, v]) => t + v, 0);
+      const cost = +a.cost;
+      const nbv = cost - accumulated;
+      const disposal = a.disposed ? { date: a.disposed, price: +a.salePrice || 0, gain: round2((+a.salePrice || 0) - nbv) } : null;
+      return {
+        id: a.id, name: a.name, category: categoryOf(a.category).key, categoryLabel: categoryOf(a.category).label, date: a.date, cost: round2(cost),
+        method: d.method, methodLabel: TAX_METHODS[d.method] || 'Not depreciated', bookLife: d.bookLife, salvage: round2(d.salvage),
+        bookMonthly: d.book, bookByYear: Object.fromEntries(Object.entries(bookByYear).map(([y, v]) => [y, round2(v)])),
+        taxByYear: Object.fromEntries(Object.entries(d.tax).map(([y, v]) => [y, round2(v)])),
+        accumulated: round2(accumulated), nbv: round2(nbv), taxTaken: round2(taxTo), taxLeft: d.method === 'none' || a.disposed ? 0 : round2(Math.max(0, cost - taxTo)),
+        s179: round2(d.s179), bonus: round2(d.bonus), midQuarter: midQuarterYears.has(+a.date.slice(0, 4)) && d.method !== 'none' && !categoryOf(a.category).real,
+        disposal, notes: [],
+      };
+    });
+    const yearList = [...years].sort((a, b) => a - b);
+    const totals = yearList.map((y) => ({
+      year: y,
+      book: round2(rows.reduce((t, r) => t + (r.bookByYear[y] || 0), 0)),
+      tax: round2(rows.reduce((t, r) => t + (r.taxByYear[y] || 0), 0)),
+    }));
+    const monthBook = (key) => round2(rows.reduce((t, r) => t + (r.bookMonthly[key] || 0), 0));
+    return {
+      rows: rows.sort((a, b) => a.date.localeCompare(b.date) || String(a.name).localeCompare(String(b.name))), asOf, years: totals, midQuarterYears: [...midQuarterYears],
+      cost: round2(rows.reduce((t, r) => t + (r.disposal ? 0 : r.cost), 0)), accumulated: round2(rows.reduce((t, r) => t + (r.disposal ? 0 : r.accumulated), 0)),
+      nbv: round2(rows.reduce((t, r) => t + (r.disposal ? 0 : r.nbv), 0)), monthBook,
+    };
+  }
+
+  // The depreciation journal entry for a period (a month 'YYYY-MM' or a year 'YYYY'), as lines
+  // and as a CSV QuickBooks Online can import (Journal No., Journal Date, Account Name, Debits,
+  // Credits, Description).
+  function depreciationEntry(schedule, period, accounts) {
+    accounts = accounts || {};
+    const expense = accounts.expense || 'Depreciation Expense';
+    const accum = accounts.accumulated || 'Accumulated Depreciation';
+    const isYear = /^\d{4}$/.test(period);
+    const inPeriod = (k) => (isYear ? k.startsWith(`${period}-`) : k === period);
+    const lines = [];
+    let total = 0;
+    for (const r of schedule.rows) {
+      const amt = round2(Object.entries(r.bookMonthly).filter(([k]) => inPeriod(k)).reduce((t, [, v]) => t + v, 0));
+      if (amt > 0) { lines.push({ name: r.name, amount: amt }); total += amt; }
+    }
+    total = round2(total);
+    const last = isYear ? `${period}-12-31` : isoDate(new Date(Date.UTC(+period.slice(0, 4), +period.slice(5, 7), 0)));
+    const label = isYear ? period : new Date(`${period}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const no = `DEP-${period.replace('-', '')}`;
+    const q = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const [y, m, d] = last.split('-');
+    const date = `${m}/${d}/${y}`;
+    const rowsCsv = [['Journal No.', 'Journal Date', 'Account Name', 'Debits', 'Credits', 'Description']];
+    if (total > 0) {
+      rowsCsv.push([no, date, expense, total.toFixed(2), '', `Depreciation ${label}`]);
+      rowsCsv.push([no, date, accum, '', total.toFixed(2), `Depreciation ${label}`]);
+    }
+    return { period, label, date: last, number: no, expense, accumulated: accum, total, lines, csv: rowsCsv.map((r) => r.map(q).join(',')).join('\n') };
+  }
+
+  // Reads an asset list (CSV) with flexible column names.
+  function parseAssetList(text) {
+    const rows = parseCSV(text);
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      const lc = rows[i].map(lower);
+      const col = (rx) => { const j = lc.findIndex((h) => rx.test(h)); return j === -1 ? null : j; };
+      const name = col(/^(asset|asset name|name|description|item|asset description)$/);
+      const date = col(/placed in service|in service|purchase date|date acquired|acquired|^date$|service date/);
+      const cost = col(/^(cost|amount|basis|cost basis|purchase price|price|original cost)$/);
+      if (name == null || date == null || cost == null) continue;
+      const cat = col(/category|class|type/), life = col(/life|years/), salvage = col(/salvage|residual/);
+      const method = col(/method/), s179 = col(/179/), bonus = col(/bonus/), disposed = col(/disposed|sold|retired/), price = col(/sale price|sold for|proceeds/);
+      const out = [];
+      for (const r of rows.slice(i + 1)) {
+        const d = parseDate(r[date]);
+        const c = parseAmount(r[cost]);
+        if (!d || c == null || c <= 0 || !norm(r[name])) continue;
+        const m = method != null ? lower(r[method]) : '';
+        const dd = disposed != null ? parseDate(r[disposed]) : null;
+        out.push({
+          id: `a${out.length}-${Math.random().toString(36).slice(2, 8)}`, name: norm(r[name]), date: isoDate(d), cost: c,
+          category: guessAssetCategory(`${cat != null ? r[cat] : ''} ${r[name]}`),
+          bookLife: life != null && parseAmount(r[life]) ? parseAmount(r[life]) : '', salvage: salvage != null ? parseAmount(r[salvage]) || '' : '',
+          taxMethod: /179/.test(m) || (s179 != null && parseAmount(r[s179]) >= c) ? 's179' : /bonus/.test(m) || (bonus != null && parseAmount(r[bonus])) ? 'bonus' : /straight|sl\b/.test(m) ? 'sl' : 'macrs',
+          s179: s179 != null && parseAmount(r[s179]) && parseAmount(r[s179]) < c ? parseAmount(r[s179]) : '', bonusPct: bonus != null && parseAmount(r[bonus]) ? parseAmount(r[bonus]) : '',
+          disposed: dd ? isoDate(dd) : '', salePrice: price != null ? parseAmount(r[price]) || '' : '',
+        });
+      }
+      return out.length ? out : null;
+    }
+    return null;
+  }
+
+  function guessAssetCategory(text) {
+    const t = lower(text);
+    if (/\bland\b(?! ?improv)/.test(t) && !/landscap/.test(t)) return 'land';
+    if (/software|license/.test(t)) return 'software';
+    if (/rental (house|property|building)|residential|apartment|duplex/.test(t)) return 'rental';
+    if (/building|warehouse|office building|\bshop building/.test(t)) return 'building';
+    if (/leasehold|interior|improvement to|build.?out|renovat/.test(t)) return 'qip';
+    if (/paving|parking lot|fence|fencing|landscap|sidewalk|land improv/.test(t)) return 'landimp';
+    if (/trailer|dump truck|box truck|semi|heavy truck/.test(t)) return 'trailer';
+    if (/\bcar\b|\bvan\b|pickup|truck|vehicle|f-?150|f-?250|silverado|ram \d|tacoma|sierra|suv/.test(t)) return 'vehicle';
+    if (/computer|laptop|macbook|server|printer|copier|monitor|ipad|tablet|phone system|pos system/.test(t)) return 'computer';
+    if (/furniture|desk|chair|shelving|cabinet|fixture|table/.test(t)) return 'furniture';
+    return 'equipment';
+  }
+
+  const FIXED_ASSET_NAME = /equipment|machinery|vehicle|truck|trailer|furniture|fixture|computer|building|leasehold|improvement|fixed asset|\btools?\b|property|land\b/i;
+  const ASSET_WORD = new RegExp(`${EQUIP_WORD.source}|laptop|computer|server|printer|copier|desk|furniture|\\bvan\\b|vehicle|forklift|compressor|generator|welder|oven|freezer|refrigerat|espresso|machine|hvac|furnace|roof`, 'i');
+  const ASSET_EXPENSE_ACCOUNT = /repair|maint|tool|supplies|equipment(?! rental)|small|office|furniture|computer/i;
+
+  // Fixed-asset facts from the books: purchases recorded to fixed-asset accounts, equipment-like
+  // purchases of $2,500 or more that went to expense accounts, depreciation recorded per year,
+  // and the account names to use in the journal entry.
+  function fixedAssetFacts(txns, accountClass) {
+    const postings = toPostings(txns, accountClass);
+    const candidates = [];
+    const seen = new Set();
+    for (const t of txns) {
+      if (classOf(accountClass, t.account) !== 'balance' || !FIXED_ASSET_NAME.test(t.account) || /accum|depreciation|amortiz|loan|payable|financial|credit/i.test(t.account)) continue;
+      if (!(t.amount > 0) || /journal/i.test(t.type) && NON_CASH_ACCOUNT.test(t.split || '')) continue;
+      const key = `${t.dateStr}|${round2(t.amount)}|${t.account}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({ key, date: t.dateStr, vendor: counterpartyOf(t) || '', memo: t.memo || '', account: t.account, amount: round2(t.amount), expensed: false, category: guessAssetCategory(`${t.account} ${t.memo || ''}`) });
+    }
+    for (const p of postings) {
+      if (p.cls !== 'expense' && p.cls !== 'cogs') continue;
+      const memo = p.t.memo || '';
+      if (p.value < 2500 || !ASSET_EXPENSE_ACCOUNT.test(p.category) || /rental|fuel|wage|payroll|rent\b/i.test(p.category)) continue;
+      if (!(ASSET_WORD.test(memo) || ASSET_WORD.test(p.t.name || '')) || /repair|service|rebuild|replace|parts?\b/i.test(memo.replace(/\(new\)/i, ''))) continue;
+      const key = `${p.t.dateStr}|${round2(p.value)}|${p.category}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      candidates.push({ key, date: p.t.dateStr, vendor: counterpartyOf(p.t) || '', memo, account: p.category, amount: round2(p.value), expensed: true, category: guessAssetCategory(`${memo} ${p.t.name || ''}`) });
+    }
+    const recorded = {}, recordedMonths = {};
+    const expCount = new Map();
+    for (const p of postings) {
+      if ((p.cls !== 'expense' && p.cls !== 'cogs') || !/depreciation/i.test(p.category)) continue;
+      const y = p.t.dateStr.slice(0, 4), k = p.t.dateStr.slice(0, 7);
+      recorded[y] = round2((recorded[y] || 0) + p.value);
+      recordedMonths[k] = round2((recordedMonths[k] || 0) + p.value);
+      expCount.set(p.category, (expCount.get(p.category) || 0) + 1);
+    }
+    const accumName = [...new Set(txns.map((t) => t.account))].find((a) => /accum.*deprec/i.test(a || ''));
+    const expenseName = [...expCount.entries()].sort((a, b) => b[1] - a[1]).map(([a]) => a)[0];
+    return {
+      candidates: candidates.sort((a, b) => b.date.localeCompare(a.date)), recorded, recordedMonths,
+      accounts: { expense: expenseName || 'Depreciation Expense', accumulated: accumName || 'Accumulated Depreciation' },
+    };
+  }
+
   // ---------------------------------------------------------------- tax set-aside & owner pay
 
   const ENTITY = {
@@ -3472,6 +3808,7 @@
     { id: 'equipbuys', label: 'Equipment bought over $2,500 recorded as a fixed asset', auto: true, industry: 'landscaping' },
     { id: 'crew', label: 'Seasonal crew hires and layoffs recorded in payroll', industry: 'landscaping', months: [3, 4, 5, 10, 11, 12] },
     { id: 'receipts', label: 'Receipts collected for meals, travel and large purchases', auto: true },
+    { id: 'depreciation', label: 'Depreciation posted from the fixed asset register', auto: true },
     { id: 'payroll', label: 'Payroll recorded and payroll liabilities checked' },
     { id: 'salestax', label: 'Sales tax reviewed and filed' },
     { id: 'tieout', label: 'Numbers tie to the QuickBooks Profit and Loss', auto: true },
@@ -3511,6 +3848,22 @@
         if (!e) return { status: 'na', note: '' };
         const n = e.capitalize.filter((x) => x.date.slice(0, 7) === month).length;
         return n ? { status: 'open', note: `${n} purchase${n === 1 ? '' : 's'} expensed` } : { status: 'clear', note: 'None expensed' };
+      }
+      case 'depreciation': {
+        const fa = result.fixedAssets;
+        if (!fa || !fa.schedule || !fa.schedule.rows.length) return { status: 'na', note: 'No fixed asset register yet' };
+        const due = round2(fa.schedule.rows.reduce((t, r) => t + (r.bookMonthly[month] || 0), 0));
+        const posted = fa.recordedMonths[month] || 0;
+        if (due <= 0) return { status: 'clear', note: 'Nothing due this month' };
+        // Clients who book depreciation once a year, at December.
+        const months = Object.keys(fa.recordedMonths);
+        const yearly = months.length > 0 && months.every((k) => k.endsWith('-12'));
+        if (yearly && !month.endsWith('-12')) return { status: 'clear', note: 'Booked once a year, in December' };
+        if (yearly) {
+          const yearDue = round2(fa.schedule.rows.reduce((t, r) => t + (r.bookByYear[month.slice(0, 4)] || 0), 0));
+          return Math.abs(posted - yearDue) <= 1 ? { status: 'clear', note: `${fmtMoney(posted)} for the year` } : { status: 'open', note: `${fmtMoney(yearDue)} due for the year, ${fmtMoney(posted)} posted` };
+        }
+        return Math.abs(posted - due) <= 1 ? { status: 'clear', note: `${fmtMoney(posted)} posted` } : { status: 'open', note: `${fmtMoney(due)} due, ${fmtMoney(posted)} posted` };
       }
       case 'tieout':
         if (!result.tieOut) return { status: 'open', note: 'Add the P&L export to check' };
@@ -4018,6 +4371,19 @@
     out.detectedIndustry = detectIndustry(parsed.meta, out.accounts ? out.accounts.map((a) => a.name || a.account || a) : []);
     out.industry = opts.industry || out.detectedIndustry;
     if (out.industry === 'landscaping') out.landscape = landscapeAnalysis(txns, accountClass, out, { cushion: opts.cushion });
+    // Fixed assets: what the books show, and the saved register's schedule through the last full month.
+    out.fixedAssets = fixedAssetFacts(txns, accountClass);
+    if (out.balanceSheet && out.balanceSheet.available) {
+      const fa = out.balanceSheet.balances.filter((b) => (FIXED_ASSET_NAME.test(b.account) || /accum.*deprec/i.test(b.account)) && !/loan|payable|financial|credit/i.test(b.account));
+      out.fixedAssets.bookCost = round2(fa.filter((b) => !/accum|depreciation/i.test(b.account)).reduce((t, b) => t + b.balance, 0));
+      out.fixedAssets.bookAccumulated = round2(-fa.filter((b) => /accum|depreciation/i.test(b.account)).reduce((t, b) => t + b.balance, 0));
+    }
+    if (opts.assets && opts.assets.length) {
+      const last = out.closableMonths && out.closableMonths.length ? out.closableMonths[out.closableMonths.length - 1] : isoDate(dateRange(txns, parsed.meta).last).slice(0, 7);
+      const sched = assetSchedule(opts.assets, { asOf: last });
+      delete sched.monthBook;
+      out.fixedAssets.schedule = sched;
+    }
     return out;
   }
 
@@ -4760,6 +5126,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });
