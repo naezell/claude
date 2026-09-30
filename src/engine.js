@@ -4764,6 +4764,111 @@
     `;
   }
 
+  // ---------------------------------------------------------------- free health check
+
+  // A short teaser report: how many problems and how many dollars, never which transactions,
+  // customers or vendors. The full review has the details and the fixes.
+  function healthCheckFacts(result) {
+    const a = result.audit;
+    const cleared = (x) => isCleared(x && x.review);
+    const sum = (list, f) => round2(list.reduce((t, x) => t + Math.abs(f(x) || 0), 0));
+    const books = [];
+    const add = (list, key, count, amount, title, why) => { if (count > 0) list.push({ key, count, amount: amount != null ? round2(amount) : null, title, why }); };
+    add(books, 'uncategorized', a.open.uncategorized, a.uncategorizedOpenTotal, 'Uncategorized transactions', 'Money in or out with no account, so it is missing from the profit and loss and from tax deductions.');
+    add(books, 'duplicates', a.open.duplicates, a.duplicateOpenExposure, 'Possible duplicate charges', 'The same charge or bill entered twice, overstating expenses or paying a vendor twice.');
+    add(books, 'miscoded', a.open.mismatches, null, 'Entries coded to the wrong place', 'Transactions whose account, payee or amount does not fit the pattern of the books.');
+    const bs = result.balanceSheet && result.balanceSheet.available ? result.balanceSheet.items.filter((x) => !cleared(x)) : [];
+    add(books, 'balance', bs.length, sum(bs, (x) => x.amount), 'Balance sheet problems', 'Accounts with balances that should not be there, such as undeposited payments, overpaid cards or old open invoices.');
+    const rc = result.receipts ? result.receipts.items.filter((x) => x.status === 'Missing' && !cleared(x)) : [];
+    add(books, 'receipts', rc.length, sum(rc, (x) => x.amount), 'Receipts missing', 'Expenses the IRS expects a receipt for, such as meals, travel and large purchases.');
+    const un = result.unusual ? [...result.unusual.flux, ...result.unusual.txns].filter((x) => !cleared(x)) : [];
+    add(books, 'unusual', un.length, null, 'Unusual activity to confirm', 'New payees, one-off amounts and accounts that jumped from the usual pattern.');
+
+    const money = [];
+    const vp = result.vendors && result.vendors.prices;
+    if (vp && vp.rows.length) add(money, 'prices', vp.rows.length, vp.annualIncrease, 'Vendor price increases', 'Suppliers and services that raised their prices, a cost per year worth reviewing.');
+    const subs = result.subs ? result.subs.list.filter((x) => (x.flags || []).some((f) => /overlapping/i.test(f.kind || f))) : [];
+    if (subs.length) add(money, 'subs', subs.length, sum(subs, (x) => x.annualized), 'Overlapping software subscriptions', 'Paying for more than one tool that does the same job, per year.');
+
+    const land = [];
+    const L = result.landscape;
+    if (L) {
+      if (L.contracts) {
+        add(land, 'missed', L.contracts.missed.length, L.contracts.missedTotal, 'Contract invoices not sent', 'Customers billed every month who were not billed in a recent month.');
+        add(land, 'stale', L.contracts.stale.length, L.contracts.staleYearly, 'Contract prices not raised in a year or more', 'Extra income per year from a 5% increase on these contracts.');
+      }
+      if (L.serviceLines && L.serviceLines.losing.length) add(land, 'losing', L.serviceLines.losing.length, sum(L.serviceLines.losing, (x) => x.net), 'Service lines losing money', 'Loss over the last 12 months after each line\'s share of overhead.');
+      const pb = L.playbook;
+      if (pb) {
+        const c = playbookCost(pb);
+        if (pb.fuel.stops >= 12) add(land, 'fuel', pb.fuel.stops, c.fuelCost, 'Crew fuel stops at gas stations', `About ${c.fuelHours} crew hours a year in wages, most of which fuel kept at the shop saves.`);
+        if (pb.supply.runs >= 12) add(land, 'supply', pb.supply.runs, c.runCost, 'Trips to hardware and supply stores', `About ${c.runHours} crew hours a year in wages; stocking common items saves the trips.`);
+        if (pb.fees.total >= 100) add(land, 'fees', pb.fees.count, pb.fees.total, 'Vendor delivery and restocking fees', 'Flat per-ticket charges that regular vendors often waive.');
+      }
+      if (L.equipment && L.equipment.capitalize.length) add(land, 'equipment', L.equipment.capitalize.length, sum(L.equipment.capitalize, (x) => x.amount), 'Equipment recorded as an expense', 'Machines that belong on the balance sheet and may qualify for depreciation or Section 179.');
+      if (L.offSeason && L.offSeason.low.cash < L.offSeason.cushion) land.push({ key: 'winter', count: null, amount: round2(L.offSeason.needed), title: 'Winter cash shortfall', why: `Cash is on track to fall below a safe cushion in ${L.offSeason.low.label}. A plan for the slow months covers it.` });
+    }
+
+    const cash = result.cash;
+    const be = result.breakeven;
+    const cushion = be ? Math.round(be.base.fixed / 1000) * 1000 : 0;
+    const cashLine = cash ? (cash.firstNegative ? `Cash is projected to run out in the week of ${niceDate(cash.firstNegative.start)} without action.`
+      : cash.lowest.ending < cushion ? `Cash is projected to dip below one month of expenses in the week of ${niceDate(cash.lowest.start)}.`
+        : 'Cash looks steady for the next 13 weeks.') : '';
+    const bookItems = books.reduce((t, x) => t + x.count, 0);
+    const bookDollars = round2(books.reduce((t, x) => t + (x.amount || 0), 0));
+    const yearly = round2([...money, ...land].filter((x) => ['prices', 'subs', 'stale', 'fuel', 'supply', 'fees'].includes(x.key)).reduce((t, x) => t + (x.amount || 0), 0));
+    return {
+      health: a.healthScore, ties: result.tieOut ? result.tieOut.ties : null, books, money, land, cashLine,
+      bookItems, bookDollars, yearly, landscaper: !!L, period: result.period,
+    };
+  }
+
+  function buildHealthCheck(result, opts) {
+    opts = opts || {};
+    const firm = firmOf(opts);
+    const client = opts.clientName || result.meta.company || 'Your business';
+    const f = healthCheckFacts(result);
+    const today = new Date().toISOString().slice(0, 10);
+    const by = signature(opts);
+    const tile = (label, value, sub, tone) => `<div class="tile ${tone || ''}"><div class="tl">${esc(label)}</div><div class="tv">${esc(value)}</div><div class="ts">${esc(sub)}</div></div>`;
+    const rows = (list) => `<table><thead><tr><th>What we found</th><th class="n">How many</th><th class="n">Amount</th></tr></thead><tbody>${list.map((x) => `<tr><td><strong>${esc(x.title)}</strong><br><span class="small">${esc(x.why)}</span></td><td class="n">${x.count == null ? '' : esc(String(x.count))}</td><td class="n">${x.amount ? esc(fmtWhole(x.amount)) : ''}</td></tr>`).join('')}</tbody></table>`;
+    const h = [];
+    h.push(`<header><div class="head-text"><div class="brand">${esc(firm.name || opts.preparer || 'Books health check')}</div><h1>${esc(client)}</h1><div class="meta">Free books health check · ${esc(f.period.start)} to ${esc(f.period.end)} · prepared ${esc(today)}${firm.name ? (opts.preparer ? ` by ${esc(opts.preparer)}` : '') : by ? ` by ${esc(by)}` : ''}</div></div>${firm.logo ? `<img class="logo" src="${esc(firm.logo)}" alt="${esc(firm.name || 'Logo')}">` : ''}</header>`);
+    const headline = f.bookItems
+      ? `We found ${f.bookItems} item${f.bookItems === 1 ? '' : 's'} to fix in your books${f.bookDollars ? `, involving ${fmtWhole(f.bookDollars)}` : ''}.`
+      : 'Your books look clean. Nice work.';
+    h.push(`<section><p class="lead">${esc(headline)}${f.yearly ? ` We also found ideas worth about ${esc(fmtWhole(f.yearly))} a year.` : ''}</p></section>`);
+    h.push('<section class="tiles">');
+    h.push(tile('Books health score', `${f.health}/100`, f.health >= 85 ? (f.bookItems ? 'Mostly in good shape' : 'In good shape') : f.health >= 65 ? 'Needs some cleanup' : 'Needs attention', f.health >= 85 ? 'good' : f.health >= 65 ? 'warn' : 'bad'));
+    h.push(tile('Items to fix', String(f.bookItems), f.bookDollars ? `Involving ${fmtWhole(f.bookDollars)}` : 'Nothing open', f.bookItems ? 'warn' : 'good'));
+    if (f.ties != null) h.push(tile('Matches QuickBooks', f.ties ? 'Yes' : 'Not yet', f.ties ? 'Ties to the Profit and Loss' : 'Totals differ from the Profit and Loss', f.ties ? 'good' : 'bad'));
+    if (f.yearly) h.push(tile('Savings and income ideas', fmtWhole(f.yearly), 'Per year', ''));
+    h.push('</section>');
+    if (f.books.length) h.push(`<section class="keep"><h2>In your books</h2>${rows(f.books)}</section>`);
+    if (f.land.length) h.push(`<section class="keep"><h2>For your landscaping business</h2>${rows(f.land)}</section>`);
+    if (f.money.length) h.push(`<section class="keep"><h2>Costs worth a look</h2>${rows(f.money)}</section>`);
+    if (f.cashLine) h.push(`<section class="keep"><h2>Cash</h2><p>${esc(f.cashLine)}</p></section>`);
+    const covers = [
+      'Every item above listed by date, vendor and amount, with how to fix it',
+      'Your 13-week cash forecast and what to do about low weeks',
+      'Profit by customer, job and service, and where margins are slipping',
+      'Vendor, subscription and price-increase review',
+      ...(f.landscaper ? ['Which contract customers to bill and re-price, and by how much', 'Your winter cash plan: what to set aside each busy month', 'Route density: which streets to fill in with neighbor discounts', 'Your profit playbook: fuel, supply runs, vendor terms and crew time'] : []),
+      'Fixed asset and depreciation schedule, tax set-aside and loan readiness',
+      'A month-end close so the books stay clean',
+    ];
+    h.push(`<section class="keep cta"><h2>Get the full review</h2><p>This check shows how much we found, not where. The full review shows each item and how to fix it, plus:</p><ul class="check">${covers.map((c) => `<li>${esc(c)}</li>`).join('')}</ul><p><strong>To get it, contact ${esc(by || firm.name || 'us')}${firm.website ? ` at <a href="${esc(firm.href)}">${esc(firm.website)}</a>` : ''}.</strong></p></section>`);
+    if (firm.name || firm.website) h.push(`<div class="firm">${esc(by || firm.name)}${firm.website ? ` · <a href="${esc(firm.href)}">${esc(firm.website)}</a>` : ''}</div>`);
+    h.push('<footer>Figures come from your QuickBooks exports, reviewed privately; your files are not uploaded anywhere. Items are leads for review, not confirmed errors. Savings figures are estimates.</footer>');
+    const css = `${reportCss(firm)}
+      .lead { font-size: 17px; font-weight: 600; margin: 4px 0 14px; }
+      .cta { margin-top: 24px; padding: 14px 16px; border: 2px solid ${firm.color}; border-radius: 10px; }
+      .cta h2 { margin-top: 0; color: ${firm.color}; }
+      ul.check { padding-left: 20px; margin: 6px 0 10px; } ul.check li { margin: 3px 0; }`;
+    return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(client)}: books health check</title><style>${css}</style></head><body><main>${h.join('\n')}</main></body></html>`;
+  }
+
   function buildHtmlReport(result, opts) {
     opts = opts || {};
     const firm = firmOf(opts);
@@ -5369,6 +5474,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

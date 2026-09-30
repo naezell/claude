@@ -295,6 +295,7 @@
   const REPORT_FORMATS = [
     ['owner', 'Owner summary'],
     ['full', 'Full review'],
+    ['health', 'Free health check'],
     ['text', 'Plain text'],
   ];
 
@@ -306,8 +307,8 @@
     const preRef = useRef(null);
     const opts = { clientName, preparer, groupBy, cushion, benchmarks, firm: Firm };
     const text = useMemo(() => E.buildReport(result, opts), [result, clientName, preparer, groupBy, cushion, benchmarks]);
-    const doc = useMemo(() => (format === 'text' ? '' : E.buildHtmlReport(result, { ...opts, version: format })), [result, clientName, preparer, groupBy, cushion, benchmarks, format]);
-    const base = `${slug(clientName)}-${format === 'full' ? 'financial-review' : format === 'owner' ? 'financial-summary' : 'books-review'}-${result.period.end}`;
+    const doc = useMemo(() => (format === 'text' ? '' : format === 'health' ? E.buildHealthCheck(result, opts) : E.buildHtmlReport(result, { ...opts, version: format })), [result, clientName, preparer, groupBy, cushion, benchmarks, format]);
+    const base = `${slug(clientName)}-${format === 'full' ? 'financial-review' : format === 'owner' ? 'financial-summary' : format === 'health' ? 'books-health-check' : 'books-review'}-${result.period.end}`;
 
     useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
     useEffect(() => { safeStore.set('ll.reportFormat', format); setStatus(''); }, [format]);
@@ -330,7 +331,7 @@
         <div class="drawer-foot">
           <button class="btn primary" onClick=${download}>${Icon.download}Download ${format === 'text' ? '.txt' : '.html'}</button>
           ${format === 'text' && html`<button class="btn" onClick=${copy}>${Icon.copy}Copy text</button>`}
-          <span class="status" role="status">${status || (format === 'text' ? '' : 'Open the downloaded file in any browser and print it to PDF to send.')}</span>
+          <span class="status" role="status">${status || (format === 'text' ? '' : format === 'health' ? 'A free teaser: how much was found, not where. Print it to PDF to send; offer the full review for the details.' : 'Open the downloaded file in any browser and print it to PDF to send.')}</span>
         </div>
       </aside>
     </div>`;

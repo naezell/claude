@@ -81,6 +81,7 @@
             <h3>4. Send to the client</h3>
             <ul>
               <li>Press <strong>Client report</strong> and pick <em>Owner summary</em> (one or two pages) or <em>Full review</em> (with detail tables).</li>
+              <li>For a prospect, pick <em>Free health check</em>: it shows how many problems and how many dollars were found (and, for landscapers, missed contract invoices, frozen prices, fuel stops and more) without naming any transaction, customer or vendor, and ends with what the full review covers.</li>
               <li>Type your name under <em>Prepared by</em>. Reports carry the ${Firm.name || 'firm'} name${Firm.logo ? ' and logo' : ''}${Firm.website ? ` and ${Firm.website}` : ''}.</li>
               <li>Download it, open the file in any browser and choose <strong>Print → Save as PDF</strong>. Send the PDF.</li>
               <li>Review the report before sending: the figures come straight from the export, and the flags are leads to check, not confirmed errors.</li>
