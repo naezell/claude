@@ -14,6 +14,7 @@ Upload a client's files together (select all four, or drag them onto the page):
 | `riverbend-chart-of-accounts.csv` | `bloom-basil-chart-of-accounts.csv` | `greenway-chart-of-accounts.csv` |
 | `riverbend-profit-and-loss.csv` | `bloom-basil-profit-and-loss.csv` | `greenway-profit-and-loss.csv` |
 | `riverbend-expenses-with-attachments.csv` | `bloom-basil-expenses-with-attachments.csv` | `greenway-expenses-with-attachments.csv` |
+| | | `greenway-customer-contact-list.csv` (addresses, for route density) |
 
 Then load the others the same way: each is remembered separately, and all appear under **Clients** and on **Home**.
 
@@ -75,5 +76,8 @@ A Midwest landscaper, about $900,000 a year: 20 maintenance contracts billed on 
 - **Prices not raised in a year:** Maple Ridge HOA, Dr. Patel Dental, Riverside Church and Hartman Residence, unchanged since April 2024. Everyone else went up in 2025 and 2026.
 - **Labor through the season:** about 40% of revenue over the year; winter months run 48-62% with the year-round crew; an overtime spike in June 2026.
 - **Equipment and fuel:** Exmark Lazer Z #3 repaired four times in 2026 ($4,820); a new $12,480 zero-turn mower coded to Equipment Repairs and $3,150 of backpack blowers coded to Small Tools (both belong in fixed assets). The $8,900 trailer in March 2025 was recorded properly.
+
+- **Route density** (needs `greenway-customer-contact-list.csv`): 40 route customers (billed in 3+ months). Streets with three or more: Oak Ridge Dr (8 homes), Willow Bend Rd (5), Wabash Ave (3 businesses) and Maple Hollow Ct (3). About half are alone on their street; the neighbor-discount list shows homes alone in the busiest ZIP codes. Maple Ridge HOA has only a PO box (no site address) and Riverside Church is missing from the list. The HOAs are billed to their management company's office, with the property in the shipping address.
+- **Profit playbook:** about 160 fuel stops, 80 hardware-store runs, $1,478 of delivery and restocking fees (mostly Rock Solid Stone), Rock Solid Stone as the vendor to negotiate with, 14 new customers at about $230 of advertising each.
 
 **Month-end close:** the checklist adds landscaping steps; *Every maintenance and snow contract billed* is open for August 2026. **Benchmarks** start on Landscaping Services (NAICS 561730).

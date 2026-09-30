@@ -81,6 +81,52 @@ const TYPE_LABEL = {
   loan: ['Long Term Liabilities', 'Notes Payable'], equity: ['Equity', "Owner's Equity"], income: ['Income', 'Service/Fee Income'],
   cogs: ['Cost of Goods Sold', 'Supplies & Materials - COGS'], expense: ['Expenses', 'Other Miscellaneous Service Cost'],
 };
+// Customer Contact List (QuickBooks Online report) for Greenway, with addresses built to show
+// route density: three streets of homes close together, a row of businesses on Wabash Ave,
+// HOAs billed through a management company's office, and a few customers with no usable address.
+function greenwayContacts(b) {
+  const names = [...new Set(b.entries.filter((e) => e.type === 'Invoice' && e.name).map((e) => e.name))].sort();
+  const clusters = [
+    ['Oak Ridge Dr', '62704', ['Hartman', 'Cole', 'Greene', 'Fischer', 'Kingsley', 'Adams', 'Brennan', 'Carver']],
+    ['Willow Bend Rd', '62711', ['Dunn', 'Ewing', 'Frost', 'Gill', 'Nolan']],
+    ['Maple Hollow Ct', '62704', ['Hale', 'Irwin', 'Joyce']],
+  ];
+  const sites = {
+    'Oak Hills HOA': '1 Oak Hills Pkwy, Springfield, IL 62711', 'Sunset Villas HOA': '2200 Sunset Villas Dr, Springfield, IL 62712',
+    'Walnut Creek Condos': '850 Walnut Creek Blvd, Springfield, IL 62707', 'Brookfield Apartments': '3900 Brookfield Ln, Springfield, IL 62704',
+    'Birchwood Townhomes': '1500 Birchwood Cir, Springfield, IL 62711',
+  };
+  const business = {
+    'Dr. Patel Dental': '2801 Wabash Ave, Springfield, IL 62704', 'Prairie Bank': '3100 Wabash Ave, Springfield, IL 62704', 'Summit Medical Plaza': '3350 Wabash Ave, Springfield, IL 62704',
+    'Lakeview Office Park': '5 Lakeview Plaza, Springfield, IL 62712', 'Heritage Senior Living': '4200 Heritage Way, Springfield, IL 62711',
+    'Crossroads Shopping Center': '2700 Veterans Pkwy, Springfield, IL 62704', 'Elm Street Deli': '118 Elm St, Springfield, IL 62702',
+    'Northgate Library': '1300 N Grand Ave, Springfield, IL 62702', 'Pinewood School': '2500 Pinewood Dr, Springfield, IL 62707',
+    'Lincoln Park District': '1601 N 5th St, Springfield, IL 62702',
+  };
+  const office = 'c/o Summit Property Management, 400 S 5th St Ste 210, Springfield, IL 62701';
+  const scattered = ['Stanford Ave', 'Chatham Rd', 'Lindbergh Blvd', 'Koke Mill Rd', 'Iles Ave', 'Washington St', 'Sangamon Ave', 'Cherry Rd', 'Bruns Ln', 'Leland Ave', 'Park Ave', 'Glenwood Ave', 'Durkin Dr', 'Old Jacksonville Rd', 'Parkview Dr', 'Hazel Dell Rd', 'Lake Shore Dr', 'Toronto Rd', 'Meadowbrook Rd', 'Wiggins Ave', 'Ash St', 'Laurel St', 'Bates Ave', 'Wood St', 'Homewood Dr', 'Outer Park Dr', 'Myrtle St', 'Fayette Ave', 'Holmes Ave', 'Pasfield St', 'Ridgely Ave', 'Keys Ave', 'Rutledge St', 'Cook St', 'Lowell Ave', 'Adlai Dr', 'Taylor Ave', 'Groth Ln', 'Clearlake Ave', 'Jefferson St'];
+  const zips = ['62702', '62707', '62712', '62704', '62711'];
+  const q = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const lines = ['Greenway Landscape Co.', 'Customer Contact List', 'All Dates', '', 'Customer,Phone Numbers,Email,Full Name,Billing Address,Shipping Address'];
+  let n = 0;
+  for (const name of names) {
+    const surname = name.replace(/ Residence$/, '');
+    let billing = '', shipping = '';
+    const cl = clusters.find(([, , who]) => who.includes(surname));
+    if (name === 'Riverside Church') continue; // not in the contact list at all
+    if (name === 'Castle Rock Winery') billing = '';
+    else if (name === 'Maple Ridge HOA') billing = 'PO Box 4410, Springfield, IL 62701';
+    else if (sites[name]) { billing = office; shipping = sites[name]; }
+    else if (business[name]) billing = business[name];
+    else if (cl) billing = `${1100 + cl[2].indexOf(surname) * 14} ${cl[0]}, Springfield, IL ${cl[1]}`;
+    else { billing = `${200 + (n * 37) % 3800} ${scattered[n % scattered.length]}, Springfield, IL ${zips[n % zips.length]}`; n++; }
+    const phone = `(217) 555-${String(1000 + (names.indexOf(name) * 73) % 9000).padStart(4, '0')}`;
+    const email = name === 'Castle Rock Winery' ? 'office@castlerockwinery.example' : '';
+    lines.push([name, phone, email, '', billing, shipping].map(q).join(','));
+  }
+  return lines.join('\n') + '\n';
+}
+
 function chartOfAccounts(b, details) {
   const lines = [q(b.company), 'Account List', '', 'Account,Type,Detail type,Description,Balance'];
   for (const [name, type] of Object.entries(b.accounts)) {
@@ -750,8 +796,9 @@ function main() {
   write('greenway-chart-of-accounts.csv', chartOfAccounts(gw.b, { 'Undeposited Funds': 'Undeposited Funds', 'Sales Tax Payable': 'Sales Tax Payable', 'Payroll Liabilities': 'Payroll Tax Payable', 'Line of Credit - First State Bank': 'Line of Credit', 'Accumulated Depreciation': 'Accumulated Depreciation' }));
   write('greenway-profit-and-loss.csv', profitAndLoss(gw.b, gwPeriod));
   write('greenway-expenses-with-attachments.csv', expenseList(gw.b, '2025-09-01', () => false));
+  write('greenway-customer-contact-list.csv', greenwayContacts(gw.b));
   console.log(`Wrote test clients to ${path.relative(process.cwd(), OUT)}`);
 }
 
 if (require.main === module) main();
-module.exports = { riverbend, cafe, greenway, transactionDetail };
+module.exports = { riverbend, cafe, greenway, greenwayContacts, transactionDetail };
