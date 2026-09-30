@@ -10,7 +10,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const PAGE = `file://${path.join(ROOT, 'index.html')}`;
 const SAMPLE = path.join(ROOT, 'sample-data', 'harbor-pine-transaction-detail.csv');
-const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory'];
+const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory', 'assets'];
 
 // The page opens on Home; most tests work on the sample data.
 async function showSample(page) {
@@ -877,4 +877,49 @@ test('Flag a problem: pick mode on a phone, then the email fallback away from th
   await page.waitForSelector('.drawer', { state: 'detached' });
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('Fixed assets: add a purchase found in the books, see its depreciation and journal entry, and it is saved', async (t) => {
+  if (skip) return t.skip(skip);
+  const dir = path.join(ROOT, 'sample-data', 'test-clients');
+  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments'].map((f) => path.join(dir, `greenway-${f}.csv`));
+  for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
+    const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    await page.setInputFiles('#csv-upload', files);
+    await page.waitForSelector('#tab-landscape');
+    await page.click('#tab-assets');
+    const found = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Found in the books' }) });
+    await found.waitFor();
+    const text = await found.innerText();
+    for (const want of [/16 ft enclosed trailer/, /zero-turn mower/, /Backpack blowers/]) assert.match(text, want);
+    assert.equal(await kpi(page, 'Found in the books'), '3');
+    // Add the trailer: the form comes filled in from the purchase.
+    await found.locator('tr', { hasText: 'trailer' }).locator('button:has-text("Add")').click();
+    assert.equal(await page.locator('#af-cost').inputValue(), '8900');
+    assert.equal(await page.locator('#af-cat').inputValue(), 'trailer');
+    await page.click('button:has-text("Save asset")');
+    const register = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Asset register' }) });
+    await register.locator('td', { hasText: '16 ft enclosed trailer' }).waitFor();
+    assert.equal(await kpi(page, 'Found in the books'), '2');
+    // Books hold $150,900 of equipment; the register only the trailer.
+    assert.match(await register.innerText(), /Register incomplete/);
+    // 5-year MACRS: 20% of $8,900 in 2025; book straight-line over 7 years.
+    const years = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Depreciation by year' }) });
+    assert.match(await years.locator('tr', { hasText: '2025' }).innerText(), /\$1,780\.00/);
+    await page.selectOption('#je-period', '2026-08');
+    assert.match(await page.locator('section.panel', { has: page.locator('h2', { hasText: 'Depreciation journal entry' }) }).innerText(), /\$105\.95/);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `fixed assets tab scrolls sideways at ${width}px`);
+    if (width === 1280) {
+      // The close checklist gains the depreciation step; the register is saved with the client.
+      await page.click('#tab-close');
+      assert.match(await page.locator('main').innerText(), /Depreciation posted from the fixed asset register/);
+      await page.reload();
+      await page.locator('.client-card button:has-text("Open")').first().click();
+      await page.waitForSelector('#tab-assets');
+      await page.click('#tab-assets');
+      await page.locator('td', { hasText: '16 ft enclosed trailer' }).waitFor();
+    }
+    assert.deepEqual(errors, [], `${colorScheme} ${width}px`);
+    await page.close();
+  }
 });

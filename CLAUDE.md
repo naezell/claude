@@ -65,6 +65,11 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   `industry` ('' = detected) is passed as `opts.industry`. `src/ui/landscape.js` is the tab, added
   by `tabsFor()` in `app.js` only for landscapers. Close steps with `industry`/`months` only show
   when they apply. Test client: Greenway in `sample-data/test-clients/`.
+- Fixed assets: `assetSchedule()`, `depreciationEntry()`, `parseAssetList()` and `macrsRates()`
+  (IRS Pub. 946 tables, mid-quarter rule, bonus by date, Section 179) in the engine;
+  `fixedAssetFacts()` gives `result.fixedAssets` (purchases found, depreciation posted by year,
+  account names). The register is the profile's `assets` array, passed to analyze as
+  `opts.assets`; `src/ui/assets.js` is the tab. Tax figures are estimates for the preparer.
 - Flag a problem: `src/ui/ticket.js` (pick a part of the page, take a picture of a redacted copy
   with `html2canvas-pro`, send) and `netlify/functions/ticket.mjs` + `lib/ticket.mjs` (files a
   GitHub issue labeled `ticket` using the `GITHUB_TOKEN` env var; pictures in Netlify Blobs,

@@ -146,6 +146,9 @@
   .sub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; font: 600 15px/1.2 var(--cond); }
   tr.total td { font-weight: 600; background: var(--surface-2); }
   .part { display: contents; }
+  .asset-form { margin-top: 14px; padding: 14px; border: 1px solid var(--hair); border-radius: 8px; background: var(--page); }
+  .row-actions { white-space: nowrap; }
+  .row-actions .btn + .btn { margin-left: 6px; }
   body.flagging main, body.flagging .home { cursor: crosshair; }
   .flag-hover { outline: 3px solid var(--accent) !important; outline-offset: 2px; border-radius: 8px; }
   .flag-bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 60; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; width: min(720px, calc(100vw - 24px)); padding: 12px 14px; border-radius: 10px; background: var(--surface); color: var(--ink); border: 1px solid var(--hair); box-shadow: 0 8px 28px rgba(0,0,0,.18); font-size: 14px; }
@@ -557,6 +560,7 @@
 <script src="src/ui/benchmarks.js"></script>
 <script src="src/ui/advisory.js"></script>
 <script src="src/ui/landscape.js"></script>
+<script src="src/ui/assets.js"></script>
 <script src="src/ui/close.js"></script>
 <script src="src/ui/drawers.js"></script>
 <script src="src/ui/home.js"></script>

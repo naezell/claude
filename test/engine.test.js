@@ -907,3 +907,58 @@ test('landscaping: a contract with a yearly price step is still a contract, and 
   assert.deepEqual(L.contracts.missed.map((m) => [m.name, m.month]), [['Oak HOA', '2026-07']]);
   assert.deepEqual(L.contracts.stale.map((m) => m.name), ['Pine HOA']);
 });
+
+test('fixed assets: MACRS follows the IRS tables, with bonus, Section 179 and the mid-quarter rule', () => {
+  const round = (n) => Math.round(n * 100) / 100;
+  const pct = (life, q) => E.macrsRates(life, q).map((r) => Math.round(r * 10000) / 100);
+  assert.deepEqual(pct(5), [20, 32, 19.2, 11.52, 11.52, 5.76]);
+  assert.deepEqual(pct(7), [14.29, 24.49, 17.49, 12.49, 8.93, 8.92, 8.93, 4.46]);
+  assert.deepEqual(pct(7, 4), [3.57, 27.55, 19.68, 14.06, 10.04, 8.73, 8.73, 7.64]);
+  for (const life of [3, 5, 7, 10, 15, 20]) assert.ok(Math.abs(E.macrsRates(life).reduce((t, r) => t + r, 0) - 1) < 1e-9, `${life}-year adds to 100%`);
+  const s = E.assetSchedule([
+    { id: 'a', name: 'Mower', date: '2025-03-10', cost: 10000, category: 'equipment', taxMethod: 'macrs' },
+    { id: 'b', name: 'Truck', date: '2025-06-01', cost: 40000, category: 'vehicle', taxMethod: 'bonus' },
+    { id: 'c', name: 'Laptop', date: '2025-02-01', cost: 2000, category: 'computer', taxMethod: 's179' },
+    { id: 'd', name: 'Shop', date: '2025-01-15', cost: 390000, category: 'building' },
+    { id: 'e', name: 'Lot', date: '2025-01-15', cost: 100000, category: 'land' },
+  ], { asOf: '2025-12' });
+  const row = (id) => s.rows.find((r) => r.id === id);
+  assert.equal(row('a').taxByYear[2025], 1429);
+  assert.equal(row('a').bookByYear[2025], round(10000 / 84 * 10));
+  assert.equal(row('b').taxByYear[2025], 40000, '100% bonus after January 19, 2025');
+  assert.equal(row('b').taxByYear[2026], undefined);
+  assert.equal(row('c').taxByYear[2025], 2000);
+  assert.equal(row('d').taxByYear[2025], round(390000 / 39 * 11.5 / 12), '39-year mid-month');
+  assert.equal(row('e').method, 'none');
+  assert.equal(row('e').accumulated, 0);
+  assert.deepEqual(s.midQuarterYears, []);
+  // Most of a year's equipment bought in the fourth quarter: mid-quarter for all of that year's.
+  const mq = E.assetSchedule([
+    { id: 'x', name: 'Skid steer', date: '2024-11-05', cost: 60000, category: 'equipment' },
+    { id: 'y', name: 'Trimmer', date: '2024-04-05', cost: 5000, category: 'equipment' },
+  ], { asOf: '2024-12' });
+  assert.deepEqual(mq.midQuarterYears, [2024]);
+  assert.equal(mq.rows.find((r) => r.id === 'x').taxByYear[2024], 2142);
+  assert.equal(mq.rows.find((r) => r.id === 'y').taxByYear[2024], 892.5);
+  assert.equal(E.defaultBonus('2024-06-01'), 60);
+  assert.equal(E.defaultBonus('2025-01-10'), 40);
+});
+
+test('fixed assets: disposal stops depreciation, and the journal entry imports into QuickBooks', () => {
+  const s = E.assetSchedule([{ id: 'a', name: 'Van', date: '2024-01-15', cost: 30000, category: 'vehicle', bookLife: 5, salvage: 6000, disposed: '2025-07-01', salePrice: 20000 }], { asOf: '2025-12' });
+  const r = s.rows[0];
+  assert.equal(r.accumulated, 400 * 18, '$400 a month for January 2024 to June 2025');
+  assert.equal(r.disposal.gain, 20000 - (30000 - 7200));
+  assert.equal(r.taxByYear[2025], 30000 * 0.32 / 2);
+  assert.equal(r.taxByYear[2026], undefined);
+  const live = E.assetSchedule([{ id: 'a', name: 'Van', date: '2024-01-15', cost: 30000, category: 'vehicle', bookLife: 5, salvage: 6000 }], { asOf: '2025-12' });
+  const je = E.depreciationEntry(live, '2025-03', { expense: 'Depreciation', accumulated: 'Accumulated Depreciation' });
+  assert.equal(je.total, 400);
+  assert.equal(je.csv, 'Journal No.,Journal Date,Account Name,Debits,Credits,Description\nDEP-202503,03/31/2025,Depreciation,400.00,,Depreciation March 2025\nDEP-202503,03/31/2025,Accumulated Depreciation,,400.00,Depreciation March 2025');
+  assert.equal(E.depreciationEntry(live, '2025').total, 4800);
+  const list = E.parseAssetList('Asset,Date Placed in Service,Cost,Category,Method\n2023 Ford F-250,03/15/2023,"$52,400.00",Vehicle,Section 179\nOffice desks,2024-06-01,3200,,MACRS\nBad row,,100,,');
+  assert.equal(list.length, 2);
+  assert.deepEqual([list[0].name, list[0].date, list[0].cost, list[0].category, list[0].taxMethod], ['2023 Ford F-250', '2023-03-15', 52400, 'vehicle', 's179']);
+  assert.equal(list[1].category, 'furniture');
+  assert.equal(E.parseAssetList('Date,Amount\n01/01/2025,5'), null);
+});
