@@ -79,7 +79,9 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   GitHub issue labeled `ticket` using the `GITHUB_TOKEN` env var; pictures in Netlify Blobs,
   public under `/api/ticket/img/<random>.jpg`). `redactTree()` must keep blanking amounts and
   client names. Movable sections carry `data-part` for it (the `.part` wrapper in arrange.js).
-  The daily ticket check follows `docs/tickets.md`.
+  `POST /api/ticket/status` reads tickets back (labels → status, newest comment as the note) for
+  **Your tickets** on Home; the browser remembers its tickets in `ll.tickets`. The daily ticket
+  check follows `docs/tickets.md`.
 - Branding comes from `src/firm.js`. Settings (Google client ID, support email) are in
   `src/config.js`.
 

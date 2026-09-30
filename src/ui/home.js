@@ -6,7 +6,7 @@
   const { useState, useEffect } = React;
   const html = htm.bind(React.createElement);
   const UI = window.LedgerUI;
-  const { Icon, Firm, clientStatus } = UI;
+  const { Icon, Firm, clientStatus, safeStore } = UI;
   const { ClientStore, FileStore } = window.LedgerStore;
 
   const DAY = 864e5;
@@ -39,6 +39,56 @@
     return out;
   }
 
+
+  // Tickets sent with Flag a problem from this browser, with where each stands on GitHub (looked
+  // up through the site; the last answer is kept so the list shows at once).
+  const STATUS_KEY = 'll.ticketStatus';
+  const DONE = new Set(['fixed', 'answered', 'closed', 'missing']);
+  const PILL = { received: 'low', proposed: 'medium', building: 'medium', question: 'high', fixed: 'good', answered: 'good', closed: 'low', missing: 'low' };
+  function readStatus() { try { return JSON.parse(safeStore.get(STATUS_KEY) || '{}'); } catch (e) { return {}; } }
+  function YourTickets() {
+    const [list, setList] = useState(() => UI.myTickets());
+    const [status, setStatus] = useState(readStatus);
+    const [note, setNote] = useState('');
+    useEffect(() => {
+      if (!list.length || !/^https?:$/.test(location.protocol)) return;
+      let live = true;
+      fetch('/api/ticket/status', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ numbers: list.map((t) => t.number) }) })
+        .then((r) => r.json().then((b) => { if (!r.ok) throw new Error(b.error || `the site answered ${r.status}`); return b; }))
+        .then((b) => {
+          if (!live) return;
+          const prev = readStatus();
+          const next = {};
+          // "New" until the next visit when the status changed since the last look.
+          for (const t of b.tickets || []) next[t.number] = { ...t, fresh: prev[t.number] ? prev[t.number].status !== t.status : false };
+          safeStore.set(STATUS_KEY, JSON.stringify(Object.fromEntries(Object.entries(next).map(([k, v]) => [k, { ...v, fresh: false }]))));
+          setStatus(next);
+          setNote('');
+        })
+        .catch((e) => { if (live) setNote(`Couldn't check the latest status: ${e.message}.`); });
+      return () => { live = false; };
+    }, [list.length]);
+    if (!list.length) return null;
+    const dismiss = (n) => { const rest = list.filter((t) => t.number !== n); UI.saveTickets(rest); setList(rest); };
+    const order = (t) => { const s = status[t.number]; return s ? (s.status === 'question' ? 0 : DONE.has(s.status) ? 2 : 1) : 1; };
+    const rows = [...list].sort((a, b) => order(a) - order(b) || b.number - a.number);
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Your tickets</h2><p>Problems flagged from this browser, and where each one stands.</p></div>
+      <div class="panel-body flush"><ul class="task-list">${rows.map((t) => {
+        const s = status[t.number];
+        return html`<li key=${t.number}>
+          <div>
+            <span class="task-client">#${t.number}</span>
+            <span class="task-text">${t.where}${s ? html` <span class=${`pill ${PILL[s.status] || 'low'}`}><span class="dot"></span>${s.label}</span>` : ''}${s && s.fresh ? html` <span class="pill good">New</span>` : ''}</span>
+            <span class="sub">${s && s.status === 'question' ? `${s.note || 'Claude needs more detail.'}\nTell Nate the answer, or flag the same spot again with it.` : s && s.note && s.status !== 'proposed' ? s.note : s && s.status === 'proposed' ? 'Nate is reviewing the proposed fix.' : s && s.status === 'received' ? 'Claude looks at it at the next daily check.' : `Sent ${ago(t.sentAt)}`}</span>
+          </div>
+          ${s && DONE.has(s.status) ? html`<button class="btn" onClick=${() => dismiss(t.number)}>Dismiss</button>` : ''}
+        </li>`;
+      })}</ul></div>
+      ${note && html`<div class="panel-body"><p class="hint">${note}</p></div>`}
+    </section>`;
+  }
+
   function HomePage({ onOpen, onUpload, onSample, onHelp, onClients }) {
     const [clients, setClients] = useState(() => ClientStore.all());
     useEffect(() => {
@@ -63,6 +113,7 @@
             </div>
           </div>
         </section>
+        <${YourTickets} />
       </main>`;
     }
     const tasks = ids.flatMap((id) => tasksFor(id, clients[id]));
@@ -91,6 +142,7 @@
         <section class="panel"><div class="panel-head"><h2>Waiting on you</h2><p>Most urgent first. Open a client to work on it.</p></div><div class="panel-body flush">${taskList(mine, 'Nothing waiting. Nice work.')}</div></section>
         <section class="panel"><div class="panel-head"><h2>Waiting on clients</h2><p>Questions sent through an answer link. Answers come in by themselves.</p></div><div class="panel-body flush">${taskList(theirs, 'No questions out with clients.')}</div></section>
       </div>
+      <${YourTickets} />
       <section class="panel">
         <div class="panel-head"><h2>Clients</h2><p>Every client loaded in this browser. For backups and to forget a client, use the Clients button.</p></div>
         <div class="panel-body client-cards">

@@ -47,7 +47,19 @@ async function ticketApi() {
     async delete(k) { m.delete(k); },
     async list() { return { blobs: [...m.keys()].map((key) => ({ key })) }; },
   };
-  const send = async (url, init) => { issues.push({ url, ...JSON.parse(init.body) }); return new Response(JSON.stringify({ number: issues.length }), { status: 201 }); };
+  // Filing adds to `issues`; reading one back answers from it, so a test can move a ticket along
+  // by changing its state, labels and comments.
+  const send = async (url, init) => {
+    const m = url.match(/\/issues\/(\d+)(\/comments)?/);
+    if (m) {
+      const issue = issues[+m[1] - 1];
+      if (!issue) return new Response('{}', { status: 404 });
+      if (m[2]) return new Response(JSON.stringify(issue.comments || []), { status: 200 });
+      return new Response(JSON.stringify({ number: +m[1], title: issue.title, state: issue.state || 'open', state_reason: issue.state_reason || null, labels: issue.labels.map((name) => ({ name })), comments: (issue.comments || []).length }), { status: 200 });
+    }
+    issues.push({ url, ...JSON.parse(init.body) });
+    return new Response(JSON.stringify({ number: issues.length }), { status: 201 });
+  };
   return { issues, handle: ticketHandler({ store, verifySession: async () => 'mark@example.com', token: 'test-token', repo: 'owner/repo', send }) };
 }
 

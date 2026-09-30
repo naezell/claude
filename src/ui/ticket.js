@@ -8,7 +8,7 @@
   const { useState, useEffect, useRef } = React;
   const html = htm.bind(React.createElement);
   const UI = window.LedgerUI;
-  const { Icon, useEscape } = UI;
+  const { Icon, useEscape, safeStore } = UI;
   const Problem = window.LedgerProblem;
 
   // What can be picked, most specific first.
@@ -144,6 +144,12 @@
 
   const available = () => /^https?:$/.test(location.protocol);
 
+  // Tickets sent from this browser, so Home can show how each one is going.
+  const TICKETS_KEY = 'll.tickets';
+  function myTickets() { try { return JSON.parse(safeStore.get(TICKETS_KEY) || '[]'); } catch (e) { return []; } }
+  function saveTickets(list) { safeStore.set(TICKETS_KEY, JSON.stringify(list.slice(-50))); }
+  function rememberTicket(t) { saveTickets([...myTickets().filter((x) => x.number !== t.number), t]); }
+
   function TicketDrawer({ target, image, context, onClose }) {
     const [comment, setComment] = useState('');
     const [withPicture, setWithPicture] = useState(!!image);
@@ -166,6 +172,7 @@
         const b = await res.json().catch(() => ({}));
         if (!res.ok) { if (res.status === 503 || res.status === 404) setFallback(true); throw new Error(b.error || `the site answered ${res.status}`); }
         setSent(b.number);
+        rememberTicket({ number: b.number, where, sentAt: new Date().toISOString() });
         setStatus('');
       } catch (e) { setStatus(`Not sent: ${e.message}`); }
       setBusy(false);
@@ -175,7 +182,7 @@
         <div class="drawer-head"><h2 id="ticket-title">Flag a problem</h2><button class="btn" onClick=${onClose}>Close</button></div>
         <div class="drawer-scroll panel-body problem">
           ${sent
-            ? html`<div class="banner good" role="status"><span class="pill good"><span class="dot"></span>Sent</span><div>Ticket #${sent} is in. Claude looks at new tickets every day, works out a fix and asks Nate before building it.</div></div>
+            ? html`<div class="banner good" role="status"><span class="pill good"><span class="dot"></span>Sent</span><div>Ticket #${sent} is in. Claude looks at new tickets every day, works out a fix and asks Nate before building it. You can follow it under <strong>Your tickets</strong> on Home.</div></div>
               <div class="backup-actions"><button class="btn primary" onClick=${onClose}>Done</button></div>`
             : html`<p><strong>${where}</strong></p>
               ${image && html`<figure class="ticket-shot">
@@ -218,5 +225,5 @@
     return html`<${TicketDrawer} target=${target} image=${image} context=${context} onClose=${onDone} />`;
   }
 
-  Object.assign(UI, { FlagFlow, redactTree });
+  Object.assign(UI, { FlagFlow, redactTree, myTickets, saveTickets });
 })();
