@@ -139,3 +139,24 @@ test('Greenway Landscape: the landscaping checks find what was planted', () => {
   assert.ok(!cl.items.some((i) => i.id === 'snowbilled'), 'no snow step in August');
   assert.deepEqual(E.clientSummary(r, {}, []).landscape, { missed: 2, stale: 4 });
 });
+
+test('free health check: how much was found, never which customers, vendors or transactions', () => {
+  const rb = load('riverbend');
+  const f = E.healthCheckFacts(rb);
+  assert.ok(f.bookItems >= 10 && f.bookDollars > 5000, `${f.bookItems} items, ${f.bookDollars}`);
+  assert.deepEqual(f.land, [], 'no landscaping section for a plumber');
+  assert.ok(f.money.some((x) => x.key === 'subs'));
+  const html = E.buildHealthCheck(rb, { clientName: 'Riverbend Plumbing' });
+  assert.match(html, /Get the full review/);
+  assert.ok(!/landscaping business/i.test(html));
+  for (const secret of ['Ferguson', 'Hillside HOA', 'Transmission Pros', 'J Ramirez', 'Winsupply', 'ServiceTitan', 'Jobber', 'Cedar Point']) assert.ok(!html.includes(secret), `${secret} is in the free report`);
+  const gw = load('greenway');
+  const g = E.healthCheckFacts(gw);
+  assert.deepEqual(g.land.map((x) => x.key).slice(0, 3), ['missed', 'stale', 'losing']);
+  assert.equal(g.land.find((x) => x.key === 'missed').amount, gw.landscape.contracts.missedTotal);
+  assert.ok(g.yearly > 5000);
+  const gh = E.buildHealthCheck(gw, {});
+  assert.match(gh, /For your landscaping business/);
+  assert.match(gh, /Route density/);
+  for (const secret of ['Lakeview', 'Sunset Villas', 'Maple Ridge', 'Rock Solid', 'QuikTrip', 'Exmark', 'Home Depot']) assert.ok(!gh.includes(secret), `${secret} is in the free report`);
+});

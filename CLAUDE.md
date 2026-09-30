@@ -82,6 +82,9 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   `POST /api/ticket/status` reads tickets back (labels → status, newest comment as the note) for
   **Your tickets** on Home; the browser remembers its tickets in `ll.tickets`. The daily ticket
   check follows `docs/tickets.md`.
+- Free health check: `healthCheckFacts()` and `buildHealthCheck()` in the engine, the "Free health
+  check" format in the Client report drawer. It gives counts and dollar totals only; it must never
+  name a transaction, customer or vendor (a test checks). Landscapers get their own section.
 - Branding comes from `src/firm.js`. Settings (Google client ID, support email) are in
   `src/config.js`.
 

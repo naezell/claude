@@ -923,3 +923,18 @@ test('Fixed assets: add a purchase found in the books, see its depreciation and 
     await page.close();
   }
 });
+
+test('Client report offers a free health check that leaves out the specifics', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.click('button:has-text("Client report")');
+  await page.click('.seg button:has-text("Free health check")');
+  await page.locator('.report-frame').locator('text=Get the full review').waitFor();
+  const text = await page.evaluate(() => document.querySelector('.report-shadow').shadowRoot.textContent);
+  assert.match(text, /Free books health check/);
+  assert.match(text, /Uncategorized transactions/);
+  assert.ok(!/Comcast Business/.test(text), 'no vendor names');
+  assert.match(await page.locator('.drawer-foot').innerText(), /Download \.html/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
