@@ -106,6 +106,21 @@ test('Greenway Landscape: the landscaping checks find what was planted', () => {
   assert.deepEqual(L.equipment.repeat.map((x) => [x.machine, x.count]), [['Exmark Lazer Z #3', 4]]);
   assert.deepEqual(L.equipment.capitalize.map((x) => x.amount).sort((a, b) => a - b), [3150, 12480]);
   assert.deepEqual(L.equipment.loans.sort(), ['Ally Truck Loan', 'John Deere Financial']);
+  // Profit playbook: fuel stops, supply runs, vendor fees, the biggest vendors, growth and new customers.
+  const pb = L.playbook;
+  assert.ok(pb.fuel.stops >= 150, `fuel stops ${pb.fuel.stops}`);
+  assert.ok(pb.fuel.vendors.some((v) => v.vendor === 'QuikTrip'));
+  assert.ok(pb.supply.runs >= 70 && pb.supply.vendors[0].vendor === 'Home Depot');
+  assert.deepEqual(pb.fees.vendors.map((v) => v.vendor).sort(), ['Rock Solid Stone Supply', 'SiteOne Landscape Supply']);
+  assert.equal(pb.vendors[0].vendor, 'Rock Solid Stone Supply');
+  assert.match(pb.vendors[0].advice, /discount/);
+  assert.deepEqual(pb.growth.years.map((y) => y.year), [2024, 2025]);
+  assert.ok(pb.growth.ttmChange > 0);
+  assert.equal(pb.customers.newCount, 14);
+  assert.ok(pb.customers.perCustomer > 100 && pb.customers.perCustomer < 400);
+  const cost = E.playbookCost(pb, { crew: 3, wage: 20, stopMinutes: 20 });
+  assert.equal(cost.fuelHours, pb.fuel.stops);
+  assert.match(E.buildHtmlReport(r, {}), /Ideas to save time and money/);
   // The close checklist and the saved summary carry the landscaping items.
   const cl = E.closeChecklist(r, '2026-08', {}, []);
   assert.equal(cl.items.find((i) => i.id === 'contractbilling').auto.status, 'open');

@@ -64,7 +64,9 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   `result.landscape`: off-season cash, service lines, contracts, labor, equipment); the profile's
   `industry` ('' = detected) is passed as `opts.industry`. `src/ui/landscape.js` is the tab, added
   by `tabsFor()` in `app.js` only for landscapers. Close steps with `industry`/`months` only show
-  when they apply. Test client: Greenway in `sample-data/test-clients/`.
+  when they apply. `landscapePlaybook()` (`result.landscape.playbook`: fuel stops, supply runs,
+  vendor fees, top vendors, growth, new customers) with `playbookCost()` and `PLAYBOOK_TIPS`; the
+  growth benchmark is `landscapeGrowth` in `src/firm.js`. Test client: Greenway in `sample-data/test-clients/`.
 - Fixed assets: `assetSchedule()`, `depreciationEntry()`, `parseAssetList()` and `macrsRates()`
   (IRS Pub. 946 tables, mid-quarter rule, bonus by date, Section 179) in the engine;
   `fixedAssetFacts()` gives `result.fixedAssets` (purchases found, depreciation posted by year,
