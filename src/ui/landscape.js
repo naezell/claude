@@ -8,7 +8,8 @@
   const E = window.LedgerEngine;
   const { fmtMoney, fmtPct } = E;
   const UI = window.LedgerUI;
-  const { compactMoney, useTokens, ChartTooltip, wholeMoney, Banner, MoneyInput, Arrange } = UI;
+  const { compactMoney, useTokens, ChartTooltip, wholeMoney, Banner, MoneyInput, NumberInput, Arrange, safeStore, Firm } = UI;
+  const { useState } = React;
 
   const INDUSTRY_LABELS = { landscaping: 'Landscaping', general: 'General' };
   const monthLabel = (key) => new Date(`${key}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -181,6 +182,64 @@
     </section>`;
   }
 
+
+  // Profit playbook: Mark's habits that save landscapers time and money, each with the client's
+  // own number where the books show it. Crew time uses assumptions the bookkeeper can change.
+  const PB_DEFAULTS = { crew: '3', wage: '22', stopMinutes: '20', runMinutes: '45' };
+  function Playbook({ pb, growth: g0 }) {
+    const [a, setA] = useState(() => { try { return { ...PB_DEFAULTS, ...JSON.parse(safeStore.get('ll.playbook') || '{}') }; } catch (e) { return { ...PB_DEFAULTS }; } });
+    const set = (k) => (v) => setA((p) => { const n = { ...p, [k]: v }; safeStore.set('ll.playbook', JSON.stringify(n)); return n; });
+    if (!pb) return null;
+    const c = E.playbookCost(pb, a);
+    const g = pb.growth;
+    const bench = Firm.landscapeGrowth;
+    const pct = (v) => `${v > 0 ? '+' : ''}${fmtPct(v)}`;
+    const item = (level, label, title, body, tip) => html`<li><span class=${`pill ${level}`}><span class="dot"></span>${label}</span><div><strong>${title}</strong><p>${body}</p>${tip && html`<p class="hint">${tip}</p>`}</div></li>`;
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Profit playbook</h2><p>Habits that saved a growing landscaper time and money, with this client's numbers from the last 12 months where the books show them.</p></div>
+      <div class="panel-body">
+        <div class="growth-strip">
+          <div><span class="kpi-label">Revenue, last 12 months</span><span class="kpi-value">${wholeMoney(g.ttm)}</span><span class="kpi-sub">${g.ttmChange != null ? `${pct(g.ttmChange)} on the 12 months before` : 'Needs two years to compare'}</span></div>
+          ${g.perYear != null && html`<div><span class="kpi-label">Average growth</span><span class="kpi-value">${pct(g.perYear)} a year</span><span class="kpi-sub">${g.years[0].year} to ${g.years[g.years.length - 1].year}, ${pct(g.total)} in all</span></div>`}
+          ${bench && html`<div class="bench"><span class="kpi-label">Benchmark</span><span class="kpi-value">${pct(bench.perYear)} a year</span><span class="kpi-sub">${bench.text}</span></div>`}
+        </div>
+        <details class="assumptions"><summary>Crew time assumptions: ${c.crew} people, ${wholeMoney(c.wage)} an hour, ${c.stopMin} min a fuel stop, ${c.runMin} min a supply run</summary>
+          <div class="drawer-fields">
+            <${NumberInput} id="pb-crew" label="Crew size" value=${a.crew} onChange=${set('crew')} suffix="people" />
+            <${MoneyInput} id="pb-wage" label="Crew wage" value=${a.wage} onChange=${set('wage')} hint="Per person per hour, with payroll taxes" />
+            <${NumberInput} id="pb-stop" label="Fuel stop" value=${a.stopMinutes} onChange=${set('stopMinutes')} suffix="min" />
+            <${NumberInput} id="pb-run" label="Supply run" value=${a.runMinutes} onChange=${set('runMinutes')} suffix="min" />
+          </div>
+        </details>
+        <ul class="insight-list playbook">
+          ${pb.fuel.stops > 0 && item(pb.fuel.stops >= 52 ? 'high' : 'medium', 'Fuel stops', `${pb.fuel.stops} fill-ups at gas stations: about ${c.fuelHours} crew hours, ${wholeMoney(c.fuelCost)} in wages`,
+            `${pb.fuel.vendors.map((v) => `${v.vendor} ${v.count}×`).join(', ')}. Every stop idles the whole crew.`,
+            'Keep fuel at the shop (a tank or bulk delivery), or have the crew lead fill up alone before or after the shift.')}
+          ${pb.supply.runs > 0 && item(pb.supply.runs >= 52 ? 'high' : 'medium', 'Supply runs', `${pb.supply.runs} small purchases at hardware and supply stores, about ${(pb.supply.runs / 52).toFixed(1)} a week: ${c.runHours} crew hours, ${wholeMoney(c.runCost)} in wages`,
+            `${pb.supply.vendors.map((v) => `${v.vendor} ${v.count}× (${wholeMoney(v.total)})`).join(', ')}.`,
+            'Stock spare tools and daily-use items at the shop, buy them in bulk or online, and keep as much inventory as you can safely store.')}
+          ${pb.fees.count > 0 && item('medium', 'Vendor fees', `${wholeMoney(pb.fees.total)} in delivery, freight and restocking fees on ${pb.fees.count} tickets`,
+            `${pb.fees.vendors.map((v) => `${v.vendor}: ${v.count}× ${wholeMoney(v.total)}`).join('; ')}.`,
+            'Ask regular vendors to drop flat per-ticket delivery charges or combine deliveries, and check restocking terms before returning items.')}
+          ${pb.customers.newCount > 0 && item('good', 'New customers', `${pb.customers.newCount} new customers in the last 12 months${pb.customers.perCustomer ? `, about ${wholeMoney(pb.customers.perCustomer)} of advertising each` : ''}`,
+            `${wholeMoney(pb.customers.adSpend)} spent on advertising and mailers.`,
+            'After signing a project, mail the whole neighborhood, and offer homeowners a future discount for referrals.')}
+          ${pb.fuel.stops === 0 && pb.supply.runs === 0 && pb.fees.count === 0 && html`<li><span>No fuel stops, supply runs or vendor fees found in the last 12 months.</span></li>`}
+        </ul>
+      </div>
+      ${pb.vendors.length > 0 && html`<div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Vendor (materials, parts, equipment)</th><th class="num">Last 12 months</th><th class="num">Purchases</th><th>Paid by</th><th>Worth trying</th></tr></thead>
+        <tbody>${pb.vendors.map((v) => html`<tr key=${v.vendor}><td>${v.vendor}</td><td class="num">${wholeMoney(v.total)}</td><td class="num">${v.purchases}</td><td>${v.paidBy}</td><td>${v.advice}</td></tr>`)}</tbody>
+      </table></div></div>`}
+      <div class="panel-body">
+        <div class="grid-2 tips">
+          <div><h3 class="sub-head">Lawn crews</h3><ul>${E.PLAYBOOK_TIPS.lawn.map((t) => html`<li key=${t}>${t}</li>`)}</ul></div>
+          <div><h3 class="sub-head">Landscape and installs</h3><ul>${E.PLAYBOOK_TIPS.landscape.map((t) => html`<li key=${t}>${t}</li>`)}</ul></div>
+        </div>
+      </div>
+    </section>`;
+  }
+
   function LandscapeTab({ result, inputs, setInputs }) {
     const t = useTokens();
     const L = result.landscape;
@@ -200,6 +259,7 @@
         ['contracts', 'Contract billing and prices', html`<${Contracts} c=${c} />`],
         ['labor', 'Labor through the season', html`<${Labor} l=${L.labor} t=${t} />`],
         ['equipment', 'Equipment and fuel', html`<${Equipment} e=${e} />`],
+        ['playbook', 'Profit playbook', html`<${Playbook} pb=${L.playbook} />`],
       ]} />`;
   }
 

@@ -2501,6 +2501,131 @@
   const EXPENSE_EQUIP_ACCOUNT = /repair|maint|tool|supplies|equipment(?! rental)|small|materials/i;
   const EQUIP_LOAN = /deere|kubota|caterpillar|\bcat\b|bobcat|toro|exmark|equipment|truck|vehicle|ally|ford credit|gm financial|financial/i;
 
+  // ---- Profit playbook: habits that cost a landscaper time and money, measured from the books
+  // (last 12 months). Crew time is valued with the assumptions the page lets the bookkeeper set.
+  const GAS_STATION = /quik ?trip|\bqt\b|casey|shell|\bbp\b|exxon|mobil|chevron|citgo|marathon|speedway|sunoco|phillips 66|valero|circle k|wawa|sheetz|love'?s|pilot|flying j|racetrac|murphy|holiday|7-eleven|conoco|sinclair|kum ?& ?go|kwik|maverik|buc-?ee|thorntons|gas station|\bgas\b/i;
+  const FLEET_CARD = /wex|fleetcor|fuelman|voyager|fleet card|comdata/i;
+  const BULK_FUEL = /propane|fuel delivery|bulk fuel|petroleum|oil co|energy|co-?op|farm supply|fuel oil/i;
+  const SUPPLY_STORE = /home depot|lowe'?s|menards|ace hardware|true value|tractor supply|harbor freight|northern tool|farm ?& ?fleet|fleet farm|do it best|orscheln|rural king|siteone|ewing|horizon distribution|john deere landscapes|hardware/i;
+  const VENDOR_FEE = /freight|delivery (fee|charge)|shipping|fuel surcharge|restock|handling fee|small order fee|hazmat fee|pallet (fee|charge)/i;
+  const MATERIAL_ACCOUNT = /material|plant|mulch|stone|hardscape|irrigation|parts|salt|ice melt|supplies|tools|equipment|fuel|repair|seed|fertiliz|chemical|sod|nursery/i;
+  const ADVERTISING = /advertis|marketing|mailer|postcard|promotion|door hanger|yard sign|lead/i;
+
+  function landscapePlaybook(txns, accountClass, postings, inTtm, ttm) {
+    const spend = postings.filter((p) => (p.cls === 'expense' || p.cls === 'cogs') && inTtm(p.t.date) && p.value > 0);
+    const vendor = (p) => counterpartyOf(p.t) || '';
+    const byVendor = (list) => {
+      const m = new Map();
+      for (const p of list) { const v = vendor(p) || 'No vendor'; const e = m.get(v) || { vendor: v, count: 0, total: 0 }; e.count++; e.total += p.value; m.set(v, e); }
+      return [...m.values()].map((e) => ({ ...e, total: round2(e.total) })).sort((a, b) => b.count - a.count);
+    };
+    // Fuel bought one fill-up at a time at stations (or on a fleet card), not delivered in bulk.
+    const fuelStops = spend.filter((p) => /fuel|gas(oline)?\b|diesel/i.test(p.category) && !BULK_FUEL.test(vendor(p)) && (GAS_STATION.test(vendor(p)) || FLEET_CARD.test(vendor(p)) || GAS_STATION.test(p.t.memo || '')));
+    const bulkFuel = spend.filter((p) => /fuel|gas(oline)?\b|diesel/i.test(p.category) && BULK_FUEL.test(vendor(p)));
+    // Small purchases at hardware and supply stores: a trip each.
+    const runs = spend.filter((p) => p.value < 500 && SUPPLY_STORE.test(vendor(p)) && !VENDOR_FEE.test(p.t.memo || ''));
+    // Flat fees on vendor tickets.
+    const fees = spend.filter((p) => VENDOR_FEE.test(p.t.memo || '') || VENDOR_FEE.test(p.category));
+    // Where the materials, parts and fuel money goes, and how it is paid.
+    const vendors = new Map();
+    for (const p of spend) {
+      if (!MATERIAL_ACCOUNT.test(p.category) || WAGE_ACCOUNT.test(p.category) || GAS_STATION.test(vendor(p)) || FLEET_CARD.test(vendor(p))) continue;
+      const v = vendor(p);
+      if (!v) continue;
+      const e = vendors.get(v) || { vendor: v, total: 0, purchases: 0, onCard: 0, onBills: 0 };
+      e.total += p.value; e.purchases++;
+      if (/bill/i.test(p.t.type)) e.onBills++;
+      else if (roleOf(accountClass, p.t.split) === 'card' || roleOf(accountClass, p.t.account) === 'card') e.onCard++;
+      vendors.set(v, e);
+    }
+    const topVendors = [...vendors.values()].sort((a, b) => b.total - a.total).slice(0, 8).map((e) => ({
+      ...e, total: round2(e.total),
+      paidBy: e.onBills >= e.purchases / 2 ? 'Bills (account)' : e.onCard >= e.purchases / 2 ? 'Card' : 'Check or cash',
+      advice: e.total >= 20000 && e.onBills < e.purchases / 2 ? 'Big enough to ask for an account with 30-day terms'
+        : e.total >= 20000 ? 'Ask for a volume or early-payment discount'
+        : e.purchases >= 24 ? 'Frequent small orders: buy in bulk or set up a standing order' : '',
+    }));
+
+    // Growth: revenue by calendar year, the last 12 months against the 12 before, and the
+    // average yearly growth across the full years in the export.
+    const revYear = new Map();
+    for (const p of postings) if (p.cls === 'income') { const y = p.t.dateStr.slice(0, 4); revYear.set(y, (revYear.get(y) || 0) + p.value); }
+    const monthsIn = new Map();
+    for (const t of txns) { const y = t.dateStr.slice(0, 4); if (!monthsIn.has(y)) monthsIn.set(y, new Set()); monthsIn.get(y).add(t.dateStr.slice(5, 7)); }
+    const fullYears = [...revYear.keys()].filter((y) => monthsIn.get(y) && monthsIn.get(y).size === 12).sort();
+    const years = fullYears.map((y, i) => ({ year: +y, revenue: round2(revYear.get(y)), change: i ? revYear.get(y) / revYear.get(fullYears[i - 1]) - 1 : null }));
+    let ttmRev = 0, priorRev = 0;
+    if (ttm) {
+      const priorStart = new Date(Date.UTC(ttm.start.getUTCFullYear() - 1, ttm.start.getUTCMonth(), ttm.start.getUTCDate()));
+      for (const p of postings) if (p.cls === 'income') { if (inTtm(p.t.date)) ttmRev += p.value; else if (p.t.date >= priorStart && p.t.date < ttm.start) priorRev += p.value; }
+    }
+    const first = years[0], last = years[years.length - 1];
+    const growth = {
+      years, ttm: round2(ttmRev), prior: round2(priorRev), ttmChange: priorRev > 0 ? ttmRev / priorRev - 1 : null,
+      total: years.length >= 2 ? last.revenue / first.revenue - 1 : null,
+      perYear: years.length >= 2 ? (last.revenue / first.revenue) ** (1 / (last.year - first.year)) - 1 : null,
+    };
+
+    // New customers: first invoice ever in the export, counted by month over the last year,
+    // against advertising spend.
+    const firstSeen = new Map();
+    for (const p of postings) {
+      if (p.cls !== 'income' || p.value <= 0) continue;
+      const who = (customerOf(p.t, 'income') || p.t.name || '').split(':')[0];
+      if (!who) continue;
+      if (!firstSeen.has(who) || p.t.dateStr < firstSeen.get(who)) firstSeen.set(who, p.t.dateStr);
+    }
+    const exportStart = txns.reduce((m, t) => (t.dateStr < m ? t.dateStr : m), '9999');
+    // Customers already there in the first three months of the export may just be older ones.
+    const settled = (d) => d >= addMonthsKey(exportStart.slice(0, 7), 3);
+    const newOnes = [...firstSeen.entries()].filter(([, d]) => settled(d) && inTtm(new Date(`${d}T00:00:00Z`)));
+    const ads = spend.filter((p) => ADVERTISING.test(p.category));
+    const adSpend = round2(ads.reduce((t, p) => t + p.value, 0));
+    const byMonth = new Map();
+    for (const [, d] of newOnes) byMonth.set(d.slice(0, 7), (byMonth.get(d.slice(0, 7)) || 0) + 1);
+    const customers = {
+      newCount: newOnes.length, adSpend, perCustomer: newOnes.length && adSpend ? round2(adSpend / newOnes.length) : null,
+      byMonth: [...byMonth.entries()].sort().map(([k, n]) => ({ key: k, count: n })), reliable: firstSeen.size > 0 && txns.length > 0 && settled(addMonthsKey(exportStart.slice(0, 7), 12) + '-01'),
+    };
+
+    return {
+      fuel: { stops: fuelStops.length, total: round2(fuelStops.reduce((t, p) => t + p.value, 0)), bulk: round2(bulkFuel.reduce((t, p) => t + p.value, 0)), vendors: byVendor(fuelStops).slice(0, 5) },
+      supply: { runs: runs.length, total: round2(runs.reduce((t, p) => t + p.value, 0)), vendors: byVendor(runs).slice(0, 5) },
+      fees: { count: fees.length, total: round2(fees.reduce((t, p) => t + p.value, 0)), vendors: byVendor(fees).slice(0, 6), examples: fees.slice(0, 5).map((p) => ({ date: p.t.dateStr, vendor: vendor(p), memo: p.t.memo || p.category, amount: round2(p.value) })) },
+      vendors: topVendors, growth, customers,
+    };
+  }
+  const addMonthsKey = (key, n) => { const [y, m] = key.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7); };
+
+  // Crew time lost to stops and runs, valued at the page's assumptions.
+  function playbookCost(pb, a) {
+    a = a || {};
+    const crew = +a.crew || 3, wage = +a.wage || 22, stopMin = +a.stopMinutes || 20, runMin = +a.runMinutes || 45;
+    const fuelHours = pb.fuel.stops * crew * stopMin / 60;
+    const runHours = pb.supply.runs * crew * runMin / 60;
+    return { crew, wage, stopMin, runMin, fuelHours: Math.round(fuelHours), fuelCost: round2(fuelHours * wage), runHours: Math.round(runHours), runCost: round2(runHours * wage) };
+  }
+
+  // Mark's tips with nothing to measure in the books.
+  const PLAYBOOK_TIPS = {
+    lawn: [
+      'Sell to several homes on the same street or in the same neighborhood to cut loading and unloading time.',
+      'Offer current clients a discount when a neighbor signs up.',
+      'Run three-person crews: one on the rider, two push mowing and trimming.',
+      'Plan lawn routes to turn right wherever possible: less waiting to turn and fewer lights.',
+      'Switch small equipment to ethanol-free fuel mixed in-house at 50 to 1 instead of buying premix; engines stay cleaner and last longer.',
+      'If you don\'t fertilize, partner with a company that does and trade referrals.',
+    ],
+    landscape: [
+      'Keep spare tools at the shop so a broken one doesn\'t mean a trip to the supply store.',
+      'Stock as much inventory and daily-use material as you can safely store.',
+      'Meet with vendors to negotiate account terms, and ask about exclusive seller rights for your area.',
+      'Offer to demo vendors\' new tools and machines, and look for time-saving equipment you can get at dealer cost.',
+      'After signing a project, mail the whole neighborhood.',
+      'Offer homeowners a future discount for referrals.',
+    ],
+  };
+
   function landscapeAnalysis(txns, accountClass, result, opts) {
     opts = opts || {};
     const range = dateRange(txns, result.meta);
@@ -2731,7 +2856,8 @@
       repeat, capitalize,
     };
 
-    return { offSeason, serviceLines, contracts, labor: laborSeason, equipment, asOf: lastFull };
+    const playbook = landscapePlaybook(txns, accountClass, postings, inTtm, ttm);
+    return { offSeason, serviceLines, contracts, labor: laborSeason, equipment, playbook, asOf: lastFull };
   }
 
   // ---------------------------------------------------------------- fixed assets & depreciation
@@ -4577,6 +4703,19 @@
       h.push(`<section class="keep"><h2>Cash over the next 13 weeks</h2>${svgCash(cash, cushion)}<p>${esc(line)} Expected in: ${esc(fmtWhole(cash.totals.inflow))}. Expected out: ${esc(fmtWhole(cash.totals.outflow))}.</p></section>`);
     }
     h.push(`<section><h2>What we recommend</h2><ol class="steps">${steps.slice(0, full ? 20 : 6).map((s) => `<li>${esc(s)}</li>`).join('')}</ol></section>`);
+    // Landscapers: the profit playbook's measured items, valued at the default crew assumptions.
+    const pb = result.landscape && result.landscape.playbook;
+    if (pb) {
+      const c = playbookCost(pb);
+      const ideas = [];
+      if (pb.fuel.stops >= 12) ideas.push(`${pb.fuel.stops} fuel stops at gas stations in the last 12 months cost about ${c.fuelHours} crew hours (${fmtWhole(c.fuelCost)} in wages). Fuel kept at the shop, or the crew lead filling up before or after the shift, saves most of that.`);
+      if (pb.supply.runs >= 12) ideas.push(`${pb.supply.runs} small trips to hardware and supply stores cost about ${c.runHours} crew hours (${fmtWhole(c.runCost)}). Stocking spare tools and daily-use items, bought in bulk, saves the trips.`);
+      if (pb.fees.total >= 100) ideas.push(`${fmtWhole(pb.fees.total)} went to delivery, freight and restocking fees. Ask regular vendors to drop per-ticket charges.`);
+      const big = pb.vendors.find((v) => v.advice && v.total >= 20000);
+      if (big) ideas.push(`${fmtWhole(big.total)} was spent with ${big.vendor} in the last 12 months: ${big.advice.toLowerCase()}.`);
+      if (pb.customers.newCount && pb.customers.perCustomer) ideas.push(`${pb.customers.newCount} new customers came in, about ${fmtWhole(pb.customers.perCustomer)} of advertising each. Mailing the neighborhood after each signed project, and referral discounts, bring in more at a lower cost.`);
+      if (ideas.length) h.push(`<section><h2>Ideas to save time and money</h2><ul class="points">${ideas.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></section>`);
+    }
     if (qItems.length) {
       const shown = qItems.slice(0, full ? qItems.length : 8);
       h.push(`<section><h2>What we need from you</h2><p>${qItems.length} question${qItems.length === 1 ? '' : 's'} so we can finish the books.${shown.length < qItems.length ? ` The first ${shown.length} are below; we will send the rest separately.` : ''}</p><ol class="steps">${shown.map((q) => `<li>${esc(q)}</li>`).join('')}</ol></section>`);
@@ -5126,6 +5265,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

@@ -677,11 +677,32 @@ function greenway() {
     P(mo.d(10), 'Expense', '', 'Acuity Insurance', '', 'Workers comp and auto', 'Insurance', BANK, inSeason(mo.m) ? between(2300, 2550) : between(900, 1050));
     if (mo.m === 3 || mo.m === 9) P(mo.d(6), 'Expense', '', 'Cintas', '', 'Crew uniforms', 'Uniforms', CARD, between(640, 980));
     if (mo.m >= 2 && mo.m <= 5) P(mo.d(20), 'Expense', '', 'Facebook Ads', '', 'Spring booking ads', 'Advertising', CARD, between(350, 700));
-    P(mo.d(28), 'Check', String(chk++), 'Tom Greenway', '', 'Owner draw', 'Owner Draws', BANK, inSeason(mo.m) ? 13000 : 7500);
+    P(mo.d(28), 'Check', String(chk++), 'Tom Greenway', '', 'Owner draw', 'Owner Draws', BANK, inSeason(mo.m) ? 12000 : 7000);
   }
   P('2024-01-15', 'Check', String(chk++), 'Acuity Insurance', '', 'General liability - annual', 'Insurance', BANK, 5980);
   P('2025-01-15', 'Check', String(chk++), 'Acuity Insurance', '', 'General liability - annual', 'Insurance', BANK, 6420);
   P('2026-01-15', 'Check', String(chk++), 'Acuity Insurance', '', 'General liability - annual', 'Insurance', BANK, 6890);
+  // Everyday habits the landscaping playbook measures: crews stopping at gas stations, runs to
+  // the hardware store for small items, and flat delivery and restocking fees from vendors.
+  const stations = ['QuikTrip', "Casey's", 'Shell', 'QuikTrip'];
+  const stores = ['Home Depot', 'Ace Hardware', "Lowe's", 'Home Depot'];
+  for (const mo of M) {
+    const season = inSeason(mo.m);
+    for (let i = 0; i < (season ? 12 : 4); i++) P(mo.d(1 + Math.floor(i * (season ? 2.3 : 6))), 'Expense', '', pick(stations), '', 'Gas and premix for crew trucks', 'Fuel', CARD, between(38, 96));
+    for (let i = 0; i < (season ? 8 : 2); i++) P(mo.d(2 + Math.floor(i * (season ? 3.3 : 12))), 'Expense', '', pick(stores), '', 'Trimmer line, blades, fittings', 'Small Tools', CARD, between(25, 240));
+    if (mo.m >= 4 && mo.m <= 10) for (let i = 0; i < 3; i++) P(mo.d(6 + i * 7), 'Expense', '', 'Rock Solid Stone Supply', '', 'Delivery fee - flat rate per ticket', 'Materials - Hardscape', CARD, 65);
+  }
+  // New homeowners each month from 2025 on, and neighborhood mailers after projects.
+  const newcomers = ['Abbott', 'Barrows', 'Chen', 'Dawson', 'Estrada', 'Finch', 'Garza', 'Hollis', 'Ingram', 'Jansen', 'Keller', 'Lowry', 'Madsen', 'Nguyen', 'Ortega', 'Pryor', 'Quintero', 'Rhodes', 'Sato', 'Thorne', 'Ulrich', 'Voss', 'Whitaker', 'Yates', 'Zimmer', 'Alder', 'Brandt', 'Corliss'];
+  let nc = 0;
+  for (const mo of M) {
+    if (mo.y < 2025 || mo.m < 4 || mo.m > 10) continue;
+    for (let i = 0; i < 2 && nc < newcomers.length; i++) invoice(mo.d(20 + i), `${newcomers[nc++]} Residence`, '', 'Clean-up and mulch (new client)', 'Enhancements', 'Enhancements', between(320, 760), 12);
+    if (mo.m === 4 || mo.m === 8) P(mo.d(12), 'Expense', '', 'USPS Every Door Direct Mail', '', 'Neighborhood postcard mailer', 'Advertising', CARD, between(380, 520));
+  }
+  P('2025-06-18', 'Expense', '', 'SiteOne Landscape Supply', '', 'Restocking fee on returned valves', 'Irrigation Parts', CARD, 84.5);
+  P('2026-05-14', 'Expense', '', 'SiteOne Landscape Supply', '', 'Restocking fee on returned sprinkler heads', 'Irrigation Parts', CARD, 112.75);
+
   // Ordinary bookkeeping slips.
   P('2026-06-09', 'Expense', '', '', '', 'POS DEBIT 0609 FARM & FLEET', 'Uncategorized Expense', CARD, 286.4);
   P('2026-07-21', 'Expense', '', 'WEX Fleet Card', '', 'Fuel - trucks and mowers', 'Fuel', CARD, 612.18);

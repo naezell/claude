@@ -146,6 +146,15 @@
   .sub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; font: 600 15px/1.2 var(--cond); }
   tr.total td { font-weight: 600; background: var(--surface-2); }
   .part { display: contents; }
+  .growth-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px 20px; margin-bottom: 14px; }
+  .growth-strip > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .growth-strip .kpi-value { font-size: 22px; }
+  .assumptions { margin-bottom: 14px; font-size: 13px; color: var(--ink-2); }
+  .assumptions summary { cursor: pointer; }
+  .assumptions .drawer-fields { margin-top: 10px; }
+  .insight-list.playbook p { margin: 2px 0 0; }
+  .tips ul { margin: 0; padding-left: 18px; font-size: 14px; line-height: 1.5; }
+  .tips li + li { margin-top: 6px; }
   .asset-form { margin-top: 14px; padding: 14px; border: 1px solid var(--hair); border-radius: 8px; background: var(--page); }
   .row-actions { white-space: nowrap; }
   .row-actions .btn + .btn { margin-left: 6px; }

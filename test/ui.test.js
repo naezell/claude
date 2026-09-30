@@ -828,7 +828,7 @@ test('a landscaper gets the Landscaping tab: winter cash, service lines, contrac
     await page.click('#tab-landscape');
     await page.waitForSelector('main[aria-labelledby="tab-landscape"] section');
     const text = await page.locator('main').innerText();
-    for (const want of [/Off-season cash plan/, /Lakeview Office Park/, /Sunset Villas HOA/, /Maple Ridge HOA/, /Snow & ice lost/, /Exmark Lazer Z #3/, /zero-turn mower/, /Overtime spike/]) assert.match(text, want);
+    for (const want of [/Off-season cash plan/, /Lakeview Office Park/, /Sunset Villas HOA/, /Maple Ridge HOA/, /Snow & ice lost/, /Exmark Lazer Z #3/, /zero-turn mower/, /Overtime spike/, /Profit playbook/, /fill-ups at gas stations/, /Rock Solid Stone Supply/, /turn right/]) assert.match(text, want);
     assert.equal(await kpi(page, 'Contract invoices not sent'), '2');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `landscape tab scrolls sideways at ${width}px`);
     // Its sections can be arranged like any other page.
