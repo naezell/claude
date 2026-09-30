@@ -95,7 +95,7 @@
             </ul>
             <p><button class="btn" onClick=${() => { onClose(); onOpenClients(); }}>${Icon.cloud}Open Clients & backup</button></p>
           `)}
-          <p class="help-report">To point at a chart, table or figure that looks wrong, press <strong>Flag a problem</strong> (next to Customize), tap it, and say what is wrong. It is sent as a ticket with a picture of that part, amounts and names blanked out. For anything else: <button class="btn" onClick=${() => { onClose(); onReport(); }}>${Icon.flag}Report a problem</button></p>
+          <p class="help-report">To point at a chart, table or figure that looks wrong, press <strong>Flag a problem</strong> (next to Customize), tap it, and say what is wrong. It is sent as a ticket with a picture of that part, amounts and names blanked out, and you can follow it under <strong>Your tickets</strong> on Home. For anything else: <button class="btn" onClick=${() => { onClose(); onReport(); }}>${Icon.flag}Report a problem</button></p>
         </div>
       </aside>
     </div>`;
