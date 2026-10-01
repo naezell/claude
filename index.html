@@ -190,6 +190,12 @@
   .tabs-row { display: flex; align-items: flex-end; gap: 8px; }
   .tabs-row .tabs { flex: 1 1 auto; min-width: 0; }
   .customize-toggle { flex: none; margin-bottom: 6px; }
+  @media (max-width: 599px) {
+    .tabs-row { flex-wrap: wrap; }
+    .tabs-row .tabs { flex-basis: 100%; order: -1; }
+    .flag-toggle { order: 0; }
+    .customize-toggle { order: 0; }
+  }
   .customize-bar { border-color: var(--accent); }
   .customize-actions { display: flex; gap: 8px; margin-left: auto; }
   .customize-sub { font: 600 13px/1.2 var(--cond); text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-2); margin: 0 0 8px; }
