@@ -36,7 +36,8 @@
       const box = await Seal.seal(key, { client, message, questions, firm });
       const res = await post('create', { id, box, expiresAt: Date.now() + DAYS * 864e5, replaces: replaces || undefined });
       const refs = {};
-      for (const r of rows) refs[r.ref] = { key: r.key, topic: r.section, question: r.question };
+      // The transaction each question is about, so a receipt photo can be checked against it.
+      for (const r of rows) refs[r.ref] = { key: r.key, topic: r.section, question: r.question, date: r.date || '', payee: r.payee || '', amount: r.amount };
       return { id, key, email: email || '', createdAt: Date.now(), expiresAt: res.expiresAt, count: rows.length, refs, status: 'waiting' };
     },
     async cancel(rec) {
@@ -67,7 +68,7 @@
           if (!q) continue;
           const photos = (a.photos || []).filter((p) => p && /^data:image\/(jpeg|png|webp);base64,/.test(p.data)).slice(0, 3);
           if (photos.length) await AttachStore.put(cid, a.ref, photos);
-          entries[q.key] = { ref: a.ref, topic: q.topic, question: q.question, answer: String(a.answer || '').slice(0, 5000), receipt: photos.length > 0, photos: photos.length, photoKey: photos.length ? `${cid}|${a.ref}` : undefined, at, via: 'portal' };
+          entries[q.key] = { ref: a.ref, topic: q.topic, question: q.question, answer: String(a.answer || '').slice(0, 5000), receipt: photos.length > 0, photos: photos.length, photoKey: photos.length ? `${cid}|${a.ref}` : undefined, expect: q.amount != null ? { date: q.date || '', payee: q.payee || '', amount: q.amount } : undefined, at, via: 'portal' };
         }
         const record = { ...rec, status: 'received', receivedAt: Date.now(), receivedCount: Object.keys(entries).length };
         if (cid === openId && applyOpen) applyOpen(entries, record);
@@ -155,5 +156,59 @@
     return html`<span class="answer-photos">${photos.map((p, i) => html`<a key=${i} href=${p.data} download=${p.name || `receipt-${i + 1}.jpg`} title="Download"><img src=${p.data} alt=${`Receipt photo ${i + 1}`} /></a>`)}</span>`;
   }
 
-  Object.assign(UI, { Portal, PortalBlock, AnswerPhotos });
+  // What the receipt photos say, read in the browser (OCR) and checked against the transaction
+  // the question was about. Read once when the answer is first shown; the result is saved with
+  // the answer (`read`), so it isn't read again on every visit or on the other device.
+  const READ_ORDER = { match: 0, mismatch: 1, read: 2, unreadable: 3 };
+  function ReceiptRead({ answer: a, onRead }) {
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    const E = window.LedgerEngine;
+    const OCR = UI.OCR;
+    const run = async () => {
+      const [cid, ref] = String(a.photoKey || '').split('|');
+      setBusy(true); setError('');
+      try {
+        const photos = await AttachStore.get(cid, ref);
+        if (!photos.length) { setError('The photo is not on this computer.'); return; }
+        let best = null;
+        for (const p of photos) {
+          const parsed = E.parseReceiptText(await OCR.read(p.data));
+          const check = E.checkReceipt(parsed, a.expect);
+          const r = { ...parsed, ...check };
+          if (!best || READ_ORDER[r.status] < READ_ORDER[best.status]) best = r;
+        }
+        const { amounts, derived, fuelChecked, ...keep } = best; // eslint-disable-line no-unused-vars
+        onRead(a.key, { ...keep, checked: fuelChecked, at: new Date().toISOString().slice(0, 10) });
+      } catch (e) { setError(`Could not read the receipt: ${e.message}.`); } finally { setBusy(false); }
+    };
+    React.useEffect(() => { if (!a.read && a.photoKey && OCR && OCR.available() && onRead) run(); }, [a.key, a.photoKey]);
+    if (!a.photoKey) return null;
+    if (!OCR || !OCR.available()) return a.read ? html`<${ReadResult} r=${a.read} expect=${a.expect} />` : html`<span class="sub">Receipts are read on the app's web address.</span>`;
+    if (busy) return html`<span class="sub receipt-reading" role="status">Reading the receipt…</span>`;
+    return html`<span class="receipt-read">
+      ${a.read ? html`<${ReadResult} r=${a.read} expect=${a.expect} />` : ''}
+      ${error ? html`<span class="sub">${error}</span>` : ''}
+      ${onRead && html`<button class="linkish" onClick=${run}>${a.read ? 'Read again' : 'Read the receipt'}</button>`}
+    </span>`;
+  }
+  function ReadResult({ r, expect }) {
+    const money = (n) => (n == null ? '' : window.LedgerEngine.fmtMoney(n));
+    const pill = r.status === 'match' ? ['good', `Receipt matches ${money(expect && expect.amount)}`]
+      : r.status === 'mismatch' ? ['high', `Receipt shows ${money(r.total)}`]
+        : r.status === 'unreadable' ? ['low', "Couldn't read the photo"] : ['low', `Receipt total ${money(r.total)}`];
+    const bits = [];
+    if (r.date) bits.push(r.date);
+    if (r.gallons != null) bits.push(`${r.gallons.toFixed(3)} gal${r.pricePerGallon != null ? ` at $${r.pricePerGallon.toFixed(3)}/gal` : ''}`);
+    if (r.fuel) bits.push(r.fuel);
+    if (r.tax != null) bits.push(`tax ${money(r.tax)}`);
+    if (r.card4) bits.push(`card …${r.card4}`);
+    return html`<span class="receipt-result">
+      <span class=${`pill ${pill[0]}`}><span class="dot"></span>${pill[1]}</span>
+      ${bits.length > 0 && html`<span class="sub">${bits.join(' · ')}</span>`}
+      ${(r.notes || []).filter((n) => !/^The receipt shows/.test(n)).map((n, i) => html`<span class="sub warn-text" key=${i}>${n}</span>`)}
+    </span>`;
+  }
+
+  Object.assign(UI, { Portal, PortalBlock, AnswerPhotos, ReceiptRead });
 })();

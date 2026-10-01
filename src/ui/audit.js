@@ -7,7 +7,7 @@
   const E = window.LedgerEngine;
   const { fmtMoney, fmtWhole, counterpartyOf, leafAccount } = E;
   const UI = window.LedgerUI;
-  const { useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf, Arrange, AnswerPhotos } = UI;
+  const { useTokens, Icon, Severity, Money, ChartTooltip, ReviewSelect, clearedOf, Arrange, AnswerPhotos, ReceiptRead } = UI;
 
   // ------------------------------------------------------------ audit tab
 
@@ -27,7 +27,7 @@
     </section>`;
   }
 
-  function AuditTab({ result, accountClass, setAccountClass, onReview, onClose, canSave, receiptLimit, setReceiptLimit, onRemoveAnswer }) {
+  function AuditTab({ result, accountClass, setAccountClass, onReview, onClose, canSave, receiptLimit, setReceiptLimit, onRemoveAnswer, onReadAnswer }) {
     const { audit } = result;
     const [showCleared, setShowCleared] = useState(false);
     const vis = (list) => (showCleared ? list : list.filter((x) => !clearedOf(x)));
@@ -74,7 +74,7 @@
         <${ClosedMonthsPanel} result=${result} onClose=${onClose} canSave=${canSave} />
         `],
         ["answers", "Client answers", html`
-        ${result.answers && result.answers.length > 0 && html`<${AnswersPanel} answers=${result.answers} onReview=${onReview} onRemove=${onRemoveAnswer} />`}
+        ${result.answers && result.answers.length > 0 && html`<${AnswersPanel} answers=${result.answers} onReview=${onReview} onRemove=${onRemoveAnswer} onRead=${onReadAnswer} />`}
         `],
         ["bymonth", "Issues by month", html`
         <${IssuesByMonth} audit=${audit} />
@@ -270,7 +270,7 @@
   }
 
   // What the client wrote back in the questions spreadsheet.
-  function AnswersPanel({ answers, onReview, onRemove }) {
+  function AnswersPanel({ answers, onReview, onRemove, onRead }) {
     const open = answers.filter((a) => !clearedOf(a)).length;
     return html`<section class="panel">
       <div class="panel-head">
@@ -283,7 +283,7 @@
         <tbody>${answers.map((a) => html`<tr key=${a.key} class=${clearedOf(a) ? 'cleared' : ''}>
           <td><${ReviewSelect} item=${a} onReview=${onReview} /></td>
           <td><span class="sub">${a.ref} · ${a.topic}</span>${a.question}</td>
-          <td><strong style=${{ fontWeight: 500 }}>${a.answer || html`<span class="sub">No written answer</span>`}</strong>${a.photos && a.photoKey ? html`<${AnswerPhotos} photoKey=${a.photoKey} count=${a.photos} />` : a.receipt ? html`<span class="pill good" style=${{ marginTop: '4px' }}>Receipt sent</span>` : ''}${a.via === 'portal' ? html`<span class="sub">Through the answer link</span>` : ''}</td>
+          <td><strong style=${{ fontWeight: 500 }}>${a.answer || html`<span class="sub">No written answer</span>`}</strong>${a.photos && a.photoKey ? html`<${AnswerPhotos} photoKey=${a.photoKey} count=${a.photos} /><${ReceiptRead} answer=${a} onRead=${onRead} />` : a.receipt ? html`<span class="pill good" style=${{ marginTop: '4px' }}>Receipt sent</span>` : ''}${a.via === 'portal' ? html`<span class="sub">Through the answer link</span>` : ''}</td>
           <td class="nowrap num">${a.at || ''}</td>
           <td><button class="btn" onClick=${() => onRemove(a.key)}>Remove</button></td>
         </tr>`)}</tbody>

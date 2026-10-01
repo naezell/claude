@@ -962,6 +962,45 @@ test('a landscaper gets the Fraud risk tab; the voided/deleted report and employ
   }
 });
 
+test('Credit cards: card statements combined and checked against QuickBooks, and the payoff calculator saved', async (t) => {
+  if (skip) return t.skip(skip);
+  const dir = path.join(ROOT, 'sample-data', 'test-clients');
+  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss'].map((f) => path.join(dir, `greenway-${f}.csv`));
+  for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
+    const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    await page.setInputFiles('#csv-upload', files);
+    await page.waitForSelector('#tab-cards');
+    await page.click('#tab-cards');
+    await page.waitForSelector('main[aria-labelledby="tab-cards"] section.panel');
+    assert.match(await page.locator('main').innerText(), /Chase Ink \(4410\)/);
+    assert.equal(await kpi(page, 'Not in QuickBooks'), '—');
+    // Both statements added to the client already open.
+    await page.setInputFiles('#csv-add', ['chase', 'amex'].map((c) => path.join(dir, `greenway-${c}-statement-jul-aug-2026.csv`)));
+    await page.waitForSelector('.source .pill:has-text("2 card statements")');
+    assert.equal(await kpi(page, 'Not in QuickBooks'), '11');
+    const text = await page.locator('main').innerText();
+    for (const want of [/AMAZON MKTPL/, /HARBOR FREIGHT TOOLS/, /DAN ORTIZ/, /In QuickBooks, on no statement/, /WEX Fleet Card/]) assert.match(text, want);
+    // The payoff calculator: balances typed in, a saving shown.
+    await page.click('button:has-text("Add a card")');
+    await page.fill('#pc-bal-0', '8000');
+    await page.fill('#pc-apr-0', '24.99');
+    await page.fill('#pc-pay-0', '250');
+    await page.locator('.payoff-result .banner', { hasText: 'Saves money' }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `cards tab scrolls sideways at ${width}px`);
+    if (width === 1280) {
+      // Saved with the client: reopen it and the card is still there.
+      await page.reload();
+      await page.locator('.client-card button:has-text("Open")').first().click();
+      await page.waitForSelector('#tab-cards');
+      await page.click('#tab-cards');
+      assert.equal(await page.locator('#pc-bal-0').inputValue(), '8000');
+      await page.waitForSelector('.source .pill:has-text("2 card statements")');
+    }
+    assert.deepEqual(errors, [], `${colorScheme} ${width}px`);
+    await page.close();
+  }
+});
+
 test('Flag a problem: pick mode on a phone, then the email fallback away from the site', async (t) => {
   if (skip) return t.skip(skip);
   const { page, errors } = await openPage({ viewport: { width: 400, height: 900 } }, (p) => p.addInitScript(() => { window.LedgerConfig = { ...(window.LedgerConfig || {}), supportEmail: 'help@example.com' }; }));

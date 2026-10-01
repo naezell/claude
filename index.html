@@ -528,6 +528,19 @@
   .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .backup-status { margin: 8px 0 0 !important; min-height: 1.2em; font-size: 12.5px; }
 
+  /* Receipts read from client photos */
+  .receipt-read, .receipt-result { display: grid; gap: 3px; justify-items: start; margin-top: 6px; }
+  .receipt-read .linkish { font-size: 12.5px; }
+  .warn-text { color: var(--warn-ink); }
+
+  /* Credit cards tab */
+  .payoff-cards { display: grid; gap: 10px; margin-bottom: 10px; }
+  .payoff-card { display: grid; grid-template-columns: minmax(140px, 1.4fr) repeat(3, minmax(100px, 1fr)) auto; gap: 8px 12px; align-items: end; padding-bottom: 10px; border-bottom: 1px solid var(--hair); }
+  .payoff-card .field input { width: 100%; }
+  .payoff-loan { margin: 6px 0 14px; padding: 0; }
+  .payoff-result .table-wrap { margin-top: 10px; }
+  @media (max-width: 720px) { .payoff-card { grid-template-columns: 1fr 1fr; } .payoff-card .field:first-child { grid-column: 1 / -1; } }
+
   /* Fraud risk tab */
   .fraud-checks { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 0; }
   .fraud-check { padding: 12px 0; border-top: 1px solid var(--hair); min-width: 0; }
@@ -582,6 +595,7 @@
 <script src="src/sealed.js"></script>
 <script src="src/ui/shared.js"></script>
 <script src="src/ui/arrange.js"></script>
+<script src="src/ui/ocr.js"></script>
 <script src="src/ui/portal.js"></script>
 <script src="src/ui/drive.js"></script>
 <script src="src/ui/localfile.js"></script>
@@ -592,6 +606,7 @@
 <script src="src/ui/trends.js"></script>
 <script src="src/ui/budget.js"></script>
 <script src="src/ui/vendors.js"></script>
+<script src="src/ui/cards.js"></script>
 <script src="src/ui/benchmarks.js"></script>
 <script src="src/ui/advisory.js"></script>
 <script src="src/ui/landscape.js"></script>

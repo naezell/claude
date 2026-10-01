@@ -80,6 +80,18 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   (Audit Log / Voided-Deleted report, `source.voided`, `opts.voided`) and `parseEmployeeList()`
   (direct deposit, last four digits only, `source.employees`, `opts.employees`). `src/ui/fraud.js` is
   the tab, the second entry in `INDUSTRY_TABS.landscaping`. Greenway has one planted case per check.
+- Receipt photos (client portal answers) are read in the browser: `src/ui/ocr.js` loads Tesseract
+  from `vendor/tesseract/` (needs `'wasm-unsafe-eval'` in the CSP, and http(s): no workers on
+  file://); `parseReceiptText()` (total, date, tax, card last 4, gallons, price per gallon, fuel) and
+  `checkReceipt()` against the question's `expect` {date, payee, amount} in the engine. `ReceiptRead`
+  in portal.js reads once and saves the result as `answers[key].read`; the fraud `bigFuel` check uses
+  receipt gallons over `TANK_GALLONS`.
+- Credit cards tab (`src/ui/cards.js`, all industries): `cardReview()` (`result.cards`: card accounts
+  by role `card`, spending by month/category, and with `opts.statements` a charge-by-charge check:
+  `missing` from QuickBooks, `extra` in the books on no statement, `people`), `parseCardStatement()`
+  (bank CSV downloads, kind `statement`; every uploaded statement is kept in `source.statements`),
+  `combinedStatementsCsv()`, `quickbooksUploadCsv()`, and `cardPayoff()` for one consolidation loan
+  (inputs saved in the profile as `cardDebt`). Greenway has Chase and Amex statement fixtures.
 - Fixed assets: `assetSchedule()`, `depreciationEntry()`, `parseAssetList()` and `macrsRates()`
   (IRS Pub. 946 tables, mid-quarter rule, bonus by date, Section 179) in the engine;
   `fixedAssetFacts()` gives `result.fixedAssets` (purchases found, depreciation posted by year,

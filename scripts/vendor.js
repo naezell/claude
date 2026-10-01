@@ -18,6 +18,14 @@ const FILES = {
   'htm.umd.js': 'htm/dist/htm.umd.js',
   'html2canvas-pro.min.js': 'html2canvas-pro/dist/html2canvas-pro.min.js',
   'xlsx.full.min.js': 'xlsx/dist/xlsx.full.min.js',
+  // Reading receipt photos in the browser (loaded only when a receipt is read): the library,
+  // its worker, the engine for browsers with and without SIMD, and the English text model.
+  'tesseract/tesseract.min.js': 'tesseract.js/dist/tesseract.min.js',
+  'tesseract/worker.min.js': 'tesseract.js/dist/worker.min.js',
+  'tesseract/core/tesseract-core-lstm.wasm.js': 'tesseract.js-core/tesseract-core-lstm.wasm.js',
+  'tesseract/core/tesseract-core-simd-lstm.wasm.js': 'tesseract.js-core/tesseract-core-simd-lstm.wasm.js',
+  'tesseract/core/tesseract-core-relaxedsimd-lstm.wasm.js': 'tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js',
+  'tesseract/lang/eng.traineddata.gz': '@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz',
 };
 // Font family → [package, weights]. Latin only, which covers English text and the $ and € signs.
 const FONTS = {
@@ -50,7 +58,7 @@ if (require.main === module) {
   }
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(path.join(OUT, 'fonts'), { recursive: true });
-  for (const f of files) fs.copyFileSync(f.from, path.join(OUT, f.name));
+  for (const f of files) { fs.mkdirSync(path.dirname(path.join(OUT, f.name)), { recursive: true }); fs.copyFileSync(f.from, path.join(OUT, f.name)); }
   fs.writeFileSync(path.join(OUT, 'fonts.css'), css);
   console.log(`Copied ${files.length} files into vendor/`);
 }
