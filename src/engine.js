@@ -2183,7 +2183,7 @@
   // Combines several parsed exports (for example two years exported separately).
   // Rows repeated in a later file, as happens when date ranges overlap, are dropped.
   // Works out which QuickBooks report a file is and parses it: { kind, data } with kind one of
-  // chart, budget, pnl, answers, attachments, customers or parsed (transactions). Throws with a message
+  // chart, budget, pnl, answers, attachments, voided, employees, customers or parsed (transactions). Throws with a message
   // that follows the file name ("has a header row but no dated transactions.").
   function readExport(text) {
     // A chart of accounts has Account and Type columns and no dates.
@@ -2199,6 +2199,10 @@
     if (ans) return { kind: 'answers', data: ans };
     const att = parseAttachmentList(text);
     if (att) return { kind: 'attachments', data: att };
+    const vd = parseVoidedDeleted(text);
+    if (vd) return { kind: 'voided', data: vd };
+    const emps = parseEmployeeList(text);
+    if (emps) return { kind: 'employees', data: emps };
     const custs = parseCustomerList(text);
     if (custs) return { kind: 'customers', data: custs };
     const p = parseTransactions(text);
@@ -2864,8 +2868,10 @@
       const line2 = SERVICE_LINES.find((x) => x.key === c.line);
       customers.push({ name: c.name, line: line2 ? line2.label : 'Other', amount: current, perYear, since });
       // Missed: the last three full months, where the customer was billed a year earlier or
-      // on both sides of the gap.
-      for (let i = 0; i < 3; i++) {
+      // on both sides of the gap. A customer billed in none of the three has stopped, not been
+      // missed (the Fraud risk tab lists them as regular customers who stopped being billed).
+      const stopped = [0, 1, 2].every((i) => !byMonth.has(addMonth(lastFull, -i)));
+      for (let i = 0; i < 3 && !stopped; i++) {
         const key = addMonth(lastFull, -i);
         if (byMonth.has(key)) continue;
         const lastYear = byMonth.has(addMonth(key, -12));
@@ -4601,6 +4607,8 @@
     out.detectedIndustry = detectIndustry(parsed.meta, out.accounts ? out.accounts.map((a) => a.name || a.account || a) : []);
     out.industry = opts.industry || out.detectedIndustry;
     if (out.industry === 'landscaping') out.landscape = landscapeAnalysis(txns, accountClass, out, { cushion: opts.cushion, customers: opts.customers });
+    // Fraud risk checks: a landscaping tab for now (crews, fuel cards, cash jobs).
+    if (out.industry === 'landscaping') out.fraud = fraudChecks(txns, accountClass, out, { voided: opts.voided, employees: opts.employees, routes: out.landscape && out.landscape.routes, receiptLimit: opts.receiptLimit });
     // Fixed assets: what the books show, and the saved register's schedule through the last full month.
     out.fixedAssets = fixedAssetFacts(txns, accountClass);
     if (out.balanceSheet && out.balanceSheet.available) {
@@ -4762,6 +4770,495 @@
       section.keep, svg, tr { break-inside: avoid; }
       footer { margin-top: 10px; padding-top: 10px; border-top: 1px solid ${RC.hair}; font-size: 11px; color: ${RC.muted}; }
     `;
+  }
+
+  // ---------------------------------------------------------------- fraud risk
+
+  // US holidays most crews take off (fixed dates, Memorial Day, Labor Day, Thanksgiving).
+  function usHoliday(iso) {
+    const [y, m, d] = String(iso).split('-').map(Number);
+    if (!y) return '';
+    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+    if (m === 1 && d === 1) return "New Year's Day";
+    if (m === 7 && d === 4) return 'Independence Day';
+    if (m === 12 && d === 25) return 'Christmas';
+    if (m === 5 && dow === 1 && d > 24) return 'Memorial Day';
+    if (m === 9 && dow === 1 && d <= 7) return 'Labor Day';
+    if (m === 11 && dow === 4 && d >= 22 && d <= 28) return 'Thanksgiving';
+    return '';
+  }
+
+  // The Voided/Deleted Transactions report (QuickBooks Desktop) or the Audit Log (Online):
+  // rows with an Action, Event or State column saying a transaction was voided or deleted.
+  function parseVoidedDeleted(text) {
+    const rows = parseCSV(text);
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      const lc = rows[i].map(lower);
+      const col = (rx) => { const j = lc.findIndex((h) => rx.test(h)); return j === -1 ? null : j; };
+      const action = col(/^(action|event|state|history)$/);
+      if (action == null) continue;
+      const date = col(/^(date|transaction date|txn date)$/), type = col(/^(type|transaction type)$/), num = col(/^(num|no\.?|number|ref no\.?)$/);
+      const name = col(/^(name|customer|vendor|payee)$/), amount = col(/^(amount|total)$/), who = col(/(modified by|^user$|changed by)/), when = col(/(entered|last modified|date changed|changed)/);
+      const out = [];
+      for (const r of rows.slice(i + 1)) {
+        const act = norm(r[action]);
+        if (!/delet|void/i.test(act)) continue;
+        const kind = /delet/i.test(act) ? 'Deleted' : 'Voided';
+        const t = norm(type != null ? r[type] : '') || ((act.match(/(invoice|sales receipt|payment|deposit|check|bill payment|bill|expense|credit memo|refund|journal entry|estimate)/i) || [])[1] || '');
+        const n = norm(num != null ? r[num] : '') || ((act.match(/no\.?\s*(\S+)/i) || [])[1] || '');
+        const d = parseDate(date != null ? r[date] : '');
+        out.push({ action: kind, type: t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : '', num: n, name: name != null ? norm(r[name]) : '', amount: amount != null ? Math.abs(parseAmount(r[amount]) || 0) : 0, date: d ? isoDate(d) : '', by: who != null ? norm(r[who]) : '', when: when != null ? norm(r[when]) : '' });
+      }
+      return out.length ? { entries: out } : null;
+    }
+    return null;
+  }
+
+  // An employee list from payroll (Employee Details or a payroll provider's export) with the
+  // direct deposit bank details, usually masked to the last four digits.
+  function parseEmployeeList(text) {
+    const rows = parseCSV(text);
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      const lc = rows[i].map(lower);
+      const col = (rx) => { const j = lc.findIndex((h) => rx.test(h)); return j === -1 ? null : j; };
+      const name = col(/^(employee|employee name|name|full name)$/);
+      const routing = col(/routing/), account = col(/(bank )?account( number| no\.?)?$|^account$|deposit account/);
+      if (name == null || (routing == null && account == null) || (lc[name] !== 'employee' && lc[name] !== 'employee name' && routing == null)) continue;
+      const address = col(/^(address|home address|street)$/);
+      const out = [];
+      for (const r of rows.slice(i + 1)) {
+        const n = norm(r[name]);
+        if (!n || /^total/i.test(n)) continue;
+        const digits = (v) => String(v || '').replace(/[^0-9]/g, '');
+        out.push({ name: n, routing: routing != null ? digits(r[routing]) : '', account: account != null ? digits(r[account]).slice(-4) : '', address: address != null ? norm(r[address]) : '' });
+      }
+      return out.length ? { employees: out } : null;
+    }
+    return null;
+  }
+
+  const PAYROLL_PROVIDER = /gusto|adp|paychex|intuit|quickbooks payroll|payroll|paylocity|rippling|square payroll|onpay|patriot/i;
+  const vendorKey = (s) => lower(s).replace(/[^a-z0-9 ]/g, ' ').replace(/\b(llc|inc|co|corp|corporation|company|the|ltd)\b/g, ' ').replace(/\s+/g, '');
+  function similarity(a, b) {
+    if (a === b) return 1;
+    const m = a.length, n = b.length;
+    if (!m || !n) return 0;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return 1 - prev[n] / Math.max(m, n);
+  }
+
+  const PURCHASE_ACCOUNT = /suppl|material|tool|fuel|gas\b|gasoline|diesel|meal|repair|maint|parts|travel|auto|vehicle|equipment rental|plants|mulch|landscap|job/i;
+  const NOT_PURCHASE = /interest|loan|rent|lease|insurance|bank|fee|payroll|wage|tax|owner|depreciation|subscription|software|utilit/i;
+  const FRAUD_WEIGHT = { high: 15, medium: 8, low: 3 };
+
+  // Fraud risk checks: patterns worth a closer look, never proof. Each check says found, clean,
+  // needs another report, or does not apply, with the items behind it.
+  function fraudChecks(txns, accountClass, result, opts) {
+    opts = opts || {};
+    const range = dateRange(txns, result.meta);
+    const ttm = trailingYear(range.first, range.last);
+    const inTtm = (d) => (ttm ? d >= ttm.start && d <= ttm.end : true);
+    const postings = toPostings(txns, accountClass);
+    const spend = postings.filter((p) => (p.cls === 'expense' || p.cls === 'cogs') && p.value > 0);
+    const spendTtm = spend.filter((p) => inTtm(p.t.date));
+    const who = (t) => counterpartyOf(t) || '';
+    const months = result.closableMonths || [];
+    const last3 = months.slice(-3);
+    const checks = [];
+    const add = (c) => checks.push({ items: [], columns: [], amount: null, ...c, status: c.status || (c.items && c.items.length ? 'found' : 'clean') });
+    const money = (k, label) => [label, k, 'money'];
+
+    // ---- Missing revenue
+    const numbered = (rx) => {
+      const seen = new Map();
+      for (const t of txns) if (rx.test(t.type || '') && /^\d{1,9}$/.test(t.num || '') && !seen.has(+t.num)) seen.set(+t.num, t.dateStr);
+      return [...seen.entries()].sort((a, b) => a[0] - b[0]);
+    };
+    const gapsOf = (list) => {
+      const gaps = [];
+      for (let i = 1; i < list.length; i++) {
+        const d = list[i][0] - list[i - 1][0];
+        if (d > 1 && d <= 50) gaps.push({ from: list[i - 1][0] + 1, to: list[i][0] - 1, count: d - 1, after: list[i - 1][1] });
+      }
+      return gaps;
+    };
+    const deleted = opts.voided ? opts.voided.entries : null;
+    const delNums = new Map((deleted || []).filter((x) => x.num).map((x) => [String(x.num), x]));
+    const invList = numbered(/^invoice$/i);
+    const invGaps = invList.length >= 10 ? gapsOf(invList) : null;
+    add({
+      id: 'invoiceGaps', group: 'revenue', severity: 'high', title: 'Skipped invoice numbers',
+      status: invGaps ? undefined : 'na',
+      summary: invGaps ? (invGaps.length ? `${invGaps.reduce((t, g) => t + g.count, 0)} invoice number${invGaps.reduce((t, g) => t + g.count, 0) === 1 ? '' : 's'} missing from the sequence. Each one is an invoice that was deleted or never recorded; ask what happened to it.` : `Invoice numbers ${invList[0][0]} to ${invList[invList.length - 1][0]} run without gaps.`) : 'Invoices in this export are not numbered in sequence.',
+      columns: [['Missing numbers', 'range'], ['After an invoice dated', 'after'], ['In the deleted report', 'deleted']],
+      items: (invGaps || []).map((g) => ({ range: g.count === 1 ? `#${g.from}` : `#${g.from} to #${g.to}`, after: g.after, count: g.count, deleted: Array.from({ length: g.count }, (_, k) => delNums.get(String(g.from + k))).filter(Boolean).map((x) => `${x.action}${x.when ? ` ${x.when.split(' ')[0]}` : ''}${x.by ? ` by ${x.by}` : ''}`).join('; ') || (deleted ? 'Not listed' : '') })),
+    });
+    const chkList = numbered(/^(check|bill payment \(check\)|bill payment)$/i);
+    const chkGaps = chkList.length >= 10 ? gapsOf(chkList) : null;
+    add({
+      id: 'checkGaps', group: 'revenue', severity: 'low', title: 'Skipped check numbers',
+      status: chkGaps ? undefined : 'na',
+      summary: chkGaps ? (chkGaps.length ? `${chkGaps.reduce((t, g) => t + g.count, 0)} check number${chkGaps.reduce((t, g) => t + g.count, 0) === 1 ? '' : 's'} missing. Voided or spoiled checks are normal, but each should be accounted for.` : 'Check numbers run without gaps.') : 'Checks in this export are not numbered in sequence.',
+      columns: [['Missing numbers', 'range'], ['After a check dated', 'after']],
+      items: (chkGaps || []).map((g) => ({ range: g.count === 1 ? `#${g.from}` : `#${g.from} to #${g.to}`, after: g.after })),
+    });
+    // Voided invoices, credit memos and discounts given after the fact.
+    const voids = new Map(), credits = [];
+    for (const t of txns) {
+      if (/void/i.test(t.memo || '') && Math.abs(t.amount) < 0.005 && /invoice|sales receipt|payment|deposit/i.test(t.type)) voids.set(`${t.type}|${t.num}|${t.dateStr}`, { date: t.dateStr, type: t.type, num: t.num, name: t.name || t.customer, amount: 0, kind: 'Voided' });
+    }
+    for (const p of postings) {
+      if (p.cls !== 'income' || p.value >= 0) continue;
+      if (/credit memo|refund/i.test(p.t.type) || /discount/i.test(p.category) || /discount/i.test(p.t.memo || '')) credits.push({ date: p.t.dateStr, type: p.t.type, num: p.t.num, name: (customerOf(p.t, 'income') || p.t.name || '').split(':')[0], amount: round2(-p.value), kind: /credit memo/i.test(p.t.type) ? 'Credit memo' : /refund/i.test(p.t.type) ? 'Refund' : 'Discount' });
+    }
+    const creditItems = [...voids.values(), ...credits.filter((c) => c.amount >= 50)].sort((a, b) => b.date.localeCompare(a.date));
+    add({
+      id: 'voids', group: 'revenue', severity: 'medium', title: 'Voided invoices, credits and discounts',
+      summary: creditItems.length ? `${voids.size} voided and ${credits.length} credit or discount entr${credits.length === 1 ? 'y' : 'ies'} (${fmtWhole(credits.reduce((t, c) => t + c.amount, 0))}). Check each has a reason, such as a complaint or a return, and who approved it.` : 'No voided invoices, credit memos or discounts.',
+      amount: round2(credits.reduce((t, c) => t + c.amount, 0)),
+      columns: [['Date', 'date'], ['What', 'kind'], ['Customer', 'name'], ['No.', 'num'], money('amount', 'Amount')], items: creditItems,
+    });
+    const delItems = (deleted || []).filter((x) => /invoice|sales receipt|payment|deposit|credit memo|refund/i.test(x.type) || !x.type);
+    add({
+      id: 'deleted', group: 'revenue', severity: 'high', title: 'Deleted or voided sales and payments',
+      status: deleted ? undefined : 'needs',
+      summary: !deleted ? 'Needs the Voided/Deleted Transactions report (QuickBooks Desktop: Reports → Accountant & Taxes) or the Audit Log export (QuickBooks Online: Settings → Audit log). Upload it with Add export.'
+        : delItems.length ? `${delItems.length} sales or customer payment${delItems.length === 1 ? ' was' : 's were'} deleted or voided (${fmtWhole(delItems.reduce((t, x) => t + x.amount, 0))}). A deleted payment is the classic sign of cash kept off the books.` : 'No sales or customer payments were deleted or voided.',
+      amount: deleted ? round2(delItems.reduce((t, x) => t + x.amount, 0)) : null,
+      columns: [['Date', 'date'], ['What', 'action'], ['Type', 'type'], ['No.', 'num'], ['Name', 'name'], money('amount', 'Amount'), ['By', 'by']], items: delItems,
+    });
+    const refunds = txns.filter((t) => /refund/i.test(t.type) && roleOf(accountClass, t.account) === 'cash' && t.amount < 0 && inTtm(t.date)).map((t) => ({ date: t.dateStr, name: t.name || t.customer, amount: round2(-t.amount), how: /check/i.test(t.type) || t.num ? 'Check' : 'Bank' }));
+    add({
+      id: 'refunds', group: 'revenue', severity: 'medium', title: 'Customer refunds paid out',
+      summary: refunds.length ? `${refunds.length} refund${refunds.length === 1 ? '' : 's'} paid to customers in the last 12 months (${fmtWhole(refunds.reduce((t, r) => t + r.amount, 0))}). Confirm each customer asked for it and received it.` : 'No refunds paid to customers in the last 12 months.',
+      amount: round2(refunds.reduce((t, r) => t + r.amount, 0)), columns: [['Date', 'date'], ['Customer', 'name'], ['Paid by', 'how'], money('amount', 'Amount')], items: refunds,
+    });
+    // Dormant high-value customers: billed most months, and in the same months last year, but
+    // not at all in the last three.
+    const byCust = new Map();
+    for (const p of postings) {
+      if (p.cls !== 'income' || p.value <= 0) continue;
+      const c = (customerOf(p.t, 'income') || p.t.name || '').split(':')[0].trim();
+      if (!c) continue;
+      const e = byCust.get(c) || new Map();
+      const k = p.t.dateStr.slice(0, 7);
+      e.set(k, (e.get(k) || 0) + p.value);
+      byCust.set(c, e);
+    }
+    const yearAgo = last3.map((k) => addMonthsKey(k, -12));
+    const streetOf = new Map();
+    if (opts.routes) for (const s of opts.routes.streets) for (const n of s.names) streetOf.set(n, s);
+    const dormant = [];
+    if (last3.length === 3) {
+      for (const [c, m] of byCust) {
+        const before = [...m.keys()].filter((k) => k < last3[0]);
+        // Regular: billed in at least half of the year before. One-off projects for a repeat
+        // customer are not a relationship that stopped.
+        const yearBefore = before.filter((k) => k >= addMonthsKey(last3[0], -12));
+        if (yearBefore.length < 6 || last3.some((k) => m.has(k)) || yearAgo.filter((k) => m.has(k)).length < 2) continue;
+        const lastBilled = before.sort().pop();
+        const monthly = [...m.values()].reduce((t, v) => t + v, 0) / m.size;
+        const st = streetOf.get(c);
+        dormant.push({ name: c, lastBilled: monthLabel(lastBilled), monthly: round2(monthly), yearly: round2(monthly * Math.min(12, before.length)), street: st ? `${st.street}${st.count > 1 ? ` (${st.count - 1} other customer${st.count === 2 ? '' : 's'} still there)` : ''}` : '' });
+      }
+    }
+    dormant.sort((a, b) => b.yearly - a.yearly);
+    add({
+      id: 'dormant', group: 'revenue', severity: 'high', title: 'Regular customers who stopped being billed',
+      status: last3.length === 3 ? undefined : 'na',
+      summary: dormant.length ? `${dormant.length} long-time customer${dormant.length === 1 ? '' : 's'} billed most months, and in these same months last year, had no invoices in the last three months (about ${fmtWhole(dormant.reduce((t, d) => t + d.yearly, 0))} a year). Confirm they left; if crews still go there, they may be served on the side.` : 'Every regular customer billed this time last year is still being billed.',
+      amount: round2(dormant.reduce((t, d) => t + d.yearly, 0)),
+      columns: [['Customer', 'name'], ['Last billed', 'lastBilled'], money('monthly', 'Usual month'), money('yearly', 'Per year'), ['Street', 'street']], items: dormant,
+    });
+    const und = result.balanceSheet && result.balanceSheet.available ? result.balanceSheet.items.filter((x) => /undeposited/i.test(x.kind) && !isCleared(x.review)) : [];
+    add({
+      id: 'undeposited', group: 'revenue', severity: 'medium', title: 'Customer payments not deposited',
+      status: result.balanceSheet && result.balanceSheet.available ? undefined : 'na',
+      summary: und.length ? und.map((x) => x.detail).join(' ') : 'Payments recorded as received have all reached the bank.',
+      amount: und.length ? round2(und.reduce((t, x) => t + Math.abs(x.amount), 0)) : null,
+      columns: [['Account', 'account'], money('amount', 'Amount')], items: und.map((x) => ({ account: x.account, amount: round2(Math.abs(x.amount)) })),
+    });
+
+    // ---- Purchasing and materials
+    const jobs = new Map();
+    for (const p of postings) {
+      const job = p.t.customer && p.t.customer.includes(':') ? p.t.customer : '';
+      if (!job) continue;
+      const j = jobs.get(job) || { job, revenue: 0, materials: 0 };
+      if (p.cls === 'income') j.revenue += p.value; else if (p.cls === 'cogs') j.materials += p.value;
+      jobs.set(job, j);
+    }
+    const jobRows = [...jobs.values()].filter((j) => j.materials > 0).map((j) => ({ job: j.job.replace(':', ' › '), revenue: round2(j.revenue), materials: round2(j.materials), ratio: j.revenue > 0 ? j.materials / j.revenue : null }));
+    const badJobs = jobRows.filter((j) => j.materials >= 1000 && (j.ratio == null || j.ratio >= 0.6)).sort((a, b) => b.materials - b.revenue - (a.materials - a.revenue));
+    add({
+      id: 'jobCosts', group: 'purchasing', severity: 'medium', title: 'Jobs where materials outran the price',
+      status: jobRows.length >= 3 ? undefined : 'na',
+      summary: jobRows.length < 3 ? 'Costs are not tracked by customer and job, so materials cannot be compared with what each job brought in.'
+        : badJobs.length ? `${badJobs.length} job${badJobs.length === 1 ? '' : 's'} where materials were 60% or more of the price, or billed nothing at all. Materials bought for one job and used elsewhere, or never used, show up here.` : 'Materials stayed well under the price on every job.',
+      amount: round2(badJobs.reduce((t, j) => t + Math.max(0, j.materials - j.revenue * 0.35), 0)),
+      columns: [['Job', 'job'], money('revenue', 'Billed'), money('materials', 'Materials'), ['Materials / billed', 'ratio', 'pct']], items: badJobs,
+      chart: jobRows.sort((a, b) => b.materials - a.materials).slice(0, 15),
+    });
+    const vendMonths = new Map();
+    for (const p of spend) {
+      if (WAGE_ACCOUNT.test(p.category) || PAYROLL_TAX_ACCOUNT.test(p.category)) continue;
+      const v = who(p.t);
+      if (!v || PAYROLL_PROVIDER.test(v)) continue;
+      const m = vendMonths.get(v) || new Map();
+      const k = p.t.dateStr.slice(0, 7);
+      m.set(k, (m.get(k) || 0) + p.value);
+      vendMonths.set(v, m);
+    }
+    const spikes = [];
+    for (const [v, m] of vendMonths) {
+      const prior = [...m.entries()].filter(([k]) => last3.length && k < last3[0]).map(([, x]) => x).sort((a, b) => a - b);
+      if (prior.length < 6) continue;
+      const med = prior[Math.floor(prior.length / 2)];
+      for (const k of last3) {
+        const x = m.get(k) || 0;
+        if (x >= 2000 && x >= med * 3 && x - med >= 1500) spikes.push({ vendor: v, month: monthLabel(k), spent: round2(x), usual: round2(med), times: x / med });
+      }
+    }
+    spikes.sort((a, b) => b.spent - b.usual - (a.spent - a.usual));
+    add({
+      id: 'vendorSpikes', group: 'purchasing', severity: 'medium', title: 'Sudden jumps in spending with a vendor',
+      status: last3.length === 3 ? undefined : 'na',
+      summary: spikes.length ? `${spikes.length} month${spikes.length === 1 ? '' : 's'} where spending with an established vendor ran three times its usual level or more. Check the jobs it went to, and that the goods arrived.` : 'Spending with each regular vendor stayed in its normal range over the last three months.',
+      amount: round2(spikes.reduce((t, s) => t + s.spent - s.usual, 0)),
+      columns: [['Vendor', 'vendor'], ['Month', 'month'], money('spent', 'Spent'), money('usual', 'Usual month'), ['Times usual', 'times', 'times']], items: spikes,
+    });
+    const jc = result.jobCosts;
+    // Vendors whose materials are usually put on a job. Stock bought in bulk for many jobs (salt,
+    // mulch by the truckload) is never tagged, so only untagged buys from the others stand out.
+    const tagRate = new Map();
+    for (const p of spend) {
+      if (p.cls !== 'cogs') continue;
+      const v = who(p.t);
+      const e = tagRate.get(v) || { tagged: 0, all: 0 };
+      e.all += p.value; if (p.t.customer) e.tagged += p.value;
+      tagRate.set(v, e);
+    }
+    const usuallyTagged = (v) => { const e = tagRate.get(v); return e && e.tagged / e.all >= 0.5; };
+    const noJob = jc && jc.mode === 'tracked' ? jc.items.filter((x) => !isCleared(x.review) && x.cost >= 100 && (!ttm || x.dateStr >= isoDate(ttm.start)) && usuallyTagged(x.vendor)).map((x) => ({ date: x.dateStr, vendor: x.vendor, cost: x.cost })) : [];
+    add({
+      id: 'materialsNoJob', group: 'purchasing', severity: 'medium', title: 'Materials bought with no job',
+      status: jc && jc.mode === 'tracked' ? undefined : 'na',
+      summary: jc && jc.mode === 'tracked' ? (noJob.length ? `${noJob.length} purchase${noJob.length === 1 ? '' : 's'} (${fmtWhole(noJob.reduce((t, x) => t + x.cost, 0))}) from vendors whose materials usually go on a job, with no job this time. Purchases with no job are the easiest to divert.` : 'Materials from job vendors are assigned to jobs. Bulk stock (salt, mulch by the load) is left out.') : 'Jobs are not tracked consistently enough to check.',
+      amount: jc && jc.mode === 'tracked' ? round2(noJob.reduce((t, x) => t + x.cost, 0)) : null,
+      columns: [['Date', 'date'], ['Vendor', 'vendor'], money('cost', 'Amount')], items: noJob,
+    });
+    // Look-alike vendor names.
+    const vNames = [...vendMonths.keys()];
+    const totals = new Map(vNames.map((v) => [v, [...vendMonths.get(v).values()].reduce((t, x) => t + x, 0)]));
+    const pairs = [];
+    for (let i = 0; i < vNames.length; i++) {
+      for (let j = i + 1; j < vNames.length; j++) {
+        const a = vendorKey(vNames[i]), b = vendorKey(vNames[j]);
+        if (a.length < 5 || b.length < 5 || Math.abs(a.length - b.length) > 3) continue;
+        if (a === b || (Math.min(a.length, b.length) >= 6 && similarity(a, b) >= 0.88)) pairs.push({ a: vNames[i], b: vNames[j], totalA: round2(totals.get(vNames[i])), totalB: round2(totals.get(vNames[j])) });
+      }
+    }
+    add({
+      id: 'lookalikes', group: 'purchasing', severity: 'medium', title: 'Look-alike vendor names',
+      summary: pairs.length ? `${pairs.length} pair${pairs.length === 1 ? '' : 's'} of vendors with nearly the same name. Often a duplicate entry, but a copycat vendor is a common way to send payments to the wrong place.` : 'No two vendors have confusingly similar names.',
+      columns: [['Vendor', 'a'], money('totalA', 'Paid'), ['Look-alike', 'b'], money('totalB', 'Paid')], items: pairs,
+    });
+    // New vendors paid only by check or transfer, with few payments.
+    const employees = new Set();
+    if (opts.employees) for (const e of opts.employees.employees) employees.add(lower(e.name));
+    for (const t of txns) if (/paycheck|payroll check/i.test(t.type) && t.name && !PAYROLL_PROVIDER.test(t.name)) employees.add(lower(t.name));
+    const firstSeen = new Map(), payments = new Map();
+    for (const p of spend) {
+      const v = who(p.t);
+      if (!v || WAGE_ACCOUNT.test(p.category) || OVERTIME_ACCOUNT.test(p.category) || PAYROLL_TAX_ACCOUNT.test(p.category)) continue;
+      if (!firstSeen.has(v) || p.t.dateStr < firstSeen.get(v)) firstSeen.set(v, p.t.dateStr);
+      const e = payments.get(v) || [];
+      e.push(p);
+      payments.set(v, e);
+    }
+    const settledFrom = addMonthsKey(range.first ? isoDate(range.first).slice(0, 7) : '2000-01', 6);
+    const limits = [2500, 5000, ...(opts.receiptLimit > 0 ? [opts.receiptLimit] : [])];
+    const justUnder = (x) => limits.some((L) => x >= L * 0.95 && x < L);
+    const ghosts = [];
+    for (const [v, list] of payments) {
+      const first = firstSeen.get(v);
+      if (first.slice(0, 7) < settledFrom || !inTtm(new Date(`${first}T00:00:00Z`)) || list.length > 6 || PAYROLL_PROVIDER.test(v) || employees.has(lower(v))) continue;
+      const byBank = list.every((p) => roleOf(accountClass, p.t.split) === 'cash' || /check|bill payment/i.test(p.t.type));
+      const total = list.reduce((t, p) => t + p.value, 0);
+      if (!byBank || total < 1500) continue;
+      const reasons = [];
+      if (list.filter((p) => p.value % 50 === 0).length >= Math.ceil(list.length / 2)) reasons.push('round amounts');
+      if (list.some((p) => justUnder(p.value))) reasons.push('just under a limit');
+      if (employees.has(lower(v)) || [...employees].some((e) => e.split(' ').pop().length > 3 && lower(v).includes(e.split(' ').pop()))) reasons.push('name matches an employee');
+      if (list.length < 2 && !reasons.includes('name matches an employee')) continue;
+      if (!reasons.length && total < 5000) continue;
+      ghosts.push({ vendor: v, first, count: list.length, total: round2(total), reasons: reasons.join(', ') || 'new, paid by check only' });
+    }
+    ghosts.sort((a, b) => b.total - a.total);
+    add({
+      id: 'ghosts', group: 'purchasing', severity: 'high', title: 'New vendors paid only by check',
+      summary: ghosts.length ? `${ghosts.length} vendor${ghosts.length === 1 ? '' : 's'} first paid this year, only by check or transfer, with few payments. Confirm each is a real business: a W-9, an address that is not an employee's, and work you can point to.` : 'No new vendors with that pattern.',
+      amount: round2(ghosts.reduce((t, g) => t + g.total, 0)),
+      columns: [['Vendor', 'vendor'], ['First paid', 'first'], ['Payments', 'count', 'num'], money('total', 'Total'), ['Why', 'reasons']], items: ghosts,
+    });
+    // A bill that is about the same every month (insurance, a lease) is not being split.
+    const steady = (v) => {
+      const list = (payments.get(v) || []).map((p) => p.value).sort((a, b) => a - b);
+      if (list.length < 6) return false;
+      const med = list[Math.floor(list.length / 2)];
+      return list.filter((x) => Math.abs(x - med) <= med * 0.1).length / list.length >= 0.7;
+    };
+    const under = spendTtm.filter((p) => justUnder(p.value) && !PAYROLL_PROVIDER.test(who(p.t)) && !WAGE_ACCOUNT.test(p.category) && !PAYROLL_TAX_ACCOUNT.test(p.category) && !NOT_PURCHASE.test(p.category) && !steady(who(p.t))).map((p) => ({ date: p.t.dateStr, vendor: who(p.t), amount: round2(p.value), limit: fmtWhole(limits.filter((L) => p.value >= L * 0.95 && p.value < L)[0]) }));
+    // Splitting leaves a cluster just below the limit and nothing just above it; a vendor whose
+    // bills simply vary lands on both sides.
+    const justOver = (x) => limits.some((L) => x >= L && x < L * 1.05);
+    const underVendors = new Map();
+    for (const u of under) underVendors.set(u.vendor, (underVendors.get(u.vendor) || 0) + 1);
+    const overVendors = new Set(spendTtm.filter((p) => justOver(p.value)).map((p) => who(p.t)));
+    const underFlag = under.filter((u) => underVendors.get(u.vendor) >= 3 && !overVendors.has(u.vendor));
+    add({
+      id: 'justUnder', group: 'purchasing', severity: 'medium', title: 'Payments just under a limit',
+      summary: underFlag.length ? `${underFlag.length} payments just below ${limits.map(fmtWhole).join(' or ')} to the same vendor${new Set(underFlag.map((u) => u.vendor)).size === 1 ? '' : 's'}. Amounts kept under a receipt or approval limit can be split purchases.` : `No vendor was paid three or more times just under ${limits.map(fmtWhole).join(' or ')}.`,
+      amount: round2(underFlag.reduce((t, u) => t + u.amount, 0)),
+      columns: [['Date', 'date'], ['Vendor', 'vendor'], money('amount', 'Amount'), ['Just under', 'limit']], items: underFlag,
+    });
+
+    // ---- Fuel and cards
+    const shop = (p) => GAS_STATION.test(who(p.t)) || FLEET_CARD.test(who(p.t)) || SUPPLY_STORE.test(who(p.t)) || /fuel|gas(oline)?\b|diesel/i.test(p.category);
+    const offDays = [];
+    let saturdays = 0;
+    for (const p of spendTtm) {
+      if (!shop(p)) continue;
+      const dow = p.t.date.getUTCDay();
+      const hol = usHoliday(p.t.dateStr);
+      if (dow === 6 && !hol) saturdays++;
+      if (dow === 0 || hol) offDays.push({ date: p.t.dateStr, day: hol || 'Sunday', vendor: who(p.t), amount: round2(p.value) });
+    }
+    add({
+      id: 'offDays', group: 'cards', severity: 'medium', title: 'Fuel and hardware bought on Sundays and holidays',
+      summary: offDays.length ? `${offDays.length} fuel or hardware purchase${offDays.length === 1 ? '' : 's'} on Sundays or holidays in the last 12 months, when crews are usually off${saturdays ? ` (and ${saturdays} on Saturdays, normal if crews work them)` : ''}. Ask who made them and for which job. QuickBooks does not record the time of day, so late-night purchases can't be checked.` : `No fuel or hardware purchases on Sundays or holidays.${saturdays ? ` ${saturdays} on Saturdays.` : ''}`,
+      amount: round2(offDays.reduce((t, x) => t + x.amount, 0)),
+      columns: [['Date', 'date'], ['Day', 'day'], ['Vendor', 'vendor'], money('amount', 'Amount')], items: offDays.sort((a, b) => b.date.localeCompare(a.date)),
+    });
+    const byVendAmounts = new Map();
+    for (const p of spendTtm) {
+      // Card and cash purchases only: a check paying a dealer's repair invoice is often round.
+      if (p.value < 20 || p.value > 1000 || /check|bill/i.test(p.t.type) || !(shop(p) || PURCHASE_ACCOUNT.test(p.category)) || NOT_PURCHASE.test(p.category)) continue;
+      const v = who(p.t);
+      if (!v) continue;
+      const e = byVendAmounts.get(v) || [];
+      e.push(p.value);
+      byVendAmounts.set(v, e);
+    }
+    let roundAll = 0, countAll = 0;
+    const roundVendors = [];
+    for (const [v, list] of byVendAmounts) {
+      const same = Math.max(...[...new Set(list)].map((x) => list.filter((y) => y === x).length));
+      if (list.length >= 3 && same / list.length >= 0.7) continue; // fixed bills: rent, leases, subscriptions
+      const r = list.filter((x) => Math.abs(x % 10) < 0.005);
+      roundAll += r.length; countAll += list.length;
+      // Card charges almost always carry cents, so three or more exact tens from one vendor stand
+      // out even among many ordinary charges.
+      if (r.length >= 3 && r.length / list.length >= 0.1) roundVendors.push({ vendor: v, round: r.length, of: list.length, total: round2(r.reduce((t, x) => t + x, 0)) });
+    }
+    roundVendors.sort((a, b) => b.total - a.total);
+    add({
+      id: 'roundDollar', group: 'cards', severity: 'medium', title: 'Round-dollar charges',
+      summary: roundVendors.length ? `${roundVendors.length} vendor${roundVendors.length === 1 ? '' : 's'} with several charges in exact round amounts ($80.00, $100.00). Real fuel and supply purchases rarely land on whole tens; round amounts often point to made-up receipts or filling personal tanks.` : `Round amounts are ${countAll ? fmtPct(roundAll / countAll) : 'none'} of variable charges, which is normal.`,
+      amount: round2(roundVendors.reduce((t, x) => t + x.total, 0)),
+      columns: [['Vendor', 'vendor'], ['Round charges', 'round', 'num'], ['Of', 'of', 'num'], money('total', 'Round total')], items: roundVendors,
+    });
+    // Over $150 and well over the usual fill-up here: diesel trucks and mowers run bigger bills.
+    const fills = spendTtm.filter((p) => GAS_STATION.test(who(p.t)) && !FLEET_CARD.test(who(p.t))).map((p) => p.value).sort((a, b) => a - b);
+    const fuelCap = Math.max(150, fills.length ? fills[Math.floor(fills.length / 2)] * 2.5 : 0);
+    const bigFuel = spendTtm.filter((p) => GAS_STATION.test(who(p.t)) && !FLEET_CARD.test(who(p.t)) && p.value > fuelCap).map((p) => ({ date: p.t.dateStr, vendor: who(p.t), amount: round2(p.value) }));
+    add({
+      id: 'bigFuel', group: 'cards', severity: 'medium', title: 'Fill-ups bigger than a truck tank',
+      summary: bigFuel.length ? `${bigFuel.length} single gas station charge${bigFuel.length === 1 ? '' : 's'} over ${fmtWhole(fuelCap)}, more than a pickup's tank holds and well over the usual fill-up. Could be cans for equipment, or fuel for personal vehicles.` : `No single gas station charge over ${fmtWhole(fuelCap)}.`,
+      amount: round2(bigFuel.reduce((t, x) => t + x.amount, 0)), columns: [['Date', 'date'], ['Station', 'vendor'], money('amount', 'Amount')], items: bigFuel,
+    });
+    // First digits of expense amounts against the pattern real spending follows (Benford).
+    // One of each amount per vendor, so a monthly bill repeated twelve times counts once.
+    const seenAmt = new Set();
+    const firsts = spend.filter((p) => p.value >= 10 && !WAGE_ACCOUNT.test(p.category) && !PAYROLL_TAX_ACCOUNT.test(p.category) && !seenAmt.has(`${who(p.t)}|${p.value}`) && seenAmt.add(`${who(p.t)}|${p.value}`)).map((p) => +String(Math.floor(p.value)).charAt(0)).filter((d) => d >= 1);
+    let benford = null;
+    if (firsts.length >= 300) {
+      const digits = Array.from({ length: 9 }, (_, i) => ({ digit: i + 1, expected: Math.log10(1 + 1 / (i + 1)), actual: firsts.filter((d) => d === i + 1).length / firsts.length }));
+      const mad = digits.reduce((t, d) => t + Math.abs(d.actual - d.expected), 0) / 9;
+      benford = { digits, mad, n: firsts.length };
+    }
+    add({
+      id: 'benford', group: 'cards', severity: 'low', title: 'Unusual number patterns',
+      status: benford ? (benford.mad > 0.04 ? 'found' : 'clean') : 'na',
+      summary: !benford ? 'Needs at least 300 expenses to test.' : benford.mad > 0.04 ? `The first digits of ${benford.n} expense amounts stray from the natural pattern (more 1s than 9s) that real spending follows. Not proof of anything: it can come from a few large repeat purchases. Worth a look if other checks also found something.` : `The first digits of ${benford.n} expense amounts follow the natural pattern real spending shows.`,
+      columns: [['First digit', 'digit', 'num'], ['Expected', 'expected', 'pct'], ['Actual', 'actual', 'pct']], items: benford && benford.mad > 0.04 ? benford.digits : [], chart: benford ? benford.digits : null,
+    });
+
+    // ---- Payroll
+    const wages = postings.filter((p) => (p.cls === 'expense' || p.cls === 'cogs') && (WAGE_ACCOUNT.test(p.category) || OVERTIME_ACCOUNT.test(p.category) || /bonus/i.test(p.category)) && !PAYROLL_TAX_ACCOUNT.test(p.category) && inTtm(p.t.date));
+    const perDay = new Map();
+    for (const p of wages) perDay.set(p.t.dateStr, (perDay.get(p.t.dateStr) || 0) + 1);
+    const runDays = new Set([...perDay.entries()].filter(([, n]) => n >= 3).map(([d]) => d));
+    for (const p of wages) if (PAYROLL_PROVIDER.test(who(p.t) || p.t.name || '')) runDays.add(p.t.dateStr);
+    const manual = wages.filter((p) => !runDays.has(p.t.dateStr) || /bonus/i.test(p.category) || /bonus|manual|adjust/i.test(p.t.memo || '')).map((p) => ({ date: p.t.dateStr, type: p.t.type, name: who(p.t) || p.t.name || '', memo: p.t.memo || '', amount: round2(p.value) }));
+    add({
+      id: 'manualPayroll', group: 'payroll', severity: 'high', title: 'Payroll outside the regular runs',
+      status: wages.length ? undefined : 'na',
+      summary: !wages.length ? 'No payroll in the books.' : manual.length ? `${manual.length} wage or bonus entr${manual.length === 1 ? 'y' : 'ies'} outside the regular payroll dates (${fmtWhole(manual.reduce((t, x) => t + x.amount, 0))}): manual checks, journal entries or bonuses. Each needs an approval from the owner.` : 'All wages were paid on the regular payroll dates.',
+      amount: round2(manual.reduce((t, x) => t + x.amount, 0)),
+      columns: [['Date', 'date'], ['Type', 'type'], ['Name', 'name'], ['Memo', 'memo'], money('amount', 'Amount')], items: manual,
+    });
+    const empPays = [];
+    if (employees.size) {
+      const m = new Map();
+      for (const t of txns) {
+        if (!inTtm(t.date) || roleOf(accountClass, t.account) !== 'cash' || t.amount >= 0 || /paycheck|payroll|liabilit/i.test(t.type) || /payroll|wage/i.test(t.split || '')) continue;
+        const n = lower(t.name || '');
+        if (!employees.has(n)) continue;
+        const e = m.get(t.name) || { name: t.name, count: 0, total: 0, last: '' };
+        e.count++; e.total += -t.amount; if (t.dateStr > e.last) e.last = t.dateStr;
+        m.set(t.name, e);
+      }
+      for (const e of m.values()) empPays.push({ ...e, total: round2(e.total) });
+    }
+    add({
+      id: 'employeePayments', group: 'payroll', severity: 'high', title: 'Payments to employees outside payroll',
+      status: employees.size ? undefined : 'needs',
+      summary: !employees.size ? 'Needs employee names: upload the payroll Employee Details report (or the payroll provider\'s employee list) with Add export.'
+        : empPays.length ? `${empPays.length} employee${empPays.length === 1 ? '' : 's'} paid by check or transfer outside payroll (${fmtWhole(empPays.reduce((t, e) => t + e.total, 0))}). Reimbursements need receipts; anything else should go through payroll.` : 'No employee was paid outside payroll.',
+      amount: round2(empPays.reduce((t, e) => t + e.total, 0)),
+      columns: [['Employee', 'name'], ['Payments', 'count', 'num'], money('total', 'Total'), ['Last', 'last']], items: empPays,
+    });
+    const shared = [];
+    if (opts.employees) {
+      const g = new Map();
+      for (const e of opts.employees.employees) {
+        if (!e.account) continue;
+        const k = `${e.routing}|${e.account}`;
+        g.set(k, [...(g.get(k) || []), e.name]);
+      }
+      for (const [k, names] of g) if (names.length > 1) shared.push({ account: `Routing ${k.split('|')[0] ? `…${k.split('|')[0].slice(-4)}` : '?'}, account …${k.split('|')[1]}`, employees: names.join(', ') });
+    }
+    add({
+      id: 'sharedAccounts', group: 'payroll', severity: 'high', title: 'Employees paid into the same bank account',
+      status: opts.employees ? undefined : 'needs',
+      summary: !opts.employees ? 'Needs the employee list with direct deposit details (masked account numbers are fine): the payroll Employee Details report, or your payroll provider\'s employee export.'
+        : shared.length ? `${shared.length} bank account${shared.length === 1 ? ' receives' : 's receive'} pay for more than one employee. Family members can share an account, but this is also how a made-up employee gets paid.` : 'Every employee is paid into a different bank account.',
+      columns: [['Bank account', 'account'], ['Employees', 'employees']], items: shared,
+    });
+
+    const found = checks.filter((c) => c.status === 'found');
+    const score = Math.min(100, found.reduce((t, c) => t + FRAUD_WEIGHT[c.severity], 0));
+    return {
+      checks, score, level: score >= 40 ? 'high' : score >= 15 ? 'moderate' : 'low',
+      found: found.length, clean: checks.filter((c) => c.status === 'clean').length, needs: checks.filter((c) => c.status === 'needs').length,
+      amount: round2(found.reduce((t, c) => t + (c.amount || 0), 0)), window: ttm ? `${isoDate(ttm.start)} to ${isoDate(ttm.end)}` : '',
+    };
   }
 
   // ---------------------------------------------------------------- free health check
@@ -5474,6 +5971,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

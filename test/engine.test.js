@@ -976,3 +976,55 @@ test('customer addresses: both QuickBooks formats are read, and addresses reduce
   assert.equal(E.streetKey('12 North Main Street'), 'n main st');
   assert.equal(E.parseCustomerList('Date,Name,Amount\n01/01/2025,Cole,5'), null);
 });
+
+test('fraud helpers: holidays, the Audit Log / Voided-Deleted report and the employee list', () => {
+  assert.equal(E.usHoliday('2026-07-04'), 'Independence Day');
+  assert.equal(E.usHoliday('2026-05-25'), 'Memorial Day');
+  assert.equal(E.usHoliday('2026-09-07'), 'Labor Day');
+  assert.equal(E.usHoliday('2025-11-27'), 'Thanksgiving');
+  assert.equal(E.usHoliday('2026-05-18'), '');
+  // QuickBooks Online's Audit Log: the event names the transaction; edits and logins are skipped.
+  const audit = E.parseVoidedDeleted([
+    'Date changed,User,Event,Name,Date,Amount',
+    '"Jun 18, 2026 4:12 pm",Jenna Smith,Deleted Invoice No. 1042,Hale Residence,06/01/2026,$640.00',
+    '"Jun 18, 2026 4:15 pm",Jenna Smith,Edited Invoice No. 1043,Irwin Residence,06/01/2026,$410.00',
+    '"Jun 19, 2026 9:00 am",Jenna Smith,Signed in,,,',
+    '"Jul 2, 2026 8:30 am",Tom,Voided Payment,Walnut Creek Condos,07/01/2026,"1,840.00"',
+  ].join('\n'));
+  assert.deepEqual(audit.entries.map((x) => [x.action, x.type, x.num, x.name, x.amount, x.by]), [
+    ['Deleted', 'Invoice', '1042', 'Hale Residence', 640, 'Jenna Smith'],
+    ['Voided', 'Payment', '', 'Walnut Creek Condos', 1840, 'Tom'],
+  ]);
+  assert.equal(E.readExport('Date changed,User,Event,Name,Date,Amount\n"Jun 18, 2026",Jenna,Deleted Invoice No. 1,A,06/01/2026,5.00').kind, 'voided');
+  // Employee list: only the last four digits of an account number are kept.
+  const emps = E.parseEmployeeList('Employee,Status,Bank Routing Number,Bank Account Number\nDan Ortiz,Active,071000013,123456784417\nMike Dawson,Active,071000013,XXXXXX4417\n');
+  assert.deepEqual(emps.employees.map((e) => [e.name, e.routing, e.account]), [['Dan Ortiz', '071000013', '4417'], ['Mike Dawson', '071000013', '4417']]);
+  // A Transaction Detail is neither.
+  const td = 'Acme\nTransaction Detail\n\nDate,Transaction Type,Num,Name,Memo/Description,Account,Split,Amount\n01/05/2026,Invoice,100,Globex,Work,Sales,Accounts Receivable,1000.00\n';
+  assert.equal(E.parseVoidedDeleted(td), null);
+  assert.equal(E.parseEmployeeList(td), null);
+});
+
+test('fraud checks: fixed bills are not split purchases or round amounts, and only landscapers get them', () => {
+  const lines = ['Greenway Lawn Care', 'Transaction Detail', 'All Dates', '', 'Date,Transaction Type,Num,Name,Customer,Memo/Description,Account,Split,Amount'];
+  const d = (y, m, day) => `${String(m).padStart(2, '0')}/${String(day).padStart(2, '0')}/${y}`;
+  let n = 0;
+  for (let k = 0; k < 20; k++) {
+    const y = 2025 + Math.floor(k / 12), m = (k % 12) + 1;
+    lines.push(`${d(y, m, 2)},Invoice,${1000 + k},Oak Hills HOA,Oak Hills HOA,Mowing,Lawn Maintenance Income,Accounts Receivable,3000.00`);
+    // Insurance just under $2,500 every month, and the same rent: neither is flagged.
+    lines.push(`${d(y, m, 10)},Expense,,Acuity,,,Insurance,Checking,-${(2440 + (k % 3) * 20).toFixed(2)}`);
+    lines.push(`${d(y, m, 1)},Check,${500 + n++},Hawthorne Properties,,,Rent,Checking,-4800.00`);
+    // A supplier who is sometimes just under $2,500 and sometimes just over: bills that vary.
+    lines.push(`${d(y, m, 12)},Expense,,Midwest Salt,,,Salt & Ice Melt,Checking,-${(k % 2 ? 2460.5 : 2560.25).toFixed(2)}`);
+    lines.push(`${d(y, m, 6)},Expense,,QuikTrip,,,Fuel,Chase Card,-${(41.37 + k).toFixed(2)}`);
+  }
+  const txns = E.parseTransactions(lines.join('\n'));
+  const r = E.analyze(txns, { industry: 'landscaping' });
+  const by = Object.fromEntries(r.fraud.checks.map((c) => [c.id, c]));
+  assert.equal(by.justUnder.status, 'clean');
+  assert.equal(by.roundDollar.status, 'clean');
+  assert.equal(by.offDays.status, 'clean');
+  assert.equal(by.deleted.status, 'needs');
+  assert.equal(E.analyze(txns, { industry: 'general' }).fraud, undefined);
+});

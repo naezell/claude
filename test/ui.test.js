@@ -857,6 +857,43 @@ test('a landscaper gets the Landscaping tab: winter cash, service lines, contrac
   }
 });
 
+test('a landscaper gets the Fraud risk tab; the voided/deleted report and employee list unlock the rest', async (t) => {
+  if (skip) return t.skip(skip);
+  const dir = path.join(ROOT, 'sample-data', 'test-clients');
+  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments', 'customer-contact-list'].map((f) => path.join(dir, `greenway-${f}.csv`));
+  for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
+    const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } });
+    assert.equal(await page.locator('#tab-fraud').count(), 0, 'the sample is not a landscaper');
+    await page.setInputFiles('#csv-upload', files);
+    await page.waitForSelector('#tab-fraud');
+    await page.click('#tab-fraud');
+    await page.waitForSelector('main[aria-labelledby="tab-fraud"] .fraud-checks');
+    assert.equal(await kpi(page, 'Reports to add'), '2');
+    assert.equal(await page.locator('.fraud-check.needs').count(), 2);
+    let text = await page.locator('main').innerText();
+    for (const want of [/Skipped invoice numbers/, /Regular customers who stopped being billed/, /Kingsley Residence/, /Oak Ridge Dr/, /Jobs where materials outran the price/, /Prairie Stone & Mulch/, /Look-alike vendor names/, /Site One Landscape Supply/, /DR Landscape Services/, /Independence Day/, /Payroll outside the regular runs/]) assert.match(text, want);
+    // The two extra reports, added to the client already open.
+    await page.setInputFiles('#csv-add', ['voided-deleted', 'employee-details'].map((f) => path.join(dir, `greenway-${f}.csv`)));
+    await page.waitForSelector('.source .pill:has-text("Employee list")');
+    await page.waitForFunction(() => !document.querySelector('.fraud-check.needs'));
+    assert.equal(await kpi(page, 'Reports to add'), '0');
+    assert.match(await page.locator('.source').innerText(), /Voided\/deleted report/);
+    text = await page.locator('main').innerText();
+    for (const want of [/Deleted 06\/18\/2026 by Jenna/, /Walnut Creek Condos/, /Dan Ortiz, Mike Dawson/, /Payments to employees outside payroll/]) assert.match(text, want);
+    // A long list opens on request; the job chart draws.
+    const jobs = page.locator('.fraud-check[data-check="jobCosts"]');
+    assert.equal(await jobs.locator('.recharts-surface').count() > 0, true);
+    assert.match(await jobs.innerText(), /Castle Rock Winery › Tasting room patio/);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `fraud tab scrolls sideways at ${width}px`);
+    await page.click('button.customize-toggle');
+    assert.equal(await page.locator('.arrange-item').count(), 5);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `customizing the fraud tab scrolls sideways at ${width}px`);
+    await page.locator('button', { hasText: 'Done' }).first().click();
+    assert.deepEqual(errors, [], `${colorScheme} ${width}px`);
+    await page.close();
+  }
+});
+
 test('Flag a problem: pick mode on a phone, then the email fallback away from the site', async (t) => {
   if (skip) return t.skip(skip);
   const { page, errors } = await openPage({ viewport: { width: 400, height: 900 } }, (p) => p.addInitScript(() => { window.LedgerConfig = { ...(window.LedgerConfig || {}), supportEmail: 'help@example.com' }; }));

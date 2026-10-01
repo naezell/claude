@@ -3,7 +3,7 @@ Date,Type,No.,Payee,Category,Total,Attachments
 09/18/2025,Expense,,County Compost Site,Dump Fees,201.25,1
 10/09/2025,Expense,,Menards,Materials - Plants & Mulch,657.01,1
 10/18/2025,Expense,,County Compost Site,Dump Fees,164.34,1
-11/09/2025,Expense,,Menards,Materials - Plants & Mulch,708.41,1
+11/10/2025,Expense,,Menards,Materials - Plants & Mulch,708.41,1
 11/18/2025,Expense,,County Compost Site,Dump Fees,253.81,1
 04/09/2026,Expense,,Menards,Materials - Plants & Mulch,856.75,1
 04/18/2026,Expense,,County Compost Site,Dump Fees,173.86,1
@@ -13,7 +13,7 @@ Date,Type,No.,Payee,Category,Total,Attachments
 06/18/2026,Expense,,County Compost Site,Dump Fees,178.97,1
 07/09/2026,Expense,,Menards,Materials - Plants & Mulch,853.72,1
 07/18/2026,Expense,,County Compost Site,Dump Fees,148.40,1
-08/09/2026,Expense,,Menards,Materials - Plants & Mulch,810.37,1
+08/10/2026,Expense,,Menards,Materials - Plants & Mulch,810.37,1
 08/18/2026,Expense,,County Compost Site,Dump Fees,184.26,1
 09/12/2025,Expense,,Sunbelt Rentals,Subcontractors,597.75,1
 10/07/2025,Check,3355,Precision Grading LLC,Subcontractors,1294.80,1
@@ -27,12 +27,12 @@ Date,Type,No.,Payee,Category,Total,Attachments
 08/07/2026,Check,3373,Precision Grading LLC,Subcontractors,1189.59,1
 08/12/2026,Expense,,Sunbelt Rentals,Subcontractors,415.32,1
 09/12/2025,Expense,,SiteOne Landscape Supply,Irrigation Parts,513.54,1
-10/12/2025,Expense,,SiteOne Landscape Supply,Irrigation Parts,457.01,1
+10/13/2025,Expense,,SiteOne Landscape Supply,Irrigation Parts,457.01,1
 11/12/2025,Expense,,SiteOne Landscape Supply,Irrigation Parts,378.08,1
-04/12/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,388.99,1
+04/13/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,388.99,1
 05/12/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,238.26,1
 06/12/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,434.46,1
-07/12/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,385.40,1
+07/13/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,385.40,1
 08/12/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,440.84,1
 01/20/2026,Expense,,Boss Snowplow Dealer,Equipment Repairs,569.86,1
 03/20/2026,Expense,,Boss Snowplow Dealer,Equipment Repairs,594.88,1
@@ -43,17 +43,17 @@ Date,Type,No.,Payee,Category,Total,Attachments
 09/16/2025,Expense,,Midwest Turf Equipment,Equipment Repairs,622.64,1
 09/10/2025,Check,3455,John Deere Financial,Interest Expense,210.00,1
 09/14/2025,Check,3456,Ally Financial,Interest Expense,130.00,1
-10/05/2025,Expense,,WEX Fleet Card,Fuel,683.06,1
-10/12/2025,Expense,,WEX Fleet Card,Fuel,578.99,1
-10/19/2025,Expense,,WEX Fleet Card,Fuel,715.77,1
-10/26/2025,Expense,,WEX Fleet Card,Fuel,705.41,1
+10/06/2025,Expense,,WEX Fleet Card,Fuel,683.06,1
+10/13/2025,Expense,,WEX Fleet Card,Fuel,578.99,1
+10/20/2025,Expense,,WEX Fleet Card,Fuel,715.77,1
+10/27/2025,Expense,,WEX Fleet Card,Fuel,705.41,1
 10/10/2025,Check,3457,John Deere Financial,Interest Expense,205.00,1
 10/14/2025,Check,3458,Ally Financial,Interest Expense,127.00,1
 11/05/2025,Expense,,WEX Fleet Card,Fuel,541.17,1
 11/12/2025,Expense,,WEX Fleet Card,Fuel,748.12,1
 11/19/2025,Expense,,WEX Fleet Card,Fuel,706.33,1
 11/26/2025,Expense,,WEX Fleet Card,Fuel,654.91,1
-11/16/2025,Expense,,Midwest Turf Equipment,Equipment Repairs,543.12,1
+11/17/2025,Expense,,Midwest Turf Equipment,Equipment Repairs,543.12,1
 11/10/2025,Check,3459,John Deere Financial,Interest Expense,200.00,1
 11/14/2025,Check,3460,Ally Financial,Interest Expense,124.00,1
 12/05/2025,Expense,,WEX Fleet Card,Fuel,259.78,1
@@ -81,10 +81,10 @@ Date,Type,No.,Payee,Category,Total,Attachments
 03/26/2026,Expense,,WEX Fleet Card,Fuel,319.84,1
 03/10/2026,Check,3467,John Deere Financial,Interest Expense,180.00,1
 03/14/2026,Check,3468,Ally Financial,Interest Expense,112.00,1
-04/05/2026,Expense,,WEX Fleet Card,Fuel,831.98,1
-04/12/2026,Expense,,WEX Fleet Card,Fuel,846.44,1
-04/19/2026,Expense,,WEX Fleet Card,Fuel,707.59,1
-04/26/2026,Expense,,WEX Fleet Card,Fuel,846.47,1
+04/06/2026,Expense,,WEX Fleet Card,Fuel,831.98,1
+04/13/2026,Expense,,WEX Fleet Card,Fuel,846.44,1
+04/20/2026,Expense,,WEX Fleet Card,Fuel,707.59,1
+04/27/2026,Expense,,WEX Fleet Card,Fuel,846.47,1
 04/10/2026,Check,3469,John Deere Financial,Interest Expense,175.00,1
 04/14/2026,Check,3470,Ally Financial,Interest Expense,109.00,1
 05/05/2026,Expense,,WEX Fleet Card,Fuel,604.49,1
@@ -101,10 +101,10 @@ Date,Type,No.,Payee,Category,Total,Attachments
 06/26/2026,Expense,,WEX Fleet Card,Fuel,867.66,1
 06/10/2026,Check,3473,John Deere Financial,Interest Expense,165.00,1
 06/14/2026,Check,3474,Ally Financial,Interest Expense,103.00,1
-07/05/2026,Expense,,WEX Fleet Card,Fuel,699.35,1
-07/12/2026,Expense,,WEX Fleet Card,Fuel,763.59,1
-07/19/2026,Expense,,WEX Fleet Card,Fuel,865.89,1
-07/26/2026,Expense,,WEX Fleet Card,Fuel,644.45,1
+07/06/2026,Expense,,WEX Fleet Card,Fuel,699.35,1
+07/13/2026,Expense,,WEX Fleet Card,Fuel,763.59,1
+07/20/2026,Expense,,WEX Fleet Card,Fuel,865.89,1
+07/27/2026,Expense,,WEX Fleet Card,Fuel,644.45,1
 07/16/2026,Expense,,Midwest Turf Equipment,Equipment Repairs,619.65,1
 07/10/2026,Check,3475,John Deere Financial,Interest Expense,160.00,1
 07/14/2026,Check,3476,Ally Financial,Interest Expense,100.00,1
@@ -223,16 +223,16 @@ Date,Type,No.,Payee,Category,Total,Attachments
 08/05/2026,Expense,,Intuit QuickBooks,Software & Subscriptions,99.00,1
 08/10/2026,Expense,,Acuity Insurance,Insurance,2490.85,1
 01/15/2026,Check,3589,Acuity Insurance,Insurance,6890.00,1
-09/01/2025,Expense,,QuikTrip,Fuel,48.52,1
+09/02/2025,Expense,,QuikTrip,Fuel,48.52,1
 09/03/2025,Expense,,Casey's,Fuel,84.89,1
 09/05/2025,Expense,,Casey's,Fuel,65.42,1
-09/07/2025,Expense,,Shell,Fuel,85.43,1
+09/08/2025,Expense,,Shell,Fuel,85.43,1
 09/10/2025,Expense,,Shell,Fuel,95.91,1
 09/12/2025,Expense,,QuikTrip,Fuel,93.45,1
-09/14/2025,Expense,,QuikTrip,Fuel,88.14,1
+09/15/2025,Expense,,QuikTrip,Fuel,88.14,1
 09/17/2025,Expense,,QuikTrip,Fuel,39.87,1
 09/19/2025,Expense,,Casey's,Fuel,81.14,1
-09/21/2025,Expense,,QuikTrip,Fuel,63.92,1
+09/22/2025,Expense,,QuikTrip,Fuel,63.92,1
 09/24/2025,Expense,,QuikTrip,Fuel,95.61,1
 09/26/2025,Expense,,Shell,Fuel,73.52,1
 09/02/2025,Expense,,Home Depot,Small Tools,105.91,1
@@ -241,25 +241,25 @@ Date,Type,No.,Payee,Category,Total,Attachments
 09/11/2025,Expense,,Home Depot,Small Tools,39.71,1
 09/15/2025,Expense,,Home Depot,Small Tools,85.14,1
 09/18/2025,Expense,,Home Depot,Small Tools,83.79,1
-09/21/2025,Expense,,Ace Hardware,Small Tools,163.35,1
+09/22/2025,Expense,,Ace Hardware,Small Tools,163.35,1
 09/25/2025,Expense,,Home Depot,Small Tools,77.79,1
 09/06/2025,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 09/13/2025,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 09/20/2025,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 10/01/2025,Expense,,QuikTrip,Fuel,44.95,1
 10/03/2025,Expense,,QuikTrip,Fuel,39.25,1
-10/05/2025,Expense,,Shell,Fuel,77.82,1
+10/06/2025,Expense,,Shell,Fuel,77.82,1
 10/07/2025,Expense,,QuikTrip,Fuel,90.80,1
 10/10/2025,Expense,,QuikTrip,Fuel,56.48,1
-10/12/2025,Expense,,Casey's,Fuel,65.37,1
+10/13/2025,Expense,,Casey's,Fuel,65.37,1
 10/14/2025,Expense,,Casey's,Fuel,39.18,1
 10/17/2025,Expense,,QuikTrip,Fuel,46.63,1
-10/19/2025,Expense,,QuikTrip,Fuel,92.05,1
+10/20/2025,Expense,,QuikTrip,Fuel,92.05,1
 10/21/2025,Expense,,Shell,Fuel,74.68,1
 10/24/2025,Expense,,QuikTrip,Fuel,40.54,1
-10/26/2025,Expense,,QuikTrip,Fuel,68.82,1
+10/27/2025,Expense,,QuikTrip,Fuel,68.82,1
 10/02/2025,Expense,,Ace Hardware,Small Tools,117.40,1
-10/05/2025,Expense,,Lowe's,Small Tools,116.86,1
+10/06/2025,Expense,,Lowe's,Small Tools,116.86,1
 10/08/2025,Expense,,Home Depot,Small Tools,154.05,1
 10/11/2025,Expense,,Home Depot,Small Tools,211.75,1
 10/15/2025,Expense,,Home Depot,Small Tools,179.66,1
@@ -281,7 +281,7 @@ Date,Type,No.,Payee,Category,Total,Attachments
 11/21/2025,Expense,,QuikTrip,Fuel,55.25,1
 11/24/2025,Expense,,QuikTrip,Fuel,65.36,1
 11/26/2025,Expense,,QuikTrip,Fuel,86.39,1
-11/02/2025,Expense,,Home Depot,Small Tools,40.98,1
+11/03/2025,Expense,,Home Depot,Small Tools,40.98,1
 11/05/2025,Expense,,Home Depot,Small Tools,217.41,1
 11/08/2025,Expense,,Home Depot,Small Tools,193.26,1
 11/11/2025,Expense,,Ace Hardware,Small Tools,76.49,1
@@ -290,24 +290,24 @@ Date,Type,No.,Payee,Category,Total,Attachments
 11/21/2025,Expense,,Home Depot,Small Tools,103.06,1
 11/25/2025,Expense,,Ace Hardware,Small Tools,54.98,1
 12/01/2025,Expense,,QuikTrip,Fuel,89.88,1
-12/07/2025,Expense,,Casey's,Fuel,76.18,1
+12/08/2025,Expense,,Casey's,Fuel,76.18,1
 12/13/2025,Expense,,Shell,Fuel,73.67,1
 12/19/2025,Expense,,QuikTrip,Fuel,53.64,1
 12/02/2025,Expense,,Home Depot,Small Tools,38.16,1
-12/14/2025,Expense,,Home Depot,Small Tools,216.02,1
-01/01/2026,Expense,,QuikTrip,Fuel,71.32,1
+12/15/2025,Expense,,Home Depot,Small Tools,216.02,1
+01/02/2026,Expense,,QuikTrip,Fuel,71.32,1
 01/07/2026,Expense,,Shell,Fuel,47.69,1
 01/13/2026,Expense,,Casey's,Fuel,72.31,1
 01/19/2026,Expense,,Casey's,Fuel,87.34,1
 01/02/2026,Expense,,Ace Hardware,Small Tools,117.79,1
 01/14/2026,Expense,,Lowe's,Small Tools,173.39,1
-02/01/2026,Expense,,QuikTrip,Fuel,44.66,1
+02/02/2026,Expense,,QuikTrip,Fuel,44.66,1
 02/07/2026,Expense,,Shell,Fuel,50.64,1
 02/13/2026,Expense,,QuikTrip,Fuel,47.62,1
 02/19/2026,Expense,,Casey's,Fuel,53.68,1
 02/02/2026,Expense,,Lowe's,Small Tools,48.48,1
 02/14/2026,Expense,,Home Depot,Small Tools,91.60,1
-03/01/2026,Expense,,QuikTrip,Fuel,41.13,1
+03/02/2026,Expense,,QuikTrip,Fuel,41.13,1
 03/07/2026,Expense,,QuikTrip,Fuel,86.19,1
 03/13/2026,Expense,,Casey's,Fuel,86.62,1
 03/19/2026,Expense,,QuikTrip,Fuel,59.50,1
@@ -315,18 +315,18 @@ Date,Type,No.,Payee,Category,Total,Attachments
 03/14/2026,Expense,,Lowe's,Small Tools,174.41,1
 04/01/2026,Expense,,QuikTrip,Fuel,82.43,1
 04/03/2026,Expense,,Shell,Fuel,77.06,1
-04/05/2026,Expense,,QuikTrip,Fuel,52.40,1
+04/06/2026,Expense,,QuikTrip,Fuel,52.40,1
 04/07/2026,Expense,,QuikTrip,Fuel,81.52,1
 04/10/2026,Expense,,QuikTrip,Fuel,69.97,1
-04/12/2026,Expense,,QuikTrip,Fuel,86.37,1
+04/13/2026,Expense,,QuikTrip,Fuel,86.37,1
 04/14/2026,Expense,,QuikTrip,Fuel,74.03,1
 04/17/2026,Expense,,Casey's,Fuel,47.64,1
-04/19/2026,Expense,,Casey's,Fuel,67.47,1
+04/20/2026,Expense,,Casey's,Fuel,67.47,1
 04/21/2026,Expense,,Shell,Fuel,83.20,1
 04/24/2026,Expense,,QuikTrip,Fuel,64.80,1
-04/26/2026,Expense,,QuikTrip,Fuel,79.61,1
+04/27/2026,Expense,,QuikTrip,Fuel,79.61,1
 04/02/2026,Expense,,Ace Hardware,Small Tools,182.27,1
-04/05/2026,Expense,,Lowe's,Small Tools,116.48,1
+04/06/2026,Expense,,Lowe's,Small Tools,116.48,1
 04/08/2026,Expense,,Lowe's,Small Tools,59.57,1
 04/11/2026,Expense,,Lowe's,Small Tools,107.70,1
 04/15/2026,Expense,,Home Depot,Small Tools,221.13,1
@@ -337,16 +337,16 @@ Date,Type,No.,Payee,Category,Total,Attachments
 04/13/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 04/20/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 05/01/2026,Expense,,QuikTrip,Fuel,51.84,1
-05/03/2026,Expense,,QuikTrip,Fuel,78.32,1
+05/04/2026,Expense,,QuikTrip,Fuel,78.32,1
 05/05/2026,Expense,,QuikTrip,Fuel,95.56,1
 05/07/2026,Expense,,QuikTrip,Fuel,59.52,1
-05/10/2026,Expense,,Casey's,Fuel,65.19,1
+05/11/2026,Expense,,Casey's,Fuel,65.19,1
 05/12/2026,Expense,,QuikTrip,Fuel,88.37,1
 05/14/2026,Expense,,Casey's,Fuel,46.40,1
-05/17/2026,Expense,,QuikTrip,Fuel,73.40,1
+05/18/2026,Expense,,QuikTrip,Fuel,73.40,1
 05/19/2026,Expense,,QuikTrip,Fuel,65.95,1
 05/21/2026,Expense,,QuikTrip,Fuel,54.67,1
-05/24/2026,Expense,,Shell,Fuel,77.65,1
+05/26/2026,Expense,,Shell,Fuel,77.65,1
 05/26/2026,Expense,,Casey's,Fuel,42.14,1
 05/02/2026,Expense,,Home Depot,Small Tools,117.29,1
 05/05/2026,Expense,,Ace Hardware,Small Tools,170.08,1
@@ -355,20 +355,20 @@ Date,Type,No.,Payee,Category,Total,Attachments
 05/15/2026,Expense,,Lowe's,Small Tools,38.64,1
 05/18/2026,Expense,,Home Depot,Small Tools,175.80,1
 05/21/2026,Expense,,Lowe's,Small Tools,145.35,1
-05/25/2026,Expense,,Lowe's,Small Tools,112.52,1
+05/26/2026,Expense,,Lowe's,Small Tools,112.52,1
 05/06/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 05/13/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 05/20/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 06/01/2026,Expense,,QuikTrip,Fuel,48.55,1
 06/03/2026,Expense,,QuikTrip,Fuel,72.73,1
 06/05/2026,Expense,,QuikTrip,Fuel,69.15,1
-06/07/2026,Expense,,Shell,Fuel,44.47,1
+06/08/2026,Expense,,Shell,Fuel,44.47,1
 06/10/2026,Expense,,QuikTrip,Fuel,42.29,1
 06/12/2026,Expense,,QuikTrip,Fuel,40.18,1
-06/14/2026,Expense,,QuikTrip,Fuel,93.34,1
+06/15/2026,Expense,,QuikTrip,Fuel,93.34,1
 06/17/2026,Expense,,Casey's,Fuel,88.27,1
 06/19/2026,Expense,,Casey's,Fuel,49.32,1
-06/21/2026,Expense,,Casey's,Fuel,91.83,1
+06/22/2026,Expense,,Casey's,Fuel,91.83,1
 06/24/2026,Expense,,Shell,Fuel,80.19,1
 06/26/2026,Expense,,QuikTrip,Fuel,41.03,1
 06/02/2026,Expense,,Home Depot,Small Tools,48.73,1
@@ -377,25 +377,25 @@ Date,Type,No.,Payee,Category,Total,Attachments
 06/11/2026,Expense,,Lowe's,Small Tools,195.24,1
 06/15/2026,Expense,,Home Depot,Small Tools,26.72,1
 06/18/2026,Expense,,Lowe's,Small Tools,64.73,1
-06/21/2026,Expense,,Ace Hardware,Small Tools,54.92,1
+06/22/2026,Expense,,Ace Hardware,Small Tools,54.92,1
 06/25/2026,Expense,,Ace Hardware,Small Tools,117.80,1
 06/06/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 06/13/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 06/20/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,65.00,1
 07/01/2026,Expense,,QuikTrip,Fuel,80.93,1
 07/03/2026,Expense,,QuikTrip,Fuel,57.38,1
-07/05/2026,Expense,,Shell,Fuel,70.02,1
+07/06/2026,Expense,,Shell,Fuel,70.02,1
 07/07/2026,Expense,,QuikTrip,Fuel,50.65,1
 07/10/2026,Expense,,QuikTrip,Fuel,86.05,1
-07/12/2026,Expense,,Casey's,Fuel,70.32,1
+07/13/2026,Expense,,Casey's,Fuel,70.32,1
 07/14/2026,Expense,,QuikTrip,Fuel,60.44,1
 07/17/2026,Expense,,QuikTrip,Fuel,39.05,1
-07/19/2026,Expense,,Casey's,Fuel,75.85,1
+07/20/2026,Expense,,Casey's,Fuel,75.85,1
 07/21/2026,Expense,,Casey's,Fuel,80.97,1
 07/24/2026,Expense,,Shell,Fuel,76.80,1
-07/26/2026,Expense,,Shell,Fuel,65.82,1
+07/27/2026,Expense,,Shell,Fuel,65.82,1
 07/02/2026,Expense,,Home Depot,Small Tools,122.47,1
-07/05/2026,Expense,,Home Depot,Small Tools,195.60,1
+07/06/2026,Expense,,Home Depot,Small Tools,195.60,1
 07/08/2026,Expense,,Lowe's,Small Tools,171.47,1
 07/11/2026,Expense,,Home Depot,Small Tools,97.87,1
 07/15/2026,Expense,,Home Depot,Small Tools,73.10,1
@@ -417,7 +417,7 @@ Date,Type,No.,Payee,Category,Total,Attachments
 08/21/2026,Expense,,Shell,Fuel,51.94,1
 08/24/2026,Expense,,Casey's,Fuel,71.87,1
 08/26/2026,Expense,,Casey's,Fuel,76.25,1
-08/02/2026,Expense,,Home Depot,Small Tools,167.83,1
+08/03/2026,Expense,,Home Depot,Small Tools,167.83,1
 08/05/2026,Expense,,Home Depot,Small Tools,191.78,1
 08/08/2026,Expense,,Ace Hardware,Small Tools,208.09,1
 08/11/2026,Expense,,Home Depot,Small Tools,218.01,1
@@ -431,6 +431,40 @@ Date,Type,No.,Payee,Category,Total,Attachments
 04/12/2026,Expense,,USPS Every Door Direct Mail,Advertising,471.08,1
 08/12/2026,Expense,,USPS Every Door Direct Mail,Advertising,451.32,1
 05/14/2026,Expense,,SiteOne Landscape Supply,Irrigation Parts,112.75,1
+09/20/2025,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,360.35,1
+10/20/2025,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,413.35,1
+11/20/2025,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,466.35,1
+12/20/2025,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,319.35,1
+01/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,372.35,1
+02/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,425.35,1
+03/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,478.35,1
+04/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,331.35,1
+05/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,384.35,1
+06/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,437.35,1
+07/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,4812.60,1
+08/20/2026,Expense,,Prairie Stone & Mulch,Materials - Plants & Mulch,5236.45,1
+05/25/2026,Expense,,Home Depot,Small Tools,389.40,1
+06/14/2026,Expense,,Shell,Fuel,92.17,1
+07/04/2026,Expense,,Lowe's,Small Tools,268.95,1
+08/16/2026,Expense,,QuikTrip,Fuel,88.46,1
+04/07/2026,Expense,,Casey's,Fuel,100.00,1
+05/12/2026,Expense,,Casey's,Fuel,80.00,1
+06/09/2026,Expense,,Casey's,Fuel,120.00,1
+07/15/2026,Expense,,Casey's,Fuel,100.00,1
+06/03/2026,Expense,,Shell,Fuel,212.40,1
+07/08/2026,Expense,,Shell,Fuel,236.10,1
+08/12/2026,Expense,,Shell,Fuel,198.75,1
+08/11/2026,Expense,,Rock Solid Stone Supply,Materials - Hardscape,2860.00,1
+03/11/2026,Check,3591,Dan Ortiz,Small Tools,150.00,1
+05/13/2026,Check,3592,Dan Ortiz,Small Tools,150.00,1
+06/17/2026,Check,3593,Dan Ortiz,Small Tools,150.00,1
+08/19/2026,Check,3594,Dan Ortiz,Small Tools,150.00,1
+03/25/2026,Check,3596,DR Landscape Services,Subcontractors,2450.00,1
+05/27/2026,Check,3597,DR Landscape Services,Subcontractors,2480.00,1
+07/29/2026,Check,3598,DR Landscape Services,Subcontractors,2460.00,1
+04/15/2026,Expense,,Site One Landscape Supply,Irrigation Parts,286.30,1
+06/10/2026,Expense,,Site One Landscape Supply,Irrigation Parts,412.85,1
+08/05/2026,Expense,,Site One Landscape Supply,Irrigation Parts,198.40,1
 06/09/2026,Expense,,,Uncategorized Expense,286.40,1
 07/21/2026,Expense,,WEX Fleet Card,Fuel,612.18,1
 07/21/2026,Expense,,WEX Fleet Card,Fuel,612.18,1

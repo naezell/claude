@@ -15,6 +15,8 @@ Upload a client's files together (select all four, or drag them onto the page):
 | `riverbend-profit-and-loss.csv` | `bloom-basil-profit-and-loss.csv` | `greenway-profit-and-loss.csv` |
 | `riverbend-expenses-with-attachments.csv` | `bloom-basil-expenses-with-attachments.csv` | `greenway-expenses-with-attachments.csv` |
 | | | `greenway-customer-contact-list.csv` (addresses, for route density) |
+| | | `greenway-voided-deleted.csv` (Voided/Deleted Transactions report, for the Fraud risk tab) |
+| | | `greenway-employee-details.csv` (payroll employee list with direct deposit, for the Fraud risk tab) |
 
 Then load the others the same way: each is remembered separately, and all appear under **Clients** and on **Home**.
 
@@ -79,5 +81,17 @@ A Midwest landscaper, about $900,000 a year: 20 maintenance contracts billed on 
 
 - **Route density** (needs `greenway-customer-contact-list.csv`): 40 route customers (billed in 3+ months). Streets with three or more: Oak Ridge Dr (8 homes), Willow Bend Rd (5), Wabash Ave (3 businesses) and Maple Hollow Ct (3). About half are alone on their street; the neighbor-discount list shows homes alone in the busiest ZIP codes. Maple Ridge HOA has only a PO box (no site address) and Riverside Church is missing from the list. The HOAs are billed to their management company's office, with the property in the shipping address.
 - **Profit playbook:** about 160 fuel stops, 80 hardware-store runs, $1,478 of delivery and restocking fees (mostly Rock Solid Stone), Rock Solid Stone as the vendor to negotiate with, 14 new customers at about $230 of advertising each.
+
+**Fraud risk tab** (the last two checks need `greenway-voided-deleted.csv` and `greenway-employee-details.csv`; add them with *Add export*). One planted case for each check, all in the 12 months to August 2026:
+- **Skipped invoice numbers:** #5532 and #5533 are missing; the voided/deleted report shows Jenna deleted both on June 18, 2026. **Skipped check number:** #3595 (a spoiled check, also in the report).
+- **Voided invoices and credits:** invoice #6423 to Ellis Residence voided; a $1,850 credit memo to Bauer Residence, **refunded** by check two days later.
+- **Deleted sales and payments:** the two invoices, the voided one, and a deleted $1,840 payment from Walnut Creek Condos.
+- **Regular customer who stopped being billed:** Kingsley Residence, nothing since May 2026, on Oak Ridge Dr with seven other customers (crews are still on that street).
+- **Materials outran the price:** Castle Rock Winery's tasting room patio, billed $6,000 with $13,240 of pavers (2.2 times). **Materials with no job:** $2,860 of pavers from Rock Solid Stone with no job.
+- **Vendor spike:** Prairie Stone & Mulch, usually $300-500 a month, then $4,813 in July and $5,236 in August.
+- **Look-alike vendor:** "Site One Landscape Supply" next to the real SiteOne Landscape Supply. **New vendor paid only by check:** DR Landscape Services, three checks of $2,450-2,480, all **just under $2,500**.
+- **Sundays and holidays:** Home Depot on Memorial Day, Lowe's on July 4, Shell and QuikTrip on Sundays. **Round amounts:** Casey's charges of $100, $80, $120 and $100. **Big fill-ups:** three Shell charges of $198-236.
+- **Payroll outside the runs:** a $1,500 bonus by journal entry and a $1,240 manual paycheck to Dan Ortiz. **Employee paid outside payroll:** four $150 "reimbursement" checks to Dan Ortiz. **Shared bank account:** Dan Ortiz and Mike Dawson are paid into the same account.
+- The number-pattern (Benford) check comes out clear.
 
 **Month-end close:** the checklist adds landscaping steps; *Every maintenance and snow contract billed* is open for August 2026. **Benchmarks** start on Landscaping Services (NAICS 561730).
