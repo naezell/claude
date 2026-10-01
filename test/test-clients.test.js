@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const E = require('../src/engine.js');
-const { riverbend, cafe, greenway, greenwayContacts, greenwayVoidedDeleted, greenwayEmployees, transactionDetail } = require('../scripts/make-test-clients.js');
+const { riverbend, cafe, greenway, greenwayContacts, greenwayVoidedDeleted, greenwayEmployees, greenwayChaseStatement, greenwayAmexStatement, transactionDetail } = require('../scripts/make-test-clients.js');
 
 const dir = path.join(__dirname, '..', 'sample-data', 'test-clients');
 const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
@@ -28,6 +28,29 @@ test('saved test-client files match the generator', () => {
   assert.equal(read('greenway-customer-contact-list.csv'), greenwayContacts(gw.b));
   assert.equal(read('greenway-voided-deleted.csv'), greenwayVoidedDeleted(gw.plants));
   assert.equal(read('greenway-employee-details.csv'), greenwayEmployees());
+  assert.equal(read('greenway-chase-statement-jul-aug-2026.csv'), greenwayChaseStatement(gw.b));
+  assert.equal(read('greenway-amex-statement-jul-aug-2026.csv'), greenwayAmexStatement());
+});
+
+test('Greenway Landscape: the card statements combined and checked against the books', () => {
+  const statements = [['greenway-chase-statement-jul-aug-2026.csv', 'Chase'], ['greenway-amex-statement-jul-aug-2026.csv', 'Amex']].map(([f, label]) => {
+    const r = E.readExport(read(f));
+    assert.equal(r.kind, 'statement', f);
+    return { ...r.data, label };
+  });
+  const r = E.analyze(E.parseTransactions(read('greenway-transaction-detail.csv')), { chart: E.parseChartOfAccounts(read('greenway-chart-of-accounts.csv')), statements });
+  const c = r.cards;
+  assert.deepEqual(c.cards.map((x) => x.account), ['Chase Ink (4410)']);
+  assert.ok(c.total > 90000 && c.categories[0].category === 'Fuel');
+  const ck = c.check;
+  // Not in QuickBooks: two Chase charges never entered, and every charge on the Amex card.
+  assert.equal(ck.missing.length, 11);
+  assert.deepEqual(ck.missing.filter((x) => x.statement === 'Chase').map((x) => x.description), ['AMAZON MKTPL*2K4QZ', 'HARBOR FREIGHT TOOLS 512']);
+  assert.equal(ck.missing.filter((x) => x.statement === 'Amex').length, 9);
+  // In QuickBooks, on no statement: the WEX charge entered twice.
+  assert.deepEqual(ck.extra.map((x) => [x.description, x.amount, x.date]), [['WEX Fleet Card', 612.18, '2026-07-21']]);
+  assert.deepEqual(ck.people.map((p) => p.who), ['Chase', 'TOM GREENWAY', 'DAN ORTIZ']);
+  assert.match(E.combinedStatementsCsv(statements).split('\n')[0], /^Card,Card member,Date,Description,Category,Amount$/);
 });
 
 test('Riverbend Plumbing: contractor problems are all found', () => {
@@ -182,6 +205,11 @@ test('Greenway Landscape: the Fraud risk checks find one planted case each', () 
   assert.deepEqual(by.sharedAccounts.items.map((x) => x.employees), ['Dan Ortiz, Mike Dawson']);
   assert.deepEqual(by.refunds.items.map((x) => [x.name, x.amount]), [['Bauer Residence', 1850]]);
   assert.equal(by.deleted.items.length, 4);
+  // A gas receipt from a client answer: 41 gallons is more than a pickup's tank.
+  const withReceipt = E.analyze(txns, { ...opts, answers: { k1: { expect: { amount: 158.4, date: '2026-08-04', payee: 'Shell' }, read: { status: 'match', total: 158.4, gallons: 41.2, date: '2026-08-04' } } } }).fraud;
+  const fuel = withReceipt.checks.find((c) => c.id === 'bigFuel');
+  assert.ok(fuel.items.some((x) => x.gallons === 41.2 && x.vendor === 'Shell'));
+  assert.ok(fuel.columns.some((c) => c[1] === 'gallons'));
   // The other test clients aren't landscapers: no fraud tab, so no checks run.
   assert.equal(load('riverbend').fraud, undefined);
 });

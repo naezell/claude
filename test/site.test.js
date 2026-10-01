@@ -72,8 +72,9 @@ async function open(pathname, google, config) {
 test('netlify.toml sets a Content-Security-Policy that only allows this site and Google', () => {
   const csp = site.siteHeaders()['Content-Security-Policy'];
   assert.ok(csp, 'Content-Security-Policy header');
-  assert.match(csp, /script-src 'self' https:\/\/accounts\.google\.com\/gsi\/client;/);
-  assert.ok(!/unsafe-eval/.test(csp));
+  // 'wasm-unsafe-eval' lets the receipt reader run its WebAssembly engine; JavaScript eval stays off.
+  assert.match(csp, /script-src 'self' 'wasm-unsafe-eval' https:\/\/accounts\.google\.com\/gsi\/client;/);
+  assert.ok(!/(^|[^-])'unsafe-eval'/.test(csp));
   assert.match(csp, /frame-ancestors 'none'/);
 });
 
@@ -191,7 +192,16 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   const first = client.page.locator('section.q').first();
   const firstQuestion = await first.locator('label.text').innerText();
   await first.locator('textarea').fill('Printer paper for the office');
-  await first.locator('input[type=file]').setInputFiles({ name: 'receipt.png', mimeType: 'image/png', buffer: PNG });
+  // A photo of a receipt for the amount asked about, drawn in the page.
+  const amount = (firstQuestion.match(/\$[\d,]+\.\d{2}/) || ['$0.00'])[0];
+  const receipt = Buffer.from(await client.page.evaluate((amt) => {
+    const lines = ['OFFICE DEPOT #1123', '03/14/2026  2:15 PM', 'COPY PAPER 10 RM', `SUBTOTAL     ${amt}`, `TOTAL        ${amt}`, 'MASTERCARD XXXXXXXXXXXX4410'];
+    const c = document.createElement('canvas'); c.width = 560; c.height = 60 + lines.length * 36;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.fillStyle = '#111'; g.font = '24px monospace';
+    lines.forEach((l, i) => g.fillText(l, 24, 46 + i * 36));
+    return c.toDataURL('image/png').split(',')[1];
+  }, amount), 'base64');
+  await first.locator('input[type=file]').setInputFiles({ name: 'receipt.png', mimeType: 'image/png', buffer: receipt });
   await first.locator('.thumb img').waitFor();
   await client.page.click('button:has-text("Send answers")');
   await client.page.locator('.msg.good', { hasText: 'Thank you' }).waitFor();
@@ -209,6 +219,9 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   assert.match(await panel.innerText(), /Printer paper for the office/);
   assert.ok((await panel.innerText()).includes(firstQuestion.slice(0, 30)));
   await panel.locator('.answer-photos img').waitFor();
+  // The receipt is read in the browser and checked against the amount asked about.
+  await panel.locator('.receipt-result', { hasText: `Receipt matches ${amount}` }).waitFor({ timeout: 60000 });
+  assert.match(await panel.locator('.receipt-result').innerText(), /card …4410/);
   // The link no longer opens.
   await client.page.reload();
   await client.page.locator('h1', { hasText: 'can\u2019t be opened' }).waitFor();
@@ -218,6 +231,8 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.waitForSelector('button:has-text("Load sample")');
   await panel.locator('.answer-photos img').waitFor();
+  // The reading was saved with the answer, not read again.
+  await panel.locator('.receipt-result', { hasText: 'Receipt matches' }).waitFor({ timeout: 5000 });
   assert.deepEqual(await page.evaluate(() => window.__csp), []);
   assert.deepEqual(errors, []);
   await client.page.close();

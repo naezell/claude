@@ -1028,3 +1028,50 @@ test('fraud checks: fixed bills are not split purchases or round amounts, and on
   assert.equal(by.deleted.status, 'needs');
   assert.equal(E.analyze(txns, { industry: 'general' }).fraud, undefined);
 });
+
+test('receipts: a gas receipt gives gallons, price per gallon and fuel, and checks against the books', () => {
+  const gas = E.parseReceiptText('CASEYS GENERAL STORE #2231\nSPRINGFIELD IL\n07/08/2026 10:42 AM\nPUMP# 06\nUNLEADED\nGALLONS 14.236\nPRICE/GAL $3.459\nFUEL SALE $49.24\nTOTAL $49.24\nVISA XXXXXXXXXXXX4410');
+  assert.deepEqual([gas.total, gas.date, gas.gallons, gas.pricePerGallon, gas.fuel, gas.card4, gas.fuelChecked], [49.24, '2026-07-08', 14.236, 3.459, 'Unleaded', '4410', true]);
+  assert.deepEqual(E.checkReceipt(gas, { amount: 49.24, date: '2026-07-08' }), { status: 'match', notes: [] });
+  // OCR slips (O for 0, l for 1) are fixed inside numbers; "41.5 G @ 3.899" style pumps too.
+  const slips = E.parseReceiptText('QUIKTRIP 0412\n08/02/26\nREGULAR\nGallons: 12.5O4\nPrice: $3.2l9\nTotal $4O.27');
+  assert.deepEqual([slips.total, slips.gallons, slips.pricePerGallon, slips.fuelChecked, slips.date], [40.27, 12.504, 3.219, true, '2026-08-02']);
+  const big = E.parseReceiptText('SHELL\nDIESEL\n41.512 G @ 3.899/G\nTOTAL 161.85');
+  assert.equal(big.fuel, 'Diesel');
+  assert.match(E.checkReceipt(big, { amount: 161.85 }).notes.join(' '), /more than a pickup's tank/);
+  // A store receipt: the total (not the subtotal), the tax, and a different amount than the books.
+  const hd = E.parseReceiptText('THE HOME DEPOT\n03/12/2026\nTRIMMER LINE 24.97\nBLADES 2@ 9.98 19.96\nSUBTOTAL 44.93\nSALES TAX 3.71\nTOTAL $48.64\nXXXXXXXXXXXX4410 MASTERCARD');
+  assert.deepEqual([hd.total, hd.tax, hd.isFuel], [48.64, 3.71, false]);
+  const off = E.checkReceipt(hd, { amount: 84.2, date: '2026-03-30' });
+  assert.equal(off.status, 'mismatch');
+  assert.match(off.notes.join(' '), /\$48\.64, not \$84\.20.*Dated 2026-03-12/);
+  assert.equal(E.checkReceipt(E.parseReceiptText('blurry nothing'), { amount: 5 }).status, 'unreadable');
+});
+
+test('card statements: Chase, Amex and Capital One downloads, charges positive and payments apart', () => {
+  const chase = E.readExport('Transaction Date,Post Date,Description,Category,Type,Amount,Memo\n07/08/2026,07/09/2026,CASEYS #2231,Gas,Sale,-49.24,\n07/12/2026,07/12/2026,AUTOMATIC PAYMENT - THANK,,Payment,3000.00,\n07/14/2026,07/15/2026,AMAZON MKTPL,Shopping,Return,12.99,');
+  assert.equal(chase.kind, 'statement');
+  assert.deepEqual(chase.data.rows.map((r) => [r.amount, r.kind]), [[49.24, 'charge'], [-3000, 'payment'], [-12.99, 'credit']]);
+  const amex = E.parseCardStatement('Date,Description,Card Member,Account #,Amount\n07/03/2026,SHELL OIL 5744,TOM GREENWAY,-41004,212.40\n07/05/2026,AUTOPAY PAYMENT - THANK YOU,TOM GREENWAY,-41004,-1500.00');
+  assert.deepEqual(amex.rows.map((r) => [r.amount, r.kind, r.card, r.member]), [[212.4, 'charge', '1004', 'TOM GREENWAY'], [-1500, 'payment', '1004', 'TOM GREENWAY']]);
+  const cap = E.parseCardStatement('Transaction Date,Posted Date,Card No.,Description,Category,Debit,Credit\n2026-07-01,2026-07-02,1234,SITEONE,Merchandise,286.30,\n2026-07-04,2026-07-05,1234,CAPITAL ONE AUTOPAY PYMT,Payment/Credit,,500.00');
+  assert.deepEqual(cap.rows.map((r) => [r.amount, r.kind, r.date]), [[286.3, 'charge', '2026-07-01'], [-500, 'payment', '2026-07-04']]);
+  // A QuickBooks report is never read as a statement.
+  assert.equal(E.parseCardStatement('Date,Transaction Type,Num,Name,Memo/Description,Account,Split,Amount\n01/05/2026,Expense,,A,,Fuel,Chase,10.00\n01/06/2026,Expense,,B,,Fuel,Chase,12.00'), null);
+  // The QuickBooks upload file: three columns, charges negative.
+  assert.equal(E.quickbooksUploadCsv([{ date: '2026-07-22', description: 'AMAZON, MKTPL', amount: 86.42 }]), 'Date,Description,Amount\n07/22/2026,"AMAZON, MKTPL",-86.42');
+});
+
+test('card payoff: several cards against one loan, with the fee and cards that never get paid off', () => {
+  const p = E.cardPayoff([{ name: 'Chase', balance: 8000, apr: 24.99, payment: 250 }, { name: 'Amex', balance: 4000, apr: 21 }], { rate: 11, years: 4, fee: 3 });
+  assert.equal(p.balance, 12000);
+  assert.equal(p.current.payment, 360);
+  assert.equal(p.loan.months, 48);
+  assert.ok(Math.abs(p.loan.principal - 12371.13) < 0.01, 'the fee is borrowed on top');
+  assert.ok(p.savings > 7000 && p.current.interest > 10000);
+  assert.ok(p.monthlyChange < 0 && p.fasterBy > 100);
+  const never = E.cardPayoff([{ name: 'Card', balance: 10000, apr: 30, payment: 200 }], { rate: 10, years: 5, fee: 0 });
+  assert.equal(never.current.never, true);
+  assert.equal(never.savings, null);
+  assert.equal(E.cardPayoff([], { rate: 10 }), null);
+});

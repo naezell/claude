@@ -17,6 +17,7 @@ Upload a client's files together (select all four, or drag them onto the page):
 | | | `greenway-customer-contact-list.csv` (addresses, for route density) |
 | | | `greenway-voided-deleted.csv` (Voided/Deleted Transactions report, for the Fraud risk tab) |
 | | | `greenway-employee-details.csv` (payroll employee list with direct deposit, for the Fraud risk tab) |
+| | | `greenway-chase-statement-jul-aug-2026.csv` and `greenway-amex-statement-jul-aug-2026.csv` (card statements, for the Credit cards tab) |
 
 Then load the others the same way: each is remembered separately, and all appear under **Clients** and on **Home**.
 
@@ -93,5 +94,7 @@ A Midwest landscaper, about $900,000 a year: 20 maintenance contracts billed on 
 - **Sundays and holidays:** Home Depot on Memorial Day, Lowe's on July 4, Shell and QuikTrip on Sundays. **Round amounts:** Casey's charges of $100, $80, $120 and $100. **Big fill-ups:** three Shell charges of $198-236.
 - **Payroll outside the runs:** a $1,500 bonus by journal entry and a $1,240 manual paycheck to Dan Ortiz. **Employee paid outside payroll:** four $150 "reimbursement" checks to Dan Ortiz. **Shared bank account:** Dan Ortiz and Mike Dawson are paid into the same account.
 - The number-pattern (Benford) check comes out clear.
+
+**Credit cards tab** (add the two statement files with *Add export*): the books have one card, Chase Ink (4410). The statements show 11 charges not in QuickBooks: two on the Chase card (Amazon $86.42 on July 22, Harbor Freight $129.99 on August 14) and all 9 on an Amex card the books don't have, used by Tom Greenway and Dan Ortiz. The WEX charge entered twice on July 21 shows as in QuickBooks but on no statement.
 
 **Month-end close:** the checklist adds landscaping steps; *Every maintenance and snow contract billed* is open for August 2026. **Benchmarks** start on Landscaping Services (NAICS 561730).

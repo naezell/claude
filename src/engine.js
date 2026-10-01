@@ -2205,6 +2205,8 @@
     if (emps) return { kind: 'employees', data: emps };
     const custs = parseCustomerList(text);
     if (custs) return { kind: 'customers', data: custs };
+    const stmt = parseCardStatement(text);
+    if (stmt) return { kind: 'statement', data: stmt };
     const p = parseTransactions(text);
     if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
     return { kind: 'parsed', data: p };
@@ -4608,7 +4610,9 @@
     out.industry = opts.industry || out.detectedIndustry;
     if (out.industry === 'landscaping') out.landscape = landscapeAnalysis(txns, accountClass, out, { cushion: opts.cushion, customers: opts.customers });
     // Fraud risk checks: a landscaping tab for now (crews, fuel cards, cash jobs).
-    if (out.industry === 'landscaping') out.fraud = fraudChecks(txns, accountClass, out, { voided: opts.voided, employees: opts.employees, routes: out.landscape && out.landscape.routes, receiptLimit: opts.receiptLimit });
+    if (out.industry === 'landscaping') out.fraud = fraudChecks(txns, accountClass, out, { voided: opts.voided, employees: opts.employees, routes: out.landscape && out.landscape.routes, receiptLimit: opts.receiptLimit, answers: opts.answers });
+    // Company cards: the books, plus card statements when uploaded.
+    out.cards = cardReview(txns, accountClass, out, opts.statements);
     // Fixed assets: what the books show, and the saved register's schedule through the last full month.
     out.fixedAssets = fixedAssetFacts(txns, accountClass);
     if (out.balanceSheet && out.balanceSheet.available) {
@@ -5176,11 +5180,22 @@
     // Over $150 and well over the usual fill-up here: diesel trucks and mowers run bigger bills.
     const fills = spendTtm.filter((p) => GAS_STATION.test(who(p.t)) && !FLEET_CARD.test(who(p.t))).map((p) => p.value).sort((a, b) => a - b);
     const fuelCap = Math.max(150, fills.length ? fills[Math.floor(fills.length / 2)] * 2.5 : 0);
-    const bigFuel = spendTtm.filter((p) => GAS_STATION.test(who(p.t)) && !FLEET_CARD.test(who(p.t)) && p.value > fuelCap).map((p) => ({ date: p.t.dateStr, vendor: who(p.t), amount: round2(p.value) }));
+    const bigFuel = spendTtm.filter((p) => GAS_STATION.test(who(p.t)) && !FLEET_CARD.test(who(p.t)) && p.value > fuelCap).map((p) => ({ date: p.t.dateStr, vendor: who(p.t), amount: round2(p.value), gallons: null }));
+    // Gas receipts clients sent with their answers give the gallons, which don't move with the
+    // price of gas: more than a pickup's tank in one fill-up is flagged whatever it cost.
+    let byGallons = 0;
+    for (const a of Object.values(opts.answers || {})) {
+      const r = a && a.read;
+      if (!r || r.gallons == null) continue;
+      const amount = r.total != null ? r.total : a.expect && a.expect.amount;
+      const same = bigFuel.find((x) => amount != null && Math.abs(x.amount - amount) < 0.015);
+      if (same) same.gallons = r.gallons;
+      else if (r.gallons > TANK_GALLONS) { bigFuel.push({ date: r.date || (a.expect && a.expect.date) || '', vendor: (a.expect && a.expect.payee) || 'Receipt', amount: amount != null ? round2(amount) : null, gallons: r.gallons }); byGallons++; }
+    }
     add({
       id: 'bigFuel', group: 'cards', severity: 'medium', title: 'Fill-ups bigger than a truck tank',
-      summary: bigFuel.length ? `${bigFuel.length} single gas station charge${bigFuel.length === 1 ? '' : 's'} over ${fmtWhole(fuelCap)}, more than a pickup's tank holds and well over the usual fill-up. Could be cans for equipment, or fuel for personal vehicles.` : `No single gas station charge over ${fmtWhole(fuelCap)}.`,
-      amount: round2(bigFuel.reduce((t, x) => t + x.amount, 0)), columns: [['Date', 'date'], ['Station', 'vendor'], money('amount', 'Amount')], items: bigFuel,
+      summary: bigFuel.length ? `${bigFuel.length} gas station charge${bigFuel.length === 1 ? '' : 's'} ${byGallons === bigFuel.length ? `with more than ${TANK_GALLONS} gallons on the receipt` : `over ${fmtWhole(fuelCap)}${byGallons ? ` or over ${TANK_GALLONS} gallons on the receipt` : ''}`}, more than a pickup's tank holds. Could be cans for equipment, or fuel for personal vehicles.` : `No single gas station charge over ${fmtWhole(fuelCap)}.`,
+      amount: round2(bigFuel.reduce((t, x) => t + (x.amount || 0), 0)), columns: [['Date', 'date'], ['Station', 'vendor'], money('amount', 'Amount'), ...(bigFuel.some((x) => x.gallons != null) ? [['Gallons (receipt)', 'gallons', 'num']] : [])], items: bigFuel,
     });
     // First digits of expense amounts against the pattern real spending follows (Benford).
     // One of each amount per vendor, so a monthly bill repeated twelve times counts once.
@@ -5258,6 +5273,274 @@
       checks, score, level: score >= 40 ? 'high' : score >= 15 ? 'moderate' : 'low',
       found: found.length, clean: checks.filter((c) => c.status === 'clean').length, needs: checks.filter((c) => c.status === 'needs').length,
       amount: round2(found.reduce((t, c) => t + (c.amount || 0), 0)), window: ttm ? `${isoDate(ttm.start)} to ${isoDate(ttm.end)}` : '',
+    };
+  }
+
+  // ---------------------------------------------------------------- receipts read from photos
+  // Text read off a receipt photo (OCR in the browser) is checked against the transaction the
+  // client was asked about. Gas receipts also give gallons, price per gallon and fuel type, and
+  // gallons × price per gallon = the fuel total is a built-in check that the reading is right.
+
+  // A large pickup's tank: more than this in one fill-up is fuel for something else.
+  const TANK_GALLONS = 36;
+  const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+
+  // OCR mixes up letters and digits inside numbers (O for 0, l or I for 1, S for 5).
+  function fixDigits(line) {
+    return line.replace(/(?<=[\d$.,])[Oo](?=[\d.,])|(?<=[\d.,])[Oo]\b/g, '0').replace(/(?<=\d)[lI|](?=[\d.,])|(?<=[\d.,])[lI|](?=\d)/g, '1').replace(/(?<=[\d.,])S(?=\d)/g, '5').replace(/(\d) ?[.,] ?(\d{2})\b/g, '$1.$2');
+  }
+  const moneyIn = (line) => (fixDigits(line).match(/-?\$?\s?\d{1,3}(?:,\d{3})*\.\d{2}(?!\d)|-?\$?\s?\d+\.\d{2}(?!\d)/g) || []).map((m) => Math.abs(parseFloat(m.replace(/[$,\s]/g, '')))).filter((n) => !isNaN(n));
+
+  function receiptDate(text) {
+    const s = fixDigits(text);
+    let m = s.match(/\b(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})\b/);
+    if (m && +m[1] >= 1 && +m[1] <= 12 && +m[2] >= 1 && +m[2] <= 31) return `${m[3].length === 2 ? `20${m[3]}` : m[3]}-${String(m[1]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+    m = s.match(/\b(20\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})\b/);
+    if (m) return `${m[1]}-${String(m[2]).padStart(2, '0')}-${String(m[3]).padStart(2, '0')}`;
+    m = s.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(20\d{2})\b/i);
+    if (m) return `${m[3]}-${String(MONTHS[m[1].toLowerCase()]).padStart(2, '0')}-${String(m[2]).padStart(2, '0')}`;
+    return '';
+  }
+
+  // The parts of a receipt the bookkeeper needs, from OCR text: total, date, sales tax, the
+  // card's last four digits, and for fuel: gallons, price per gallon and fuel type.
+  function parseReceiptText(text) {
+    const lines = String(text || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    const all = lines.flatMap(moneyIn);
+    const out = { total: null, amounts: [...new Set(all)], date: receiptDate(text), tax: null, card4: '', fuel: '', gallons: null, pricePerGallon: null, fuelTotal: null, isFuel: false, fuelChecked: false, derived: '' };
+    // The total: a line saying total / amount due / sale, but not a subtotal or a tax line.
+    let total = null;
+    for (const l of lines) {
+      if (/sub\s*-?\s*total|tax|change|cash back|tip|savings|discount|points/i.test(l)) continue;
+      if (/\b(total|amount due|balance due|amount|purchase|sale|fuel sale|grand total|charged?)\b/i.test(l)) {
+        const v = moneyIn(l);
+        if (v.length) total = v[v.length - 1];
+        if (/total|amount due|balance due/i.test(l) && v.length) break;
+      }
+    }
+    out.total = total != null ? total : all.length ? Math.max(...all) : null;
+    for (const l of lines) {
+      if (/\btax\b/i.test(l) && !/pre-?tax|tax ?id|tax ?exempt/i.test(l)) { const v = moneyIn(l); if (v.length) { out.tax = v[v.length - 1]; break; } }
+    }
+    const card = fixDigits(text).match(/(?:[x*#•]{2,}[\s-]*|ending(?: in)?\s*|acct\.?\s*#?\s*|account\s*#?\s*|card\s*#?\s*[x*#]*\s*)(\d{4})\b/i);
+    if (card) out.card4 = card[1];
+    // Fuel.
+    const joined = lines.join('\n');
+    if (/\bdiesel\b|\bdsl\b/i.test(joined)) out.fuel = 'Diesel';
+    else if (/premium|\bprem\b|super\b|\bplus\b|mid-?grade/i.test(joined)) out.fuel = /premium|\bprem\b|super\b/i.test(joined) ? 'Premium' : 'Mid-grade';
+    else if (/unlead|\bunl\b|regular|\breg\b|\bgas(oline)?\b/i.test(joined)) out.fuel = 'Unleaded';
+    for (const raw of lines) {
+      const l = fixDigits(raw);
+      let m = l.match(/(?:gal(?:lon)?s?|volume|vol|qty|quantity)\.?\s*[:=]?\s*(\d{1,3}\.\d{1,3})\b/i) || l.match(/\b(\d{1,3}\.\d{2,3})\s*(?:gal(?:lon)?s?|g)\b/i);
+      if (m && out.gallons == null) out.gallons = parseFloat(m[1]);
+      // Pumps price to a tenth of a cent (3.459); a 2-decimal price only counts beside "gal".
+      m = l.match(/(?:price\s*\/\s*gal(?:lon)?|\$\s*\/\s*gal|ppg|per gal(?:lon)?)\s*[:=]?\s*\$?\s*(\d\.\d{2,3})\b/i) || l.match(/(?:unit price|price)\s*[:=]?\s*\$?\s*(\d\.\d{3})\b/i) || l.match(/@\s*\$?\s*(\d\.\d{3})\b/) || l.match(/\$?\s*(\d\.\d{2,3})\s*\/\s*g(?:al)?\b/i);
+      if (m && out.pricePerGallon == null) { const p = parseFloat(m[1]); if (p >= 1 && p <= 9.99) out.pricePerGallon = p; }
+      m = l.match(/fuel\s*(?:sale|total)?\s*[:=]?\s*\$?\s*(\d+\.\d{2})\b/i);
+      if (m && out.fuelTotal == null) out.fuelTotal = parseFloat(m[1]);
+    }
+    out.isFuel = out.gallons != null || out.pricePerGallon != null || /pump\s*#?\s*\d|fuel|\bgallons?\b/i.test(joined);
+    if (out.isFuel) {
+      const base = out.fuelTotal != null ? out.fuelTotal : out.total;
+      if (out.gallons != null && out.pricePerGallon != null && base != null) {
+        out.fuelChecked = Math.abs(out.gallons * out.pricePerGallon - base) <= Math.max(0.06, base * 0.01);
+      } else if (out.gallons == null && out.pricePerGallon != null && base) {
+        out.gallons = Math.round((base / out.pricePerGallon) * 1000) / 1000; out.derived = 'gallons';
+      } else if (out.pricePerGallon == null && out.gallons && base) {
+        out.pricePerGallon = Math.round((base / out.gallons) * 1000) / 1000; out.derived = 'pricePerGallon';
+      }
+    }
+    return out;
+  }
+
+  // How a receipt reading compares with what the books say: 'match', 'mismatch' (it shows a
+  // different amount), 'unreadable' (no amounts found), or 'read' (nothing to compare with).
+  // `expect` = { amount, date } of the transaction the question was about.
+  function checkReceipt(read, expect, opts) {
+    opts = opts || {};
+    const tank = opts.tankGallons || TANK_GALLONS;
+    const notes = [];
+    if (!read || !read.amounts || !read.amounts.length) return { status: 'unreadable', notes: ['No amounts could be read from the photo.'] };
+    const want = expect && expect.amount != null ? Math.abs(+expect.amount) : null;
+    let status = 'read';
+    if (want != null) {
+      const hit = read.amounts.some((a) => Math.abs(a - want) < 0.015);
+      status = hit ? 'match' : 'mismatch';
+      if (!hit) notes.push(`The receipt shows ${fmtMoney(read.total)}${read.amounts.length > 1 ? '' : ''}, not ${fmtMoney(want)}.`);
+    }
+    if (expect && expect.date && read.date) {
+      const days = Math.abs((Date.parse(read.date) - Date.parse(expect.date)) / DAY);
+      if (days > 4) notes.push(`Dated ${read.date}; the books have ${expect.date}.`);
+    }
+    if (read.isFuel) {
+      if (read.gallons != null && read.gallons > tank) notes.push(`${read.gallons.toFixed(1)} gallons is more than a pickup's tank (about ${tank}).`);
+      if (read.gallons != null && read.pricePerGallon != null && !read.fuelChecked && !read.derived) notes.push('Gallons × price per gallon does not equal the total; check the photo.');
+    }
+    return { status, notes };
+  }
+
+  // ---------------------------------------------------------------- credit card statements
+  // A statement downloaded from the card's website (Chase, Amex, Capital One, Citi, Bank of
+  // America, Wells Fargo, Discover... all CSV): date, description, amount (or debit/credit
+  // columns), and on some the card number or card member. Charges come out positive.
+  function parseCardStatement(text) {
+    const rows = parseCSV(text);
+    for (let i = 0; i < Math.min(rows.length, 15); i++) {
+      const lc = rows[i].map(lower);
+      // A QuickBooks report has these; a card statement doesn't.
+      if (lc.some((h) => /^(split|account|transaction type|num|class)$/.test(h))) return null;
+      const col = (rx) => { const j = lc.findIndex((h) => rx.test(h)); return j === -1 ? null : j; };
+      const date = col(/^(transaction date|trans\.? date|date|purchase date)$/);
+      const posted = col(/^(post(ed|ing)? date)$/);
+      const desc = col(/^(description|payee|merchant|merchant name|details|transaction description|name)$/);
+      const amount = col(/^(amount|transaction amount|amount \(usd\))$/);
+      const debit = col(/^(debit|charges?|withdrawals?)$/), credit = col(/^(credit|payments?|credits?|deposits?)$/);
+      if ((date == null && posted == null) || desc == null || (amount == null && debit == null)) continue;
+      const card = col(/^(card no\.?|card number|card|account #|account number|card ending)$/);
+      const member = col(/^(card member|cardmember|member name|name on card|cardholder)$/);
+      const category = col(/^(category|merchant category)$/);
+      const type = col(/^type$/);
+      const out = [];
+      for (const r of rows.slice(i + 1)) {
+        const d = parseDate(r[date != null ? date : posted]) || (posted != null ? parseDate(r[posted]) : null);
+        if (!d) continue;
+        let amt;
+        if (debit != null && amount == null) amt = (parseAmount(r[debit]) || 0) - (parseAmount(r[credit]) || 0);
+        else amt = parseAmount(r[amount]);
+        if (amt == null || !amt) continue;
+        const descr = norm(r[desc]);
+        out.push({ date: isoDate(d), posted: posted != null && parseDate(r[posted]) ? isoDate(parseDate(r[posted])) : '', description: descr, amount: amt, card: card != null ? norm(r[card]).replace(/[^0-9]/g, '').slice(-4) : '', member: member != null ? norm(r[member]) : '', category: category != null ? norm(r[category]) : '', type: type != null ? norm(r[type]) : '' });
+      }
+      if (out.length < 2) return null;
+      // Some banks show charges as negative numbers (Chase, Bank of America), others as positive
+      // (Amex, Discover). Payments tell which: they carry the opposite sign of most rows.
+      if (amount != null) {
+        const neg = out.filter((x) => x.amount < 0).length, pos = out.length - neg;
+        const payNeg = out.filter((x) => isCardPayment(x)).every((x) => x.amount < 0);
+        const flip = out.some((x) => isCardPayment(x)) ? !payNeg : neg > pos;
+        if (flip) for (const x of out) x.amount = -x.amount;
+      }
+      for (const x of out) { x.amount = round2(x.amount); x.kind = isCardPayment(x) ? 'payment' : x.amount < 0 ? 'credit' : 'charge'; }
+      return { rows: out };
+    }
+    return null;
+  }
+  function isCardPayment(x) { return /payment|autopay|thank you|pymt/i.test(`${x.type} ${x.description}`) && !/fee|interest/i.test(x.description); }
+
+  // Every company card side by side, from the books and (when uploaded) the card statements:
+  // spending by card, person and category over the last 12 months, and each statement charge
+  // matched to the books (same amount, within a few days).
+  function cardReview(txns, accountClass, result, statements) {
+    const range = dateRange(txns, result.meta);
+    const ttm = trailingYear(range.first, range.last);
+    const inTtm = (d) => (ttm ? d >= ttm.start && d <= ttm.end : true);
+    const cards = new Map();
+    const card = (a) => { if (!cards.has(a)) cards.set(a, { account: a, charges: 0, count: 0, payments: 0, balance: 0, byMonth: new Map(), byCategory: new Map(), rows: [] }); return cards.get(a); };
+    for (const t of txns) {
+      if (roleOf(accountClass, t.account) !== 'card') continue;
+      const c = card(t.account);
+      c.balance += t.amount;
+      if (t.amount > 0 && !/payment|transfer|deposit/i.test(t.type)) {
+        c.rows.push(t);
+        if (!inTtm(t.date)) continue;
+        c.charges += t.amount; c.count++;
+        const k = t.dateStr.slice(0, 7);
+        c.byMonth.set(k, (c.byMonth.get(k) || 0) + t.amount);
+        const cat = leafAccount(t.split || 'Uncategorized');
+        c.byCategory.set(cat, (c.byCategory.get(cat) || 0) + t.amount);
+      } else if (t.amount < 0 && inTtm(t.date)) c.payments += -t.amount;
+    }
+    const list = [...cards.values()].map((c) => ({ account: c.account, charges: round2(c.charges), count: c.count, payments: round2(c.payments), balance: round2(Math.max(0, c.balance)), months: [...c.byMonth.entries()].sort().map(([k, v]) => ({ key: k, label: monthLabel(k), amount: round2(v) })), topCategories: [...c.byCategory.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => ({ category: k, amount: round2(v) })) })).sort((a, b) => b.charges - a.charges);
+    const byCategory = new Map();
+    for (const c of cards.values()) for (const [k, v] of c.byCategory) byCategory.set(k, (byCategory.get(k) || 0) + v);
+    const total = list.reduce((t, c) => t + c.charges, 0);
+    const categories = [...byCategory.entries()].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ category: k, amount: round2(v), share: total ? v / total : 0 }));
+
+    // Statements: each charge matched to a card charge in the books.
+    let check = null;
+    const stmts = (statements || []).filter((s) => s && s.rows && s.rows.length);
+    if (stmts.length) {
+      const pool = [...cards.values()].flatMap((c) => c.rows.map((t) => ({ t, account: c.account, used: false })));
+      const missing = [], matched = [], people = new Map(), byStatement = [];
+      let first = '', last = '';
+      for (const s of stmts) {
+        let sCharges = 0, sCount = 0;
+        for (const x of s.rows) {
+          if (x.kind !== 'charge') continue;
+          if (!first || x.date < first) first = x.date;
+          if (!last || x.date > last) last = x.date;
+          sCharges += x.amount; sCount++;
+          const who = x.member || (x.card ? `Card ending ${x.card}` : s.label || 'Card');
+          const p = people.get(who) || { who, amount: 0, count: 0 };
+          p.amount += x.amount; p.count++; people.set(who, p);
+          const day = Date.parse(x.date);
+          const hit = pool.find((p2) => !p2.used && Math.abs(p2.t.amount - x.amount) < 0.005 && Math.abs(p2.t.date - day) <= 5 * DAY);
+          if (hit) { hit.used = true; matched.push({ ...x, account: hit.account }); } else missing.push({ ...x, statement: s.label || '' });
+        }
+        byStatement.push({ label: s.label || 'Statement', charges: round2(sCharges), count: sCount });
+      }
+      // Card charges in the books within the statements' dates that no statement shows.
+      const extra = first ? pool.filter((p) => !p.used && p.t.dateStr >= first && p.t.dateStr <= last).map((p) => ({ date: p.t.dateStr, description: counterpartyOf(p.t) || p.t.memo || '', amount: round2(p.t.amount), account: p.account, category: leafAccount(p.t.split || '') })) : [];
+      check = {
+        first, last, statements: byStatement, matched: matched.length,
+        missing: missing.sort((a, b) => a.date.localeCompare(b.date)), missingTotal: round2(missing.reduce((t, x) => t + x.amount, 0)),
+        extra: extra.sort((a, b) => a.date.localeCompare(b.date)), extraTotal: round2(extra.reduce((t, x) => t + x.amount, 0)),
+        people: [...people.values()].map((p) => ({ ...p, amount: round2(p.amount) })).sort((a, b) => b.amount - a.amount),
+      };
+    }
+    return { cards: list, total: round2(total), categories, check, window: ttm ? `${isoDate(ttm.start)} to ${isoDate(ttm.end)}` : '' };
+  }
+
+  // The statements as one list (card, person, date, description, amount, category), for a
+  // spreadsheet; and the charges missing from QuickBooks in its bank-upload format.
+  function combinedStatementsCsv(statements) {
+    const rows = [['Card', 'Card member', 'Date', 'Description', 'Category', 'Amount']];
+    for (const s of statements || []) for (const x of s.rows || []) rows.push([x.card ? `${s.label || 'Card'} (${x.card})` : s.label || 'Card', x.member, x.date, x.description, x.category, x.amount.toFixed(2)]);
+    rows.sort((a, b) => (a === rows[0] ? -1 : b === rows[0] ? 1 : a[2].localeCompare(b[2])));
+    return rows.map((r) => r.map(csvCell).join(',')).join('\n');
+  }
+  function quickbooksUploadCsv(charges) {
+    // QuickBooks Online bank upload, three columns: Date, Description, Amount (charges negative).
+    const rows = [['Date', 'Description', 'Amount']];
+    for (const x of charges || []) { const [y, m, d] = x.date.split('-'); rows.push([`${m}/${d}/${y}`, x.description, (-x.amount).toFixed(2)]); }
+    return rows.map((r) => r.map(csvCell).join(',')).join('\n');
+  }
+  const csvCell = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+
+  // Paying several cards off with one loan, against keeping them: each card's balance, APR and
+  // monthly payment (or the usual minimum: interest plus 1% of the balance, at least $35), and
+  // the loan's rate, years and fee. Interest is figured month by month.
+  function cardPayoff(cards, loan) {
+    const list = (cards || []).filter((c) => c && +c.balance > 0).map((c) => ({ name: c.name || 'Card', balance: +c.balance, apr: Math.max(0, +c.apr || 0) / 100, payment: +c.payment > 0 ? +c.payment : 0 }));
+    if (!list.length) return null;
+    const minimum = (bal, apr) => Math.min(bal * (1 + apr / 12), Math.max(35, bal * apr / 12 + bal * 0.01));
+    const perCard = list.map((c) => {
+      let bal = c.balance, interest = 0, months = 0;
+      const first = c.payment || minimum(c.balance, c.apr);
+      while (bal > 0.005 && months < 600) {
+        const i = bal * c.apr / 12;
+        const pay = Math.min(bal + i, c.payment || minimum(bal, c.apr));
+        if (pay <= i + 0.005) { months = 600; break; } // the payment never gets ahead of the interest
+        interest += i; bal = bal + i - pay; months++;
+      }
+      return { name: c.name, balance: round2(c.balance), apr: c.apr, payment: round2(first), months, interest: round2(interest), never: months >= 600 };
+    });
+    const balance = list.reduce((t, c) => t + c.balance, 0);
+    const current = { payment: round2(perCard.reduce((t, c) => t + c.payment, 0)), interest: round2(perCard.reduce((t, c) => t + c.interest, 0)), months: Math.max(...perCard.map((c) => c.months)), never: perCard.some((c) => c.never) };
+    const rate = Math.max(0, +(loan && loan.rate) || 0) / 100, years = Math.max(0.5, +(loan && loan.years) || 5), feePct = Math.max(0, +(loan && loan.fee) || 0) / 100;
+    // The fee is usually taken from the loan, so borrowing enough to clear the cards means borrowing a bit more.
+    const principal = feePct < 1 ? balance / (1 - feePct) : balance;
+    const payment = pmt(principal, rate, years);
+    const n = Math.round(years * 12);
+    const loanInterest = payment * n - principal;
+    const fee = principal - balance;
+    const consolidated = { principal: round2(principal), payment: round2(payment), months: n, interest: round2(loanInterest), fee: round2(fee), cost: round2(loanInterest + fee) };
+    const weighted = list.reduce((t, c) => t + c.apr * c.balance, 0) / balance;
+    return {
+      cards: perCard, balance: round2(balance), weightedApr: weighted, current, loan: consolidated,
+      savings: current.never ? null : round2(current.interest - consolidated.cost),
+      monthlyChange: round2(consolidated.payment - current.payment),
+      fasterBy: current.never ? null : current.months - n,
     };
   }
 
@@ -5971,6 +6254,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, parseReceiptText, checkReceipt, TANK_GALLONS, parseCardStatement, cardReview, combinedStatementsCsv, quickbooksUploadCsv, cardPayoff, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

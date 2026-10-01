@@ -842,6 +842,43 @@ function greenwayVoidedDeleted(plants) {
   ].join('\n');
 }
 
+// Credit card statements as downloaded from the banks' websites, July and August 2026.
+// Chase (the card in the books): every Chase Ink charge, except the WEX charge QuickBooks has
+// twice, plus two charges never entered. Amex (a card the books don't have at all): the owner's
+// and a crew leader's charges.
+function greenwayChaseStatement(b) {
+  const card = 'Chase Ink (4410)';
+  const rows = [];
+  let wexSeen = false;
+  for (const e of b.entries) {
+    if (e.cr !== card || e.date < '2026-07-01' || e.date > '2026-08-31') continue;
+    if (e.name === 'WEX Fleet Card' && e.date === '2026-07-21' && e.amount === 612.18) { if (wexSeen) continue; wexSeen = true; }
+    rows.push([e.date, (e.name || e.memo || 'POS DEBIT').toUpperCase(), e.dr, 'Sale', -e.amount]);
+  }
+  for (const e of b.entries) if (e.dr === card && e.date >= '2026-07-01' && e.date <= '2026-08-31') rows.push([e.date, 'AUTOMATIC PAYMENT - THANK YOU', '', 'Payment', e.amount]);
+  rows.push(['2026-07-22', 'AMAZON MKTPL*2K4QZ', 'Shopping', 'Sale', -86.42]);
+  rows.push(['2026-08-14', 'HARBOR FREIGHT TOOLS 512', 'Home', 'Sale', -129.99]);
+  rows.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0));
+  return ['Transaction Date,Post Date,Description,Category,Type,Amount,Memo',
+    ...rows.map(([d, desc, cat, type, amt]) => [mdY(d), mdY(addDays(d, 1)), desc, cat, type, amt.toFixed(2), ''].map(q).join(','))].join('\n') + '\n';
+}
+function greenwayAmexStatement() {
+  const rows = [
+    ['2026-07-02', 'MENARDS SPRINGFIELD IL', 'TOM GREENWAY', '-41004', 412.37],
+    ['2026-07-06', 'SHELL OIL 57444', 'DAN ORTIZ', '-41012', 88.10],
+    ['2026-07-09', 'COSTCO WHSE #1062', 'TOM GREENWAY', '-41004', 263.58],
+    ['2026-07-15', 'AUTOPAY PAYMENT - THANK YOU', 'TOM GREENWAY', '-41004', -900.00],
+    ['2026-07-18', 'TRACTOR SUPPLY CO #1180', 'DAN ORTIZ', '-41012', 154.92],
+    ['2026-07-27', 'CULVERS OF SPRINGFIELD', 'DAN ORTIZ', '-41012', 46.75],
+    ['2026-08-03', 'SITEONE LANDSCAPE SUPPLY', 'TOM GREENWAY', '-41004', 538.20],
+    ['2026-08-11', 'QUIKTRIP 0412', 'DAN ORTIZ', '-41012', 71.44],
+    ['2026-08-19', 'STIHL DEALER - ROCHESTER', 'TOM GREENWAY', '-41004', 349.99],
+    ['2026-08-24', 'CASEYS #2231', 'DAN ORTIZ', '-41012', 64.03],
+  ];
+  return ['Date,Description,Card Member,Account #,Amount',
+    ...rows.map(([d, desc, who, acct, amt]) => [mdY(d), desc, who, acct, amt.toFixed(2)].map(q).join(','))].join('\n') + '\n';
+}
+
 // A payroll employee list with direct deposit details (masked account numbers): two crew members
 // are paid into the same account.
 function greenwayEmployees() {
@@ -905,8 +942,10 @@ function main() {
   write('greenway-customer-contact-list.csv', greenwayContacts(gw.b));
   write('greenway-voided-deleted.csv', greenwayVoidedDeleted(gw.plants));
   write('greenway-employee-details.csv', greenwayEmployees());
+  write('greenway-chase-statement-jul-aug-2026.csv', greenwayChaseStatement(gw.b));
+  write('greenway-amex-statement-jul-aug-2026.csv', greenwayAmexStatement());
   console.log(`Wrote test clients to ${path.relative(process.cwd(), OUT)}`);
 }
 
 if (require.main === module) main();
-module.exports = { riverbend, cafe, greenway, greenwayContacts, greenwayVoidedDeleted, greenwayEmployees, transactionDetail };
+module.exports = { riverbend, cafe, greenway, greenwayContacts, greenwayVoidedDeleted, greenwayEmployees, greenwayChaseStatement, greenwayAmexStatement, transactionDetail };

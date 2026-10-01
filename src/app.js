@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab, Drive, useDrive } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab, Drive, useDrive, CardsTab } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -44,6 +44,7 @@
     ['trends', 'Trends'],
     ['budget', 'Budget'],
     ['vendors', 'Vendors'],
+    ['cards', 'Credit cards'],
     ['benchmarks', 'Benchmarks'],
     ['advisory', 'Tax & lending'],
     ['assets', 'Fixed assets'],
@@ -51,6 +52,9 @@
   // Tabs for one industry, placed after the profitability tab.
   const INDUSTRY_TABS = { landscaping: [['landscape', 'Landscaping'], ['fraud', 'Fraud risk']] };
   const tabsFor = (industry) => (INDUSTRY_TABS[industry] ? [...TABS.slice(0, 3), ...INDUSTRY_TABS[industry], ...TABS.slice(3)] : TABS);
+
+  // A card statement's name from its file: "chase-activity-2026.csv" → "chase activity 2026".
+  const statementLabel = (name) => String(name || 'Statement').replace(/\.(csv|txt|xlsx?)$/i, '').replace(/[_-]+/g, ' ').trim();
 
   // ------------------------------------------------------------ top-level app
 
@@ -107,6 +111,8 @@
     const [loanRequest, setLoanRequest] = useState(null);
     // The client's fixed asset register (Fixed assets tab).
     const [assets, setAssets] = useState([]);
+    // The card payoff calculator's inputs (Credit cards tab).
+    const [cardDebt, setCardDebt] = useState(null);
     // The client's industry: '' means detected from the file (landscaping adds its own tab).
     const [industry, setIndustry] = useState('');
     const [lenderOpen, setLenderOpen] = useState(false);
@@ -147,12 +153,13 @@
     const analyzeOpts = useMemo(() => (parsed.ok ? ({
       accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined, assets, customers: source.customers ? source.customers.parsed : null,
       voided: source.voided ? source.voided.parsed : null, employees: source.employees ? source.employees.parsed : null,
+      statements: source.statements ? source.statements.map((f) => f.parsed) : null,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry, assets]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry, assets, source]);
     // Large exports are analyzed in the background so the page stays responsive (src/work.js).
     const { result, analyzing } = useAnalysis(parsed.ok, analyzeOpts);
     // The industry's own tab shows once the analysis knows the industry.
@@ -195,6 +202,7 @@
       setLoanRequest(saved && saved.loanRequest ? saved.loanRequest : null);
       setIndustry(saved && saved.industry ? saved.industry : '');
       setAssets(saved && Array.isArray(saved.assets) ? saved.assets : []);
+      setCardDebt(saved && saved.cardDebt ? saved.cardDebt : null);
       setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
@@ -212,14 +220,14 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
-      const list = [...source.files, source.chart, source.pnl, source.budget, source.attachments, source.customers, source.voided, source.employees].filter(Boolean);
+      const list = [...source.files, source.chart, source.pnl, source.budget, source.attachments, source.customers, source.voided, source.employees, ...(source.statements || [])].filter(Boolean);
       if (!list.every((f) => typeof f.text === 'string')) return;
       FileStore.put(clientId, list.map((f) => ({ name: f.name, text: f.text })));
     }, [clientId, source]);
@@ -310,22 +318,26 @@
       const customersFile = lastOf('customers');
       const voidedFile = lastOf('voided');
       const employeesFile = lastOf('employees');
+      // Card statements: one per card, so every one uploaded is kept (a file with the same name
+      // replaces the earlier copy).
+      const statementFiles = results.filter((r) => r.statement).map((r) => ({ name: r.name, parsed: { ...r.statement, label: statementLabel(r.name) }, text: r.text }));
+      const withStatements = (prev) => { const keep = (prev || []).filter((f) => !statementFiles.some((n) => n.name === f.name)); const all = [...keep, ...statementFiles]; return all.length ? all : null; };
       const answersFile = lastOf('answers');
       if (answersFile) setPendingAnswers(answersFile);
       const errors = bad.map((b) => `${b.name} ${b.error}`);
-      const KIND = { parsed: 'transactions', chart: 'chart of accounts', pnl: 'Profit and Loss', budget: 'budget', attachments: 'expense list with attachments', customers: 'customer contact list', voided: 'voided and deleted transactions', employees: 'employee list', answers: "client's answers" };
+      const KIND = { parsed: 'transactions', chart: 'chart of accounts', pnl: 'Profit and Loss', budget: 'budget', attachments: 'expense list with attachments', customers: 'customer contact list', voided: 'voided and deleted transactions', employees: 'employee list', statement: 'card statement', answers: "client's answers" };
       const seen = results.filter((r) => !r.error).map((r) => `${r.name} (${KIND[Object.keys(KIND).find((k) => r[k])] || 'file'})`);
       setUploadNote(results.length ? { count: results.length, seen, skipped: bad.length, opened } : null);
       const prev = sourceRef.current;
       if (!good.length) {
         // A chart or P&L on its own attaches to the transactions already loaded.
-        const extra = chartFile || pnlFile || budgetFile || attachFile || customersFile || voidedFile || employeesFile;
-        if (extra && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl, budget: budgetFile || prev.budget, attachments: attachFile || prev.attachments, customers: customersFile || prev.customers, voided: voidedFile || prev.voided, employees: employeesFile || prev.employees });
-        else if (extra) errors.push(`${extra.name} is a ${chartFile ? 'chart of accounts' : pnlFile ? 'Profit and Loss report' : budgetFile ? 'budget' : attachFile ? 'list of expenses with attachments' : customersFile ? 'customer contact list' : voidedFile ? 'voided and deleted transactions report' : 'employee list'}. Upload the client's Transaction Detail with it.`);
+        const extra = chartFile || pnlFile || budgetFile || attachFile || customersFile || voidedFile || employeesFile || statementFiles[0];
+        if (extra && prev.kind === 'upload') setSource({ ...prev, chart: chartFile || prev.chart, pnl: pnlFile || prev.pnl, budget: budgetFile || prev.budget, attachments: attachFile || prev.attachments, customers: customersFile || prev.customers, voided: voidedFile || prev.voided, employees: employeesFile || prev.employees, statements: statementFiles.length ? withStatements(prev.statements) : prev.statements });
+        else if (extra) errors.push(`${extra.name} is a ${chartFile ? 'chart of accounts' : pnlFile ? 'Profit and Loss report' : budgetFile ? 'budget' : attachFile ? 'list of expenses with attachments' : customersFile ? 'customer contact list' : voidedFile ? 'voided and deleted transactions report' : employeesFile ? 'employee list' : 'credit card statement'}. Upload the client's Transaction Detail with it.`);
       } else {
         const keepPrev = append && prev.kind === 'upload';
         const kept = keepPrev ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
-        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null), attachments: attachFile || (keepPrev ? prev.attachments : null), customers: customersFile || (keepPrev ? prev.customers : null), voided: voidedFile || (keepPrev ? prev.voided : null), employees: employeesFile || (keepPrev ? prev.employees : null) });
+        setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null), attachments: attachFile || (keepPrev ? prev.attachments : null), customers: customersFile || (keepPrev ? prev.customers : null), voided: voidedFile || (keepPrev ? prev.voided : null), employees: employeesFile || (keepPrev ? prev.employees : null), statements: withStatements(keepPrev ? prev.statements : null) });
       }
       setError(errors.join(' '));
     }, []);
@@ -390,6 +402,7 @@
       for (const f of [source.chart, source.pnl, source.budget, source.attachments, source.customers, source.voided, source.employees]) if (f && f.name) out.add(f.name);
       if (source.employees) for (const e of source.employees.parsed.employees) out.add(e.name);
       if (source.voided) for (const x of source.voided.parsed.entries) if (x.name) out.add(x.name);
+      for (const f of source.statements || []) { out.add(f.name); for (const x of f.parsed.rows) { if (x.member) out.add(x.member); if (x.description) out.add(x.description); } }
       for (const c of Object.values(ClientStore.all())) out.add(c.name);
       return [...out];
     }, [parsed, source]);
@@ -434,6 +447,7 @@
           ${source.kind === 'upload' && source.customers && html`<span class="pill good"><span class="dot"></span>Customer addresses</span>`}
           ${source.kind === 'upload' && source.voided && html`<span class="pill good"><span class="dot"></span>Voided/deleted report</span>`}
           ${source.kind === 'upload' && source.employees && html`<span class="pill good"><span class="dot"></span>Employee list</span>`}
+          ${source.kind === 'upload' && source.statements && html`<span class="pill good"><span class="dot"></span>${source.statements.length} card statement${source.statements.length === 1 ? '' : 's'}</span>`}
           ${result && (result.tieOut
             ? html`<span class=${`pill ${result.tieOut.ties ? 'good' : 'high'}`}><span class="dot"></span>${result.tieOut.ties ? 'Ties to QuickBooks P&L' : 'Does not tie to QuickBooks P&L'}</span>`
             : source.kind === 'upload' && html`<span class="hint">Add the Profit and Loss export for the same dates to confirm the numbers match QuickBooks.</span>`)}
@@ -464,7 +478,7 @@
 
         ${!result && analyzing && html`<div class="empty">Working through a large export. The results appear here in a moment.</div>`}
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`} class=${analyzing ? 'stale' : ''} aria-busy=${analyzing ? 'true' : 'false'}>
-          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => { if (!through) setClosed(null); else Promise.resolve(result.closeBooks(through)).then(setClosed); }} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; if (n[key] && n[key].photoKey) { const [c, r] = n[key].photoKey.split('|'); AttachStore.remove(c, r); } delete n[key]; return n; })} />`
+          ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => { if (!through) setClosed(null); else Promise.resolve(result.closeBooks(through)).then(setClosed); }} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; if (n[key] && n[key].photoKey) { const [c, r] = n[key].photoKey.split('|'); AttachStore.remove(c, r); } delete n[key]; return n; })} onReadAnswer=${(key, read) => setAnswers((prev) => (prev[key] ? { ...prev, [key]: { ...prev[key], read } } : prev))} />`
             : tab === 'close' ? html`<${CloseTab} result=${result} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${setTab} />`
             : tab === 'landscape' ? html`<${LandscapeTab} result=${result} inputs=${cashInputs} setInputs=${setCashInputs} />`
             : tab === 'fraud' ? html`<${FraudTab} result=${result} onAdd=${source.kind === 'upload' ? () => document.getElementById('csv-add').click() : null} />`
@@ -474,6 +488,7 @@
             : tab === 'trends' ? html`<${TrendsTab} trend=${result.trend} />`
             : tab === 'budget' ? html`<${BudgetTab} bva=${result.budget} uploaded=${uploadedBudget} prefs=${budgetPrefs} setPrefs=${setBudgetPrefs} />`
             : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
+            : tab === 'cards' ? html`<${CardsTab} result=${result} statements=${(source.statements || []).map((f) => f.parsed)} debt=${cardDebt} setDebt=${setCardDebt} canSave=${!!clientId} onAdd=${source.kind === 'upload' ? () => document.getElementById('csv-add').click() : null} />`
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
             : tab === 'assets' ? html`<${AssetsTab} result=${result} assets=${assets} setAssets=${setAssets} canSave=${!!clientId} />`
             : html`<${AdvisoryTab} result=${result} loanRequest=${loanRequest} setLoanRequest=${setLoanRequest} onPackage=${() => setLenderOpen(true)} canSave=${!!clientId} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
