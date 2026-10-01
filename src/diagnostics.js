@@ -15,7 +15,11 @@
   const Diagnostics = {
     recent,
     note(kind, message, at) {
-      recent.push({ time: new Date().toISOString(), kind, message: trim(message, 300), at: at || '' });
+      // The same error again in a row (one per script when a library fails) counts up instead of
+      // pushing the first, telling one out of the list.
+      const last = recent[recent.length - 1], msg = trim(message, 300);
+      if (last && last.kind === kind && last.message === msg && last.at === (at || '')) { last.count = (last.count || 1) + 1; return; }
+      recent.push({ time: new Date().toISOString(), kind, message: msg, at: at || '' });
       if (recent.length > MAX) recent.shift();
     },
   };
@@ -35,7 +39,7 @@
     if (st) lines.push(`Storage: ${st.where}${store.count ? `, ${store.count()} saved client(s)` : ''}${st.usage != null ? `, ${Math.round(st.usage / 1024)} KB used` : ''}${st.persisted ? ', persistent' : ''}${st.error ? `, NOT SAVING: ${st.error}` : ''}${st.fallbackReason ? ` (database: ${st.fallbackReason})` : ''}`);
     for (const [k, val] of Object.entries(extra || {})) if (val) lines.push(`${k}: ${val}`);
     lines.push('', recent.length ? 'Recent errors:' : 'Recent errors: none');
-    for (const r of recent.slice(-10)) lines.push(`- ${r.time.slice(11, 19)} ${r.kind}: ${r.message}${r.at ? ` (${r.at})` : ''}`);
+    for (const r of recent.slice(-10)) lines.push(`- ${r.time.slice(11, 19)} ${r.kind}: ${r.message}${r.at ? ` (${r.at})` : ''}${r.count ? ` (×${r.count})` : ''}`);
     return lines.join('\n');
   }
   // Subject, body and a mailto: link. Email links get cut off past about 2,000 characters, so

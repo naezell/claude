@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const E = require('../src/engine.js');
-const { riverbend, cafe, greenway, greenwayContacts, transactionDetail } = require('../scripts/make-test-clients.js');
+const { riverbend, cafe, greenway, greenwayContacts, greenwayVoidedDeleted, greenwayEmployees, transactionDetail } = require('../scripts/make-test-clients.js');
 
 const dir = path.join(__dirname, '..', 'sample-data', 'test-clients');
 const read = (f) => fs.readFileSync(path.join(dir, f), 'utf8');
@@ -26,6 +26,8 @@ test('saved test-client files match the generator', () => {
   const gw = greenway();
   assert.equal(read('greenway-transaction-detail.csv'), transactionDetail(gw.b, gw.openings, 'January 2024 - August 2026', true));
   assert.equal(read('greenway-customer-contact-list.csv'), greenwayContacts(gw.b));
+  assert.equal(read('greenway-voided-deleted.csv'), greenwayVoidedDeleted(gw.plants));
+  assert.equal(read('greenway-employee-details.csv'), greenwayEmployees());
 });
 
 test('Riverbend Plumbing: contractor problems are all found', () => {
@@ -138,6 +140,50 @@ test('Greenway Landscape: the landscaping checks find what was planted', () => {
   assert.equal(cl.items.find((i) => i.id === 'contractbilling').auto.status, 'open');
   assert.ok(!cl.items.some((i) => i.id === 'snowbilled'), 'no snow step in August');
   assert.deepEqual(E.clientSummary(r, {}, []).landscape, { missed: 2, stale: 4 });
+});
+
+test('Greenway Landscape: the Fraud risk checks find one planted case each', () => {
+  const opts = {
+    chart: E.parseChartOfAccounts(read('greenway-chart-of-accounts.csv')), pnl: E.parseProfitAndLoss(read('greenway-profit-and-loss.csv')),
+    customers: E.parseCustomerList(read('greenway-customer-contact-list.csv')),
+  };
+  const txns = E.parseTransactions(read('greenway-transaction-detail.csv'));
+  // Both extra reports are recognized when uploaded.
+  assert.equal(E.readExport(read('greenway-voided-deleted.csv')).kind, 'voided');
+  assert.equal(E.readExport(read('greenway-employee-details.csv')).kind, 'employees');
+  const before = E.analyze(txns, opts).fraud;
+  const status = (F) => Object.fromEntries(F.checks.map((c) => [c.id, c.status]));
+  assert.equal(status(before).deleted, 'needs');
+  assert.equal(status(before).sharedAccounts, 'needs');
+  const F = E.analyze(txns, { ...opts, voided: E.parseVoidedDeleted(read('greenway-voided-deleted.csv')), employees: E.parseEmployeeList(read('greenway-employee-details.csv')) }).fraud;
+  const by = Object.fromEntries(F.checks.map((c) => [c.id, c]));
+  const found = F.checks.filter((c) => c.status === 'found').map((c) => c.id).sort();
+  assert.deepEqual(found, ['bigFuel', 'checkGaps', 'deleted', 'dormant', 'employeePayments', 'ghosts', 'invoiceGaps', 'jobCosts', 'justUnder', 'lookalikes', 'manualPayroll', 'materialsNoJob', 'offDays', 'refunds', 'roundDollar', 'sharedAccounts', 'vendorSpikes', 'voids'].sort());
+  assert.equal(by.benford.status, 'clean');
+  assert.equal(by.undeposited.status, 'clean');
+  assert.equal(F.needs, 0);
+  assert.equal(F.level, 'high');
+  // What each one found.
+  assert.equal(by.invoiceGaps.items[0].range, '#5532 to #5533');
+  assert.match(by.invoiceGaps.items[0].deleted, /Deleted 06\/18\/2026 by Jenna/);
+  assert.deepEqual(by.dormant.items.map((d) => d.name), ['Kingsley Residence']);
+  assert.match(by.dormant.items[0].street, /Oak Ridge Dr/);
+  assert.deepEqual(by.jobCosts.items.map((j) => j.job), ['Castle Rock Winery › Tasting room patio']);
+  assert.deepEqual([...new Set(by.vendorSpikes.items.map((s) => s.vendor))], ['Prairie Stone & Mulch']);
+  assert.deepEqual(by.materialsNoJob.items.map((x) => x.cost), [2860]);
+  assert.deepEqual(by.lookalikes.items.map((p) => [p.a, p.b].sort().join(' / ')), ['Site One Landscape Supply / SiteOne Landscape Supply']);
+  assert.deepEqual(by.ghosts.items.map((g) => g.vendor), ['DR Landscape Services']);
+  assert.deepEqual([...new Set(by.justUnder.items.map((u) => u.vendor))], ['DR Landscape Services']);
+  assert.deepEqual(by.offDays.items.map((x) => x.day).sort(), ['Independence Day', 'Memorial Day', 'Sunday', 'Sunday']);
+  assert.deepEqual(by.roundDollar.items.map((x) => x.vendor), ["Casey's"]);
+  assert.deepEqual(by.bigFuel.items.map((x) => x.amount).sort((a, b) => a - b), [198.75, 212.4, 236.1]);
+  assert.deepEqual(by.manualPayroll.items.map((x) => x.amount).sort((a, b) => a - b), [1240, 1500]);
+  assert.deepEqual(by.employeePayments.items.map((x) => [x.name, x.count, x.total]), [['Dan Ortiz', 4, 600]]);
+  assert.deepEqual(by.sharedAccounts.items.map((x) => x.employees), ['Dan Ortiz, Mike Dawson']);
+  assert.deepEqual(by.refunds.items.map((x) => [x.name, x.amount]), [['Bauer Residence', 1850]]);
+  assert.equal(by.deleted.items.length, 4);
+  // The other test clients aren't landscapers: no fraud tab, so no checks run.
+  assert.equal(load('riverbend').fraud, undefined);
 });
 
 test('free health check: how much was found, never which customers, vendors or transactions', () => {

@@ -8,6 +8,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { usHoliday } = require('../src/engine.js');
 
 const OUT = path.join(__dirname, '..', 'sample-data', 'test-clients');
 
@@ -549,7 +550,20 @@ function greenway() {
     'Office Supplies': 'expense', 'Meals': 'expense', 'Bank Fees': 'expense', 'Uncategorized Expense': 'expense',
   };
   const b = book('Greenway Landscape Co.', A);
-  const P = (date, type, num, name, customer, memo, dr, cr, amount, cls) => b.post(date, type, num, name, customer, memo, dr, cr, amount, cls ? { cls } : undefined);
+  const post = (date, type, num, name, customer, memo, dr, cr, amount, cls) => b.post(date, type, num, name, customer, memo, dr, cr, amount, cls ? { cls } : undefined);
+  // Crews don't buy fuel or hardware on Sundays and holidays, so routine purchases that would
+  // land on one move to the next working day (the fraud plants below use post() directly).
+  const SHOP = /QuikTrip|Casey|Shell|Home Depot|Ace Hardware|Lowe|Menards|WEX|SiteOne|Midwest Turf|Stihl|Boss Snowplow/;
+  const offDay = (d) => new Date(`${d}T00:00:00Z`).getUTCDay() === 0 || !!usHoliday(d);
+  const P = (date, type, num, name, customer, memo, dr, cr, amount, cls) => {
+    if (type === 'Expense' && SHOP.test(name)) {
+      let d = date;
+      while (offDay(d)) d = addDays(d, 1);
+      if (d.slice(0, 7) !== date.slice(0, 7)) { d = date; while (offDay(d)) d = addDays(d, -1); }
+      date = d;
+    }
+    post(date, type, num, name, customer, memo, dr, cr, amount, cls);
+  };
   const BANK = 'Operating Checking', CARD = 'Chase Ink (4410)', AR = 'Accounts Receivable (A/R)', AP = 'Accounts Payable (A/P)', UF = 'Undeposited Funds', LOC = 'Line of Credit - First State Bank';
   const TAX = 0.0625; // on materials in installs
   let inv = 5101, chk = 3301;
@@ -579,10 +593,15 @@ function greenway() {
   ];
   const frozen = new Set(['Maple Ridge HOA', 'Dr. Patel Dental', 'Riverside Church', 'Hartman Residence']);
   const missed = new Set(['2026-08|Lakeview Office Park', '2026-07|Sunset Villas HOA']);
+  const skipped = []; // invoice numbers deleted in June 2026 (fraud plant)
   for (const mo of M) {
     for (const [cust, base, yearRound] of contracts) {
       if (!yearRound && !inSeason(mo.m)) continue;
       if (missed.has(`${mo.y}-${pad2(mo.m)}|${cust}`)) continue;
+      // Kingsley Residence stops being billed after May 2026 (fraud plant: crews may still go).
+      // R() stands in for the invoice's payment date so every later random draw stays the same.
+      if (cust === 'Kingsley Residence' && mo.y === 2026 && mo.m >= 6) { R(); continue; }
+      if (cust === 'Riverside Church' && mo.y === 2026 && mo.m === 6) { skipped.push(String(inv), String(inv + 1)); inv += 2; }
       const rise = frozen.has(cust) ? 1 : mo.y === 2024 ? 1 : mo.y === 2025 ? 1.04 : 1.04 * 1.05;
       const amt = r2(base * rise);
       invoice(mo.d(1), cust, '', `Grounds maintenance - ${new Date(Date.UTC(mo.y, mo.m - 1, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })}`, 'Maintenance Contracts', 'Maintenance', amt, cust === 'Brookfield Apartments' ? 55 : 24);
@@ -749,6 +768,47 @@ function greenway() {
   P('2025-06-18', 'Expense', '', 'SiteOne Landscape Supply', '', 'Restocking fee on returned valves', 'Irrigation Parts', CARD, 84.5);
   P('2026-05-14', 'Expense', '', 'SiteOne Landscape Supply', '', 'Restocking fee on returned sprinkler heads', 'Irrigation Parts', CARD, 112.75);
 
+  // Fraud plants, one or more for each check on the Fraud risk tab.
+  // A mulch yard paid a few hundred a month, then about ten times that in July and August.
+  for (const mo of M) {
+    const key = `${mo.y}-${pad2(mo.m)}`;
+    if (key > '2026-06') continue;
+    post(mo.d(20), 'Expense', '', 'Prairie Stone & Mulch', '', 'Mulch and topsoil', 'Materials - Plants & Mulch', CARD, 300 + ((mo.k * 53) % 200) + 0.35, 'Maintenance');
+  }
+  post('2026-07-20', 'Expense', '', 'Prairie Stone & Mulch', '', 'Mulch and topsoil', 'Materials - Plants & Mulch', CARD, 4812.6, 'Maintenance');
+  post('2026-08-20', 'Expense', '', 'Prairie Stone & Mulch', '', 'Mulch and topsoil', 'Materials - Plants & Mulch', CARD, 5236.45, 'Maintenance');
+  // Fuel and tools bought on a Sunday or a holiday.
+  post('2026-05-25', 'Expense', '', 'Home Depot', '', 'Tools', 'Small Tools', CARD, 389.4);
+  post('2026-06-14', 'Expense', '', 'Shell', '', 'Gas', 'Fuel', CARD, 92.17);
+  post('2026-07-04', 'Expense', '', "Lowe's", '', 'Supplies', 'Small Tools', CARD, 268.95);
+  post('2026-08-16', 'Expense', '', 'QuikTrip', '', 'Gas', 'Fuel', CARD, 88.46);
+  // Round-dollar fill-ups at Casey's, and fill-ups bigger than a truck tank at Shell.
+  for (const [d, amt] of [['2026-04-07', 100], ['2026-05-12', 80], ['2026-06-09', 120], ['2026-07-15', 100]]) post(d, 'Expense', '', "Casey's", '', 'Gas', 'Fuel', CARD, amt);
+  for (const [d, amt] of [['2026-06-03', 212.4], ['2026-07-08', 236.1], ['2026-08-12', 198.75]]) post(d, 'Expense', '', 'Shell', '', 'Gas', 'Fuel', CARD, amt);
+  // A voided invoice, a credit memo refunded by check, and a job where materials ran 2.2 times
+  // what it was billed.
+  const voidedNum = String(inv++);
+  post('2026-07-21', 'Invoice', voidedNum, 'Ellis Residence', 'Ellis Residence', 'Voided', AR, 'Enhancements', 0, 'Enhancements');
+  post('2026-07-14', 'Credit Memo', '', 'Bauer Residence', 'Bauer Residence', 'Credit - damaged pavers', 'Installation & Hardscape', AR, 1850, 'Install');
+  post('2026-07-16', 'Refund', '', 'Bauer Residence', 'Bauer Residence', 'Refund of credit memo', AR, BANK, 1850);
+  const patio = 'Castle Rock Winery:Tasting room patio';
+  invoice('2026-06-08', 'Castle Rock Winery', patio, 'Tasting room patio - deposit', 'Installation & Hardscape', 'Install', 6000, 5);
+  post('2026-06-10', 'Bill', 'RS-26069', 'Rock Solid Stone Supply', patio, 'Pavers, block and base - Tasting room patio', 'Materials - Hardscape', AP, 13240, 'Install');
+  post('2026-07-10', 'Bill Payment (Check)', String(chk++), 'Rock Solid Stone Supply', '', 'Pay RS-26069', AP, BANK, 13240);
+  // Pavers from the usual job supplier with no job on them.
+  post('2026-08-11', 'Expense', '', 'Rock Solid Stone Supply', '', 'Pavers and base', 'Materials - Hardscape', CARD, 2860, 'Install');
+  // Pay outside the regular payroll runs: a bonus by journal entry and a manual paycheck, plus
+  // "reimbursement" checks to the same crew leader.
+  post('2026-07-22', 'Journal Entry', 'ADJ-0722', 'Dan Ortiz', '', 'Bonus', 'Payroll Expenses:Wages', BANK, 1500, 'Maintenance');
+  post('2026-08-06', 'Payroll Check', '', 'Dan Ortiz', '', 'Manual paycheck', 'Payroll Expenses:Wages', BANK, 1240, 'Maintenance');
+  for (const d of ['2026-03-11', '2026-05-13', '2026-06-17', '2026-08-19']) post(d, 'Check', String(chk++), 'Dan Ortiz', '', 'Reimbursement', 'Small Tools', BANK, 150);
+  // A spoiled check that was never entered, then a new subcontractor paid only by check, each
+  // payment just under $2,500.
+  const spoiledCheck = String(chk++);
+  for (const [d, amt] of [['2026-03-25', 2450], ['2026-05-27', 2480], ['2026-07-29', 2460]]) post(d, 'Check', String(chk++), 'DR Landscape Services', '', 'Landscape labor', 'Subcontractors', BANK, amt, 'Install');
+  // A copycat of a regular vendor's name.
+  for (const [d, amt] of [['2026-04-15', 286.3], ['2026-06-10', 412.85], ['2026-08-05', 198.4]]) post(d, 'Expense', '', 'Site One Landscape Supply', '', 'Irrigation parts', 'Irrigation Parts', CARD, amt, 'Irrigation');
+
   // Ordinary bookkeeping slips.
   P('2026-06-09', 'Expense', '', '', '', 'POS DEBIT 0609 FARM & FLEET', 'Uncategorized Expense', CARD, 286.4);
   P('2026-07-21', 'Expense', '', 'WEX Fleet Card', '', 'Fuel - trucks and mowers', 'Fuel', CARD, 612.18);
@@ -756,7 +816,53 @@ function greenway() {
 
   payCard(b, CARD, BANK, 'Chase', M);
   const openings = { 'Operating Checking': 45000, 'John Deere Financial': 68000, 'Ally Truck Loan': 41000, 'Equipment': 142000, 'Accumulated Depreciation': -48000 };
-  return { b, openings };
+  return { b, openings, plants: { skipped, voidedNum, spoiledCheck } };
+}
+
+// QuickBooks Desktop's Voided/Deleted Transactions Summary for Greenway: the two invoice numbers
+// missing from the sequence, the voided invoice, a deleted customer payment, and two harmless
+// entries (a deleted duplicate expense, the spoiled check).
+function greenwayVoidedDeleted(plants) {
+  const rows = [
+    [plants.skipped[0], 'Deleted Invoice', '06/18/2026 4:12:09 PM', 'Jenna (office)', '06/01/2026', 'Hale Residence', 'Spring clean-up', 640],
+    [plants.skipped[1], 'Deleted Invoice', '06/18/2026 4:13:40 PM', 'Jenna (office)', '06/01/2026', 'Irwin Residence', 'Mulch installation', 410],
+    [plants.voidedNum, 'Voided Invoice', '07/23/2026 9:02:51 AM', 'Jenna (office)', '07/21/2026', 'Ellis Residence', 'Fall clean-up', 585],
+    ['', 'Deleted Payment', '03/09/2026 5:47:22 PM', 'Jenna (office)', '03/06/2026', 'Walnut Creek Condos', 'Payment received', 1840],
+    ['', 'Deleted Expense', '05/02/2026 10:15:03 AM', 'Tom Greenway', '04/30/2026', 'Home Depot', 'Duplicate entry', 54.1],
+    [plants.spoiledCheck, 'Voided Check', '03/20/2026 11:30:44 AM', 'Tom Greenway', '03/20/2026', '', 'Spoiled - printer jam', 0],
+  ];
+  return [
+    'Greenway Landscape Co.',
+    'Voided/Deleted Transactions Summary',
+    'Entered/Last Modified January 2026 - August 2026',
+    '',
+    ',Num,Action,Entered/Last Modified,Last modified by,Date,Name,Memo,Amount',
+    ...rows.map((r) => ['', ...r.slice(0, 7), money(r[7])].map(q).join(',')),
+    '',
+  ].join('\n');
+}
+
+// A payroll employee list with direct deposit details (masked account numbers): two crew members
+// are paid into the same account.
+function greenwayEmployees() {
+  const people = [
+    ['Dan Ortiz', 'Active', '03/02/2020', '1418 S Grand Ave, Springfield, IL 62703', '071000013', '4417'],
+    ['Luis Herrera', 'Active', '04/05/2021', '922 N 5th St, Springfield, IL 62702', '071000013', '8820'],
+    ['Kyle Brandt', 'Active', '03/15/2022', '3305 Lindbergh Blvd, Springfield, IL 62704', '081904808', '2315'],
+    ['Mike Dawson', 'Active', '04/06/2026', '2210 E Cook St, Springfield, IL 62703', '071000013', '4417'],
+    ['Andre Wallace', 'Active', '03/18/2024', '1507 Wiggins Ave, Springfield, IL 62704', '071921891', '6603'],
+    ['Tyler Moss', 'Seasonal', '04/01/2025', '18 Lakeshore Dr, Chatham, IL 62629', '081904808', '9172'],
+    ['Jose Ramirez', 'Seasonal', '04/01/2025', '640 W Edwards St, Springfield, IL 62704', '071000013', '3058'],
+    ['Ben Carter', 'Seasonal', '04/07/2026', '2741 S 6th St, Springfield, IL 62703', '071921891', '1149'],
+  ];
+  return [
+    'Greenway Landscape Co.',
+    'Employee Details',
+    '',
+    'Employee,Status,Hire Date,Home Address,Pay Method,Bank Routing Number,Bank Account Number',
+    ...people.map(([n, st, hire, addr, rt, acct]) => [n, st, hire, addr, 'Direct deposit', rt, `XXXXXX${acct}`].map(q).join(',')),
+    '',
+  ].join('\n');
 }
 
 // ------------------------------------------------------------------ write everything
@@ -797,8 +903,10 @@ function main() {
   write('greenway-profit-and-loss.csv', profitAndLoss(gw.b, gwPeriod));
   write('greenway-expenses-with-attachments.csv', expenseList(gw.b, '2025-09-01', () => false));
   write('greenway-customer-contact-list.csv', greenwayContacts(gw.b));
+  write('greenway-voided-deleted.csv', greenwayVoidedDeleted(gw.plants));
+  write('greenway-employee-details.csv', greenwayEmployees());
   console.log(`Wrote test clients to ${path.relative(process.cwd(), OUT)}`);
 }
 
 if (require.main === module) main();
-module.exports = { riverbend, cafe, greenway, greenwayContacts, transactionDetail };
+module.exports = { riverbend, cafe, greenway, greenwayContacts, greenwayVoidedDeleted, greenwayEmployees, transactionDetail };

@@ -33,7 +33,7 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
 - Static site, **no build step**: `index.html` loads React 18 UMD, Recharts 3 and `htm` from
   `vendor/`, then plain scripts in order: `src/diagnostics.js` first, `config.js`,
   `version.js`, `firm.js`, `engine.js`, `sample.js`, `store.js`, `work.js`, `ui/shared.js`,
-  `ui/arrange.js`, the tab and drawer files (including `ui/landscape.js`) in `src/ui/`, then `app.js`. UI files share `window.LedgerUI`.
+  `ui/arrange.js`, the tab and drawer files (including `ui/landscape.js` and `ui/fraud.js`) in `src/ui/`, then `app.js`. UI files share `window.LedgerUI`.
   When adding a script, add its tag in the right place in `index.html`.
 - `src/engine.js`: all parsing and analysis, pure functions, runs in Node and the browser
   (and in `src/worker.js`). Put logic here and test it in `test/engine.test.js`.
@@ -69,6 +69,12 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   `parseCustomerList()` reads the Customer Contact List (`source.customers`, `opts.customers`) for
   `routeDensity()` (`result.landscape.routes`, streets by site address, shipping before billing); the
   growth benchmark is `landscapeGrowth` in `src/firm.js`. Test client: Greenway in `sample-data/test-clients/`.
+- Fraud risk (landscapers): `fraudChecks()` in the engine (`result.fraud`: `checks` with `id`, `group`
+  revenue/purchasing/cards/payroll, `severity`, `status` found/clean/needs/na, `columns`, `items`,
+  optional `chart`; plus `score`, `level`, `needs`). Two extra exports feed it: `parseVoidedDeleted()`
+  (Audit Log / Voided-Deleted report, `source.voided`, `opts.voided`) and `parseEmployeeList()`
+  (direct deposit, last four digits only, `source.employees`, `opts.employees`). `src/ui/fraud.js` is
+  the tab, the second entry in `INDUSTRY_TABS.landscaping`. Greenway has one planted case per check.
 - Fixed assets: `assetSchedule()`, `depreciationEntry()`, `parseAssetList()` and `macrsRates()`
   (IRS Pub. 946 tables, mid-quarter rule, bonus by date, Section 179) in the engine;
   `fixedAssetFacts()` gives `result.fixedAssets` (purchases found, depreciation posted by year,

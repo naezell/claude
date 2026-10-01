@@ -522,6 +522,23 @@
   .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .backup-status { margin: 8px 0 0 !important; min-height: 1.2em; font-size: 12.5px; }
 
+  /* Fraud risk tab */
+  .fraud-checks { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 0; }
+  .fraud-check { padding: 12px 0; border-top: 1px solid var(--hair); min-width: 0; }
+  .fraud-check-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+  .fraud-check-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; }
+  .fraud-check-status { display: flex; align-items: center; gap: 10px; }
+  .fraud-amount { font-weight: 600; font-size: 14px; }
+  .sev { font-size: 12px; color: var(--muted); }
+  .sev-high { color: var(--critical-ink); }
+  .fraud-summary { margin: 6px 0 0; color: var(--ink-2); font-size: 14px; line-height: 1.5; max-width: 95ch; }
+  .fraud-check.clean .fraud-summary, .fraud-check.na .fraud-summary { color: var(--muted); }
+  .fraud-check .btn.small { margin-top: 8px; padding: 4px 12px; font-size: 13px; }
+  .fraud-details { margin-top: 8px; min-width: 0; }
+  .fraud-details summary { cursor: pointer; color: var(--gold); font-size: 13.5px; font-weight: 500; }
+  .fraud-details .table-wrap { margin-top: 8px; }
+  .fraud-chart { margin-top: 10px; }
+
   /* Getting-started guide */
   .help-nav { padding: 12px 18px; border-bottom: 1px solid var(--hair); }
   .help { padding: 4px 18px 28px; }
@@ -572,6 +589,7 @@
 <script src="src/ui/benchmarks.js"></script>
 <script src="src/ui/advisory.js"></script>
 <script src="src/ui/landscape.js"></script>
+<script src="src/ui/fraud.js"></script>
 <script src="src/ui/assets.js"></script>
 <script src="src/ui/close.js"></script>
 <script src="src/ui/drawers.js"></script>
