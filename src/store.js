@@ -34,6 +34,12 @@
     return profile;
   }
 
+  // Two saved profiles hold the same things (the save time aside).
+  const same = (a, b) => {
+    const strip = (p) => { const { updatedAt, ...rest } = p || {}; return JSON.stringify(rest); }; // eslint-disable-line no-unused-vars
+    return strip(a) === strip(b);
+  };
+
   const req = (r) => new Promise((resolve, reject) => { r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
   const done = (tx) => new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
@@ -106,27 +112,51 @@
     count() { return Object.keys(cache).length; },
     put(id, profile) {
       if (!id) return;
+      // Saving what is already saved changes nothing. Without this, a client reloaded after a
+      // sync would be saved again as "newer" and bounce between devices.
+      if (cache[id] && same(cache[id], profile)) return;
       cache[id] = { ...profile, updatedAt: new Date().toISOString() };
+      this.forgetRemoval(id);
       this.write({ [id]: cache[id] });
-      this.changed();
+      this.changed({ ids: [id] });
     },
     remove(id) {
       if (!id || !(id in cache)) return;
       delete cache[id];
+      this.markRemoved(id, new Date().toISOString());
       this.write({ [id]: null });
       FileStore.remove(id);
       AttachStore.removeClient(id);
-      this.changed();
+      this.changed({ ids: [id] });
     },
-    // Import keeps whichever copy of each client was updated more recently.
-    merge(incoming) {
+    // Clients forgotten on purpose, { id: when }, so syncing doesn't bring them back from
+    // another device. Kept for a year.
+    removed() {
+      let r = {};
+      try { r = JSON.parse(safeStore.get('ll.removed') || '{}') || {}; } catch (e) { r = {}; }
+      const cutoff = new Date(Date.now() - 365 * 864e5).toISOString();
+      for (const [id, at] of Object.entries(r)) if (String(at) < cutoff) delete r[id];
+      return r;
+    },
+    markRemoved(id, at) { const r = this.removed(); if (!r[id] || r[id] < at) { r[id] = at; safeStore.set('ll.removed', JSON.stringify(r)); } },
+    forgetRemoval(id) { const r = this.removed(); if (r[id]) { delete r[id]; safeStore.set('ll.removed', JSON.stringify(r)); } },
+    // Import keeps whichever copy of each client was updated more recently. With `removed`
+    // (from a sync), clients forgotten on the other device after their last change go here too.
+    merge(incoming, removed, info) {
       const changes = {};
+      const gone = { ...this.removed() };
+      for (const [id, at] of Object.entries(removed || {})) {
+        if (typeof at !== 'string') continue;
+        if (!gone[id] || gone[id] < at) { gone[id] = at; this.markRemoved(id, at); }
+        if (cache[id] && String(cache[id].updatedAt || '') <= at) { delete cache[id]; changes[id] = null; FileStore.remove(id); AttachStore.removeClient(id); }
+      }
       for (const [id, p] of Object.entries(incoming || {})) {
         if (!p || typeof p !== 'object') continue;
-        if (!cache[id] || String(p.updatedAt || '') > String(cache[id].updatedAt || '')) { cache[id] = p; changes[id] = p; }
+        if (removed && gone[id] && String(p.updatedAt || '') <= gone[id]) continue;
+        if (!cache[id] || String(p.updatedAt || '') > String(cache[id].updatedAt || '')) { cache[id] = p; changes[id] = p; if (gone[id]) this.forgetRemoval(id); }
       }
       const n = Object.keys(changes).length;
-      if (n) { this.write(changes); this.changed(); }
+      if (n) { this.write(changes); this.changed({ ...(info || {}), ids: Object.keys(changes) }); }
       return n;
     },
 
@@ -211,6 +241,19 @@
         return done(tx).then(() => { fileIndex = next; this.changed(); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
       } catch (e) { ClientStore.setStatus({ error: describe(e) }); return Promise.resolve(false); }
     },
+    index() { return { ...fileIndex }; },
+    // Files that came from another device: kept with that device's save time, so the two
+    // agree on which copy is newer.
+    putSynced(id, files, savedAt) {
+      if (!id || !this.available() || !this.enabled() || !files || !files.length) return Promise.resolve(false);
+      const next = { ...fileIndex, [id]: { names: files.map((f) => f.name), savedAt, bytes: files.reduce((n, f) => n + f.text.length, 0) } };
+      try {
+        const tx = db.transaction(['files', 'meta'], 'readwrite');
+        tx.objectStore('files').put({ files }, id);
+        tx.objectStore('meta').put(next, 'fileIndex');
+        return done(tx).then(() => { fileIndex = next; this.changed(); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
+      } catch (e) { ClientStore.setStatus({ error: describe(e) }); return Promise.resolve(false); }
+    },
     // Resolves with [{ name, text }], or null when nothing is saved.
     get(id) {
       if (!id || !db || !fileIndex[id]) return Promise.resolve(null);
@@ -241,14 +284,42 @@
   };
 
   // Photos clients attach to their answers in the portal, kept per client and question:
-  // key "<client id>|<question ref>", value [{ name, data (a JPEG data URL) }]. Not in backups.
+  // key "<client id>|<question ref>", value [{ name, data (a JPEG data URL) }]. Not in backup
+  // files, but synced to Google Drive with the client's exports.
   const AttachStore = {
+    // When each client's photos last changed, { id: when }, so a sync knows which copy is newer.
+    stamps() { try { return JSON.parse(safeStore.get('ll.attachStamp') || '{}') || {}; } catch (e) { return {}; } },
+    stamp(clientId, at) { const s = this.stamps(); if (at) s[clientId] = at; else delete s[clientId]; safeStore.set('ll.attachStamp', JSON.stringify(s)); },
     put(clientId, ref, photos) {
       if (!db || !clientId || !photos || !photos.length) return Promise.resolve(false);
       try {
         const tx = db.transaction('attachments', 'readwrite');
         tx.objectStore('attachments').put(photos, `${clientId}|${ref}`);
-        return done(tx).then(() => { ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
+        return done(tx).then(() => { this.stamp(clientId, new Date().toISOString()); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
+      } catch (e) { return Promise.resolve(false); }
+    },
+    // Every photo for one client, { ref: photos }.
+    forClient(clientId) {
+      if (!db || !clientId) return Promise.resolve({});
+      try {
+        const st = db.transaction('attachments', 'readonly').objectStore('attachments');
+        const range = IDBKeyRange.bound(`${clientId}|`, `${clientId}|\uffff`);
+        return Promise.all([req(st.getAllKeys(range)), req(st.getAll(range))]).then(([keys, values]) => {
+          const out = {};
+          keys.forEach((k, i) => { out[String(k).slice(clientId.length + 1)] = values[i]; });
+          return out;
+        }, () => ({}));
+      } catch (e) { return Promise.resolve({}); }
+    },
+    // Photos that came from another device, replacing this client's.
+    putClient(clientId, photos, at) {
+      if (!db || !clientId) return Promise.resolve(false);
+      try {
+        const tx = db.transaction('attachments', 'readwrite');
+        const st = tx.objectStore('attachments');
+        st.delete(IDBKeyRange.bound(`${clientId}|`, `${clientId}|\uffff`));
+        for (const [ref, list] of Object.entries(photos || {})) if (Array.isArray(list) && list.length) st.put(list, `${clientId}|${ref}`);
+        return done(tx).then(() => { this.stamp(clientId, at); return true; }, () => false);
       } catch (e) { return Promise.resolve(false); }
     },
     get(clientId, ref) {
@@ -257,7 +328,7 @@
     },
     remove(clientId, ref) {
       if (!db) return Promise.resolve(false);
-      try { const tx = db.transaction('attachments', 'readwrite'); tx.objectStore('attachments').delete(`${clientId}|${ref}`); return done(tx).then(() => true, () => false); } catch (e) { return Promise.resolve(false); }
+      try { const tx = db.transaction('attachments', 'readwrite'); tx.objectStore('attachments').delete(`${clientId}|${ref}`); return done(tx).then(() => { this.stamp(clientId, new Date().toISOString()); return true; }, () => false); } catch (e) { return Promise.resolve(false); }
     },
     removeClient(clientId) {
       if (!db || !clientId) return Promise.resolve(false);
@@ -265,7 +336,7 @@
         const tx = db.transaction('attachments', 'readwrite');
         const range = IDBKeyRange.bound(`${clientId}|`, `${clientId}|\uffff`);
         tx.objectStore('attachments').delete(range);
-        return done(tx).then(() => true, () => false);
+        return done(tx).then(() => { this.stamp(clientId, null); return true; }, () => false);
       } catch (e) { return Promise.resolve(false); }
     },
   };

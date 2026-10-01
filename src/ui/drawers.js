@@ -144,22 +144,25 @@
         <p>Meanwhile, use <strong>Save backup file</strong> below. If Google Drive for desktop is installed, save the file into your Google Drive folder and it syncs like any other file; restore by picking it from there.</p>
       </div>`;
     }
-    const restore = async () => {
-      const n = await Drive.restore();
-      if (n != null) { setNote(`Restored from Google Drive: ${n} client${n === 1 ? '' : 's'} updated (newer copies kept).`); onRestored(); }
+    const syncNow = async () => {
+      setNote('');
+      const r = await Drive.sync();
+      if (!r) return;
+      const brought = r.pulled + r.filesDown;
+      setNote(brought ? `Synced: ${brought} update${brought === 1 ? '' : 's'} brought in from your other devices.` : 'Synced: everything is up to date.');
+      if (brought) onRestored();
     };
     return html`<div class="backup-block">
-      <h3>${Icon.cloud}Google Drive ${connected ? html`<span class="pill good"><span class="dot"></span>Connected</span>` : ''}</h3>
+      <h3>${Icon.cloud}Google Drive sync ${connected ? html`<span class="pill good"><span class="dot"></span>Connected</span>` : ''}</h3>
       ${connected
-        ? html`<p>Saved clients are kept in <strong>Ledger Lens backup.json</strong> in your Google Drive${st.lastSaved ? `, last saved ${fmtWhen(st.lastSaved)}` : ''}. Google Drive keeps earlier versions of the file too.</p>
+        ? html`<p>Saved clients, their QuickBooks files and receipt photos stay in sync through your Google Drive${st.lastSaved ? `, last synced ${fmtWhen(st.lastSaved)}` : ''}. Connect on each computer and phone you use; the newest copy of each client wins. Google Drive keeps earlier versions too.</p>
           <div class="backup-actions">
-            <button class="btn primary" disabled=${!!st.busy} onClick=${() => { setNote(''); Drive.save(); }}>Save to Drive now</button>
-            <button class="btn" disabled=${!!st.busy} onClick=${restore}>Restore from Drive</button>
+            <button class="btn primary" disabled=${!!st.busy} onClick=${syncNow}>Sync now</button>
             <button class="btn" disabled=${!!st.busy} onClick=${() => Drive.disconnect()}>Disconnect</button>
           </div>
-          <label class="check" for="drive-auto" style=${{ paddingTop: '8px' }}><input id="drive-auto" type="checkbox" checked=${st.auto} onChange=${(e) => Drive.setAuto(e.target.checked)} />Save to Drive automatically after each change</label>`
-        : html`<p>${st.account ? 'Connect again to save or restore. Google asks every time the page is opened, for safety.' : 'Keep saved clients in your own Google Drive, so they survive a cleared browser and follow you to another computer. Ledger Lens can only see the backup file it creates, nothing else in your Drive.'}</p>
-          <div class="backup-actions"><button class="btn primary" disabled=${!!st.busy} onClick=${() => Drive.connect()}>${Icon.cloud}Connect Google Drive</button></div>`}
+          <label class="check" for="drive-auto" style=${{ paddingTop: '8px' }}><input id="drive-auto" type="checkbox" checked=${st.auto} onChange=${(e) => Drive.setAuto(e.target.checked)} />Sync automatically: after each change, every few minutes, and when you come back to the page</label>`
+        : html`<p>${st.account ? 'Connect again to sync. Google asks each time the page is opened, for safety; one tap and the app catches up.' : 'Keep your laptop and phone in step: connect Google Drive on each one, and saved clients, their QuickBooks files and receipt photos follow you. Ledger Lens can only see the files it creates in your Drive, nothing else.'}</p>
+          <div class="backup-actions"><button class="btn primary" disabled=${!!st.busy} onClick=${() => Drive.connect().then((ok) => ok && onRestored())}>${Icon.cloud}Connect Google Drive</button></div>`}
       <p class="backup-status" role="status">${st.busy || st.error || note}</p>
     </div>`;
   }
@@ -238,7 +241,7 @@
           </section>`}
           <div class="panel-body"><p class="chart-note" style=${{ marginTop: 0 }}>Every client whose export has been loaded, most urgent first. Figures are from the last time their export was analyzed; load a client's latest export to update them and work on the books. Settings and reviews are kept in this browser, so back them up.</p>
             <p class=${`storage-note ${ClientStore.status.error ? 'neg' : ''}`}>${storageNote(ClientStore.status)}</p>
-            ${FileStore.available() && html`<label class="check keep-files"><input type="checkbox" checked=${keepFiles} onChange=${(e) => { FileStore.setEnabled(e.target.checked); setFilesTick((n) => n + 1); }} /><span>Keep a copy of each client's latest files in this browser, so <strong>Open</strong> reloads them in one click. They stay on this computer and are not part of backups; turning this off deletes the copies.</span></label>`}</div>
+            ${FileStore.available() && html`<label class="check keep-files"><input type="checkbox" checked=${keepFiles} onChange=${(e) => { FileStore.setEnabled(e.target.checked); setFilesTick((n) => n + 1); }} /><span>Keep a copy of each client's latest files in this browser, so <strong>Open</strong> reloads them in one click. They aren't in backup files; with Google Drive sync connected they go to your Drive too, so Open works on your other devices. Turning this off deletes the copies here.</span></label>`}</div>
           ${list.length ? html`<div class="table-wrap"><table class="dash-table">
             <thead><tr><th>Client</th><th>Status</th><th>Month-end close</th><th>To review</th><th>Closed through</th><th class="num">Cash / lowest ahead</th><th class="num">Revenue / net, 12 mo</th><th></th></tr></thead>
             <tbody>${list.map(({ id, c, st }) => {

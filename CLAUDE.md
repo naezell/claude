@@ -42,6 +42,11 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   and adding a step to `upgrade()`. Adding an object store means raising `DB_VERSION`.
 - `src/work.js` / `src/worker.js`: file reading, and analysis of exports with 8,000+ rows, in a
   Web Worker, with the same work on the page as a fallback (always on `file://`).
+- Google Drive sync (`src/ui/drive.js`): `Drive.sync()` pulls `Ledger Lens backup.json`, merges it
+  (`Backup.restore(text, true)`: newest client wins, `ClientStore.removed()` tombstones carry
+  removals), writes back only when something differs, then syncs one `client-files` file per client
+  (exports + receipt photos, gzip+base64, appProperty `client` = hashed id). `ClientStore.put` skips
+  unchanged profiles so synced copies don't bounce between devices.
 - No client data leaves the browser unsealed. Only Google (sign-in, Drive backup) is contacted,
   plus the site's own portal endpoints.
 - Client portal: `src/ui/portal.js` (Mark's side), `portal.html` + `portal.js` (the client's

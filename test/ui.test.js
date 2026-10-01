@@ -191,7 +191,8 @@ test('branding: firm name and logo in the header and on the report', async (t) =
   await page.close();
 });
 
-// A stand-in for Google sign-in and the Drive API, holding files in memory.
+// A stand-in for Google sign-in and the Drive API, holding files in memory. Pages opened
+// with the same stand-in share one Drive, like Mark's laptop and phone.
 function fakeGoogle() {
   const files = new Map();
   const calls = [];
@@ -200,23 +201,35 @@ function fakeGoogle() {
     initTokenClient: (cfg) => ({ requestAccessToken: () => setTimeout(() => cfg.callback({ access_token: 'tok', expires_in: 3600 }), 10) }),
     revoke: (t, cb) => cb && cb(),
   } } };`;
+  const cors = { 'access-control-allow-origin': '*' };
+  // A multipart upload: the metadata part, then the content part (both JSON text here).
+  const parseMultipart = (text) => {
+    const parts = text.split(/--ll\w+/).filter((p) => p.includes('{'));
+    const meta = JSON.parse(parts[0].slice(parts[0].indexOf('{')));
+    const body = parts[1].slice(parts[1].indexOf('{')).trim();
+    return { meta, body };
+  };
   const serve = async (route, url) => {
     const req = route.request();
     if (url.startsWith('https://accounts.google.com/gsi/client')) { await route.fulfill({ body: gis, contentType: 'application/javascript' }); return true; }
     if (!url.startsWith('https://www.googleapis.com/')) return false;
+    if (req.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } }); return true; }
     const auth = req.headers().authorization;
     calls.push(`${req.method()} ${url.replace(/\?.*$/, '')}`);
     if (auth !== 'Bearer tok') { await route.fulfill({ status: 401, body: '{}' }); return true; }
-    const json = (obj) => route.fulfill({ body: JSON.stringify(obj), contentType: 'application/json', headers: { 'access-control-allow-origin': '*' } });
+    const json = (obj) => route.fulfill({ body: JSON.stringify(obj), contentType: 'application/json', headers: cors });
     const u = new URL(url);
-    if (req.method() === 'GET' && u.pathname === '/drive/v3/files') { await json({ files: [...files.entries()].map(([id, f]) => ({ id, name: f.name, modifiedTime: f.modified })) }); return true; }
-    const get = u.pathname.match(/^\/drive\/v3\/files\/(\w+)$/);
-    if (req.method() === 'GET' && get) { await route.fulfill({ body: files.get(get[1]).body, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' } }); return true; }
+    if (req.method() === 'GET' && u.pathname === '/drive/v3/files') {
+      const want = (/value='([^']+)'/.exec(u.searchParams.get('q') || '') || [])[1];
+      const hits = [...files.entries()].filter(([, f]) => !want || (f.meta.appProperties || {}).ledgerLens === want);
+      await json({ files: hits.map(([id, f]) => ({ id, name: f.name, modifiedTime: f.modified, appProperties: f.meta.appProperties })) });
+      return true;
+    }
+    const one = u.pathname.match(/^\/drive\/v3\/files\/(\w+)$/);
+    if (req.method() === 'GET' && one) { await route.fulfill({ body: files.get(one[1]).body, contentType: 'application/json', headers: cors }); return true; }
+    if (req.method() === 'DELETE' && one) { files.delete(one[1]); await route.fulfill({ status: 204, headers: cors }); return true; }
     if (req.method() === 'POST' && u.pathname === '/upload/drive/v3/files') {
-      const text = req.postData();
-      const parts = text.split(/--ll\w+/).filter((p) => p.includes('{'));
-      const meta = JSON.parse(parts[0].slice(parts[0].indexOf('{')));
-      const body = parts[1].slice(parts[1].indexOf('{')).trim();
+      const { meta, body } = parseMultipart(req.postData());
       const id = `f${++n}`;
       files.set(id, { name: meta.name, body, modified: new Date().toISOString(), meta });
       await json({ id, modifiedTime: files.get(id).modified });
@@ -225,51 +238,106 @@ function fakeGoogle() {
     const patch = u.pathname.match(/^\/upload\/drive\/v3\/files\/(\w+)$/);
     if (req.method() === 'PATCH' && patch) {
       const f = files.get(patch[1]);
-      f.body = req.postData(); f.modified = new Date().toISOString();
+      if (u.searchParams.get('uploadType') === 'multipart') {
+        const { meta, body } = parseMultipart(req.postData());
+        f.body = body; f.meta = { ...f.meta, ...meta };
+      } else f.body = req.postData();
+      f.modified = new Date().toISOString();
       await json({ id: patch[1], modifiedTime: f.modified });
       return true;
     }
-    if (req.method() === 'OPTIONS') { await route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } }); return true; }
     return false;
   };
-  return { files, calls, serve };
+  const backup = () => [...files.values()].find((f) => f.name === 'Ledger Lens backup.json');
+  const clientFiles = () => [...files.values()].filter((f) => (f.meta.appProperties || {}).ledgerLens === 'client-files');
+  return { files, calls, serve, backup, clientFiles };
 }
 
-test('Google Drive: connect, save, save automatically after a change, and restore', async (t) => {
+const until = async (page, check, what, ms = 20000) => {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await page.waitForTimeout(250);
+  }
+};
+
+test('Google Drive sync: laptop and phone share clients, their files, changes and removals', async (t) => {
   if (skip) return t.skip(skip);
   const g = fakeGoogle();
-  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com', googleOrigins: [] }; }), g.serve);
-  await page.click('button:has-text("Clients")');
-  await page.click('button:has-text("Connect Google Drive")');
-  await page.waitForSelector('button:has-text("Save to Drive now")');
-  await page.click('button:has-text("Save to Drive now")');
-  await page.waitForFunction(() => /last saved today/.test(document.querySelector('.drawer').innerText));
-  assert.equal(g.files.size, 1);
-  const [id, file] = [...g.files.entries()][0];
-  assert.equal(file.name, 'Ledger Lens backup.json');
-  assert.deepEqual(file.meta.appProperties, { ledgerLens: 'clients-backup' });
-  assert.equal(JSON.parse(file.body).format, 'ledger-lens-clients');
+  const setup = (p) => p.addInitScript(() => { window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com', googleOrigins: [] }; });
+  // The laptop connects, then works on a client: it syncs on its own a few seconds later.
+  const laptop = await openPage({}, setup, g.serve);
+  await laptop.page.click('button:has-text("Clients")');
+  await laptop.page.click('button:has-text("Connect Google Drive")');
+  await laptop.page.waitForSelector('button:has-text("Sync now"):enabled');
+  await until(laptop.page, () => g.backup(), 'the backup file');
+  assert.deepEqual(g.backup().meta.appProperties, { ledgerLens: 'clients-backup' });
+  assert.equal(JSON.parse(g.backup().body).format, 'ledger-lens-clients');
+  await laptop.page.click('.drawer-head button');
+  await laptop.page.setInputFiles('#csv-upload', SAMPLE);
+  await laptop.page.waitForSelector('button:has-text("Load sample")');
+  const panel = (page) => page.locator('section.panel', { has: page.locator('h2', { hasText: 'Uncategorized transactions' }) });
+  await panel(laptop.page).locator('select.review-select').first().selectOption('ok');
+  await until(laptop.page, () => Object.keys(JSON.parse(g.backup().body).clients).length === 1 && g.clientFiles().length === 1, 'the laptop to sync the client and its files');
+  const [clientId] = Object.keys(JSON.parse(g.backup().body).clients);
+  // The files are stored under a scrambled id, compressed, never under the client's name.
+  assert.doesNotMatch(g.clientFiles()[0].name, /harbor/i);
+  assert.equal(JSON.parse(g.clientFiles()[0].body).enc, 'gzip');
+  assert.equal(g.files.size, 2);
 
-  // A review mark on an uploaded client is saved to Drive a few seconds later.
-  await page.click('.drawer-head button');
-  await page.setInputFiles('#csv-upload', SAMPLE);
-  await page.waitForSelector('button:has-text("Load sample")');
-  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Uncategorized transactions' }) });
-  await panel.locator('select.review-select').first().selectOption('ok');
-  const deadline = Date.now() + 15000;
-  while (!Object.keys(JSON.parse(g.files.get(id).body).clients).length && Date.now() < deadline) await page.waitForTimeout(250);
-  const saved = JSON.parse(g.files.get(id).body).clients;
-  assert.equal(Object.keys(saved).length, 1, 'the uploaded client was saved automatically');
-  assert.ok(g.calls.some((c) => c.startsWith('PATCH')), 'the existing file is updated, not duplicated');
-  assert.equal(g.files.size, 1);
+  // The phone connects and gets the client, and can open it from the synced files.
+  const phone = await openPage({ viewport: { width: 400, height: 900 } }, setup, g.serve);
+  await phone.page.click('button:has-text("Clients")');
+  await phone.page.click('button:has-text("Connect Google Drive")');
+  await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
+  await phone.page.locator('.dash-row button:has-text("Open")').first().click();
+  await phone.page.waitForSelector('.source:has-text("harbor-pine")');
+  const reviews = (page) => page.evaluate((id) => Object.keys((window.LedgerStore.ClientStore.get(id) || {}).reviewed || {}).length, clientId);
+  assert.equal(await reviews(phone.page), 1, 'the review mark came across');
+  const flagged = (page) => page.locator('#tab-audit .count').innerText();
+  assert.equal(await flagged(phone.page), await flagged(laptop.page));
+  // A change on the phone goes back to Drive, and the laptop picks it up on its next sync.
+  await panel(phone.page).locator('select.review-select').first().selectOption('ok');
+  await until(phone.page, () => Object.keys(JSON.parse(g.backup().body).clients[clientId].reviewed).length === 2, 'the phone to sync its change');
+  await laptop.page.click('button:has-text("Clients")');
+  await laptop.page.click('button:has-text("Sync now")');
+  await laptop.page.waitForSelector('.backup-status:has-text("brought in")');
+  await laptop.page.click('.drawer-head button');
+  await laptop.page.waitForSelector('.banner:has-text("from your other device")');
+  assert.equal(await reviews(laptop.page), 2);
+  assert.equal(await flagged(laptop.page), await flagged(phone.page), 'the open client reloaded with the phone\'s change');
+  // Nothing changed since: another sync uploads nothing.
+  const writes = g.calls.filter((c) => !c.startsWith('GET')).length;
+  await laptop.page.click('button:has-text("Clients")');
+  await laptop.page.click('button:has-text("Sync now")');
+  await laptop.page.waitForSelector('.backup-status:has-text("up to date")');
+  assert.equal(g.calls.filter((c) => !c.startsWith('GET')).length, writes, 'an unchanged sync writes nothing');
 
-  // Restoring brings in a client that only exists in the Drive copy.
-  const data = JSON.parse(g.files.get(id).body);
-  data.clients['other co'] = { name: 'Other Co', accountClass: {}, reviewed: { a: { status: 'ok' } }, updatedAt: '2030-01-01T00:00:00.000Z' };
-  g.files.get(id).body = JSON.stringify(data);
-  await page.click('button:has-text("Clients")');
-  await page.click('button:has-text("Restore from Drive")');
-  await page.waitForSelector('.dash-row:has-text("Other Co")');
+  // Forgetting the client on the phone removes it from the laptop too, and its files from Drive.
+  await phone.page.locator('button', { hasText: 'Home' }).first().click();
+  await phone.page.click('button:has-text("Clients")');
+  await phone.page.locator('.dash-row button:has-text("Forget")').first().click();
+  await phone.page.locator('.confirm button:has-text("Forget")').click();
+  await until(phone.page, () => !Object.keys(JSON.parse(g.backup().body).clients).length && g.clientFiles().length === 0, 'the phone to sync the removal');
+  await laptop.page.click('button:has-text("Sync now")');
+  await laptop.page.waitForSelector('.dash-row', { state: 'detached' });
+  assert.deepEqual(laptop.errors, []);
+  assert.deepEqual(phone.errors, []);
+  await laptop.page.close();
+  await phone.page.close();
+});
+
+test('Google Drive sync paused: a device that synced before offers to reconnect', async (t) => {
+  if (skip) return t.skip(skip);
+  const g = fakeGoogle();
+  const { page, errors } = await openPage({}, (p) => p.addInitScript(() => {
+    window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com', googleOrigins: [] };
+    localStorage.setItem('ll.drive.used', 'yes');
+  }), g.serve);
+  await page.waitForSelector('.banner:has-text("Sync paused")');
+  await page.locator('.banner:has-text("Sync paused") button:has-text("Connect")').click();
+  await page.waitForSelector('.banner:has-text("Sync paused")', { state: 'detached' });
+  await until(page, () => g.backup(), 'the first sync');
   assert.deepEqual(errors, []);
   await page.close();
 });

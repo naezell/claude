@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab, Drive, useDrive } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -168,12 +168,26 @@
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
+    // A sync that brings in this client's work from another device loads it again, so the
+    // next save here builds on it instead of writing over it.
+    const [syncTick, setSyncTick] = useState(0);
+    const driveState = useDrive();
+    const [driveLater, setDriveLater] = useState(false);
+    const fromSyncRef = useRef(false);
     useEffect(() => {
+      const f = (info) => { if (info.synced && clientId && (info.ids || []).includes(clientId)) { fromSyncRef.current = true; setSyncTick((n) => n + 1); } };
+      ClientStore.listeners.add(f);
+      return () => ClientStore.listeners.delete(f);
+    }, [clientId]);
+    useEffect(() => {
+      const fromSync = fromSyncRef.current;
+      fromSyncRef.current = false;
       const saved = ClientStore.get(clientId);
       setAccountClass(saved ? saved.accountClass || {} : {});
       setReviewed(saved ? saved.reviewed || {} : {});
       setClosed(saved && saved.closed ? saved.closed : null);
-      loadedAtRef.current = clientId ? new Date().toISOString() : null;
+      // After a sync, keep the other device's copy as it is, so it isn't saved again as a change.
+      loadedAtRef.current = fromSync && saved ? saved.loadedAt || null : clientId ? new Date().toISOString() : null;
       setChecklist(saved && saved.checklist ? saved.checklist : {});
       setCustomSteps(saved && saved.customSteps ? saved.customSteps : []);
       setAnswers(saved && saved.answers ? saved.answers : {});
@@ -188,8 +202,8 @@
       setBudgetPrefs(saved && saved.budgetPrefs ? saved.budgetPrefs : { mode: 'auto', revenueGrowth: '10', costGrowth: '5' });
       setLoanInputs(saved && saved.loan ? saved.loan : { amount: '', rate: '10.5', years: '10', addBacks: '' });
       setTaxInputs(saved && saved.tax ? saved.tax : { entity: 'sole', rate: '', salary: '', paid: '' });
-      setRestored(saved && !emptyProfile(saved) ? { name: saved.name, updatedAt: saved.updatedAt, corrections: Object.keys(saved.accountClass || {}).length, reviews: Object.keys(saved.reviewed || {}).length } : null);
-    }, [source, clientId]);
+      setRestored(saved && !emptyProfile(saved) ? { name: saved.name, updatedAt: saved.updatedAt, corrections: Object.keys(saved.accountClass || {}).length, reviews: Object.keys(saved.reviewed || {}).length, synced: fromSync } : null);
+    }, [source, clientId, syncTick]);
     // A short summary of where this client stands, for the all-clients dashboard. Compared as
     // text so it only saves when something in it actually changed.
     const summaryJson = useMemo(() => (clientId && result ? JSON.stringify(E.clientSummary(result, checklist, customSteps)) : ''), [clientId, result, checklist, customSteps]);
@@ -434,7 +448,9 @@
         ${storage.error && html`<${Banner} level="high" label="Not saving">Your reviews and settings are not being saved in this browser: ${storage.error}. Download a backup file now so nothing is lost. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button></${Banner}>`}
         ${!storage.error && ClientStore.nearlyFull() && html`<${Banner} level="medium" label="Storage nearly full">This browser has almost used up the space it allows this site. Back up, then forget clients you no longer work with. <button class="linkish" onClick=${() => setClientsOpen(true)}>Open Clients</button></${Banner}>`}
         ${!welcome && backupDue && !backupSnoozed && html`<${Banner} level="medium" label="Back up">Your saved clients have not been backed up in over 30 days. They live only in this browser. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button> · <button class="linkish" onClick=${() => setBackupSnoozed(true)}>Later</button></${Banner}>`}
-        ${restored && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
+        ${driveState.account && driveState.auto && Drive.enabled() && !Drive.connected() && !driveLater && html`<${Banner} level="medium" label="Sync paused">Connect Google Drive to bring in work from your other devices and keep this one in sync. <button class="linkish" onClick=${() => Drive.connect()}>Connect</button> · <button class="linkish" onClick=${() => setDriveLater(true)}>Not now</button></${Banner}>`}
+        ${restored && restored.synced && html`<${Banner} level="good" label="Synced">Brought in the latest work on ${restored.name} from your other device. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
+        ${restored && !restored.synced && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
 
         ${home && html`<${HomePage} onOpen=${openClient} onUpload=${() => document.getElementById('csv-upload').click()} onSample=${loadSample} onHelp=${() => setHelpOpen(true)} onClients=${() => setClientsOpen(true)} />`}
         ${!home && html`<div class="tabs-row">

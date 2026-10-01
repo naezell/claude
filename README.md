@@ -77,7 +77,7 @@ A browser-based audit and profitability dashboard for bookkeeping practices. Dro
 
 **Getting started guide**: the **Help** button opens a step-by-step guide covering which QuickBooks reports to export (Online and Desktop), loading them, a monthly routine, sending reports and backups. First-time visitors see a welcome note pointing to it.
 
-**Backups**: in the **Clients** panel. **File on this computer** (Chrome and Edge): pick a file once and the app saves every client's settings and reviews to it after each change, with no account; after a reload the browser asks once before writing again. **Use an existing backup file** restores from a file saved earlier and keeps saving there. Other browsers get the manual option: **Save backup file** downloads everything to one file and **Restore from file** loads it, and reminds you when nothing has been backed up for 30 days. With a Google sign-in key set in `src/config.js` and the app on its own web address, it also connects to **Google Drive**. It keeps `Ledger Lens backup.json` there, saves automatically after each change, and restores on another computer. It uses the `drive.file` scope, so it can only see the file it created. Setup steps are in [docs/google-drive-setup.md](docs/google-drive-setup.md).
+**Backups**: in the **Clients** panel. **File on this computer** (Chrome and Edge): pick a file once and the app saves every client's settings and reviews to it after each change, with no account; after a reload the browser asks once before writing again. **Use an existing backup file** restores from a file saved earlier and keeps saving there. Other browsers get the manual option: **Save backup file** downloads everything to one file and **Restore from file** loads it, and reminds you when nothing has been backed up for 30 days. With a Google sign-in key set in `src/config.js` and the app on its own web address, it also connects to **Google Drive** to sync devices (laptop and phone): `Ledger Lens backup.json` holds the saved clients, and one compressed file per client holds its QuickBooks files and receipt photos. It pulls the other devices' changes before writing (newest copy of each client wins, removals carry over) after each change, every three minutes and when the page comes back into view. It uses the `drive.file` scope, so it can only see the file it created. Setup steps are in [docs/google-drive-setup.md](docs/google-drive-setup.md).
 
 **Multiple exports**: upload several CSVs at once (for example one per year), or add one to what is already loaded with **Add export**. Rows repeated across files because date ranges overlap are skipped, and the report periods are combined.
 
@@ -132,7 +132,7 @@ The parser skips the report title rows, section headers and "Total for…" lines
 | `src/config.js` | Settings for this copy (Google sign-in key for Drive backup) |
 | `src/firm.js` | The firm's name, website, colors and logo (from `assets/`) |
 | `src/ui/shared.js` | Helpers and small components shared by the tabs (storage, downloads, chart tokens, inputs) |
-| `src/ui/drive.js` | Google Drive backup (sign-in, save, restore, automatic saving) |
+| `src/ui/drive.js` | Google Drive sync between devices (sign-in, two-way sync of clients, files and photos) |
 | `src/ui/localfile.js` | Backup to a file on this computer (File System Access API) |
 | `src/ui/help.js` | Getting-started guide |
 | `src/ui/home.js` | Home: the landing page with every client and what is waiting on the bookkeeper or the client |
