@@ -1,4 +1,4 @@
-# Turning on Google Drive backup
+# Turning on Google Drive sync
 
 Ledger Lens can keep its saved clients (review marks, account corrections and settings) in a file in the user's own Google Drive, saved automatically after each change. It needs two things that only the owner of the Google account can set up:
 
@@ -49,10 +49,10 @@ Redeploy (drag the folder in again, or push to Git if Netlify is connected).
 
 ## Using it
 
-**Saved clients & backup → Connect Google Drive.** Approve access in the Google window. Then:
+**Clients → Connect Google Drive** on each device (laptop, phone). Approve access in the Google window. The app then keeps the devices in sync through the user's Drive:
 
-- **Save to Drive now** creates `Ledger Lens backup.json` in My Drive. You can move it to any folder and the app still finds it.
-- With **Save to Drive automatically after each change** ticked, the file is updated a few seconds after each review mark or setting change, while connected.
-- **Restore from Drive** merges the Drive copy into this browser, keeping whichever copy of each client is newer. Use it on a new computer or after clearing the browser.
-- Google Drive keeps earlier versions of the file (right-click → File information → Manage versions).
-- For safety, Google asks again each time the page is opened (one click after the first time).
+- Connecting first brings in what is already in Drive, then writes this device's work back. Each client's newest copy wins; a client forgotten on one device is forgotten on the others.
+- Saved clients (reviews, settings, checklists) are in `Ledger Lens backup.json`. Each client's QuickBooks files and receipt photos are in their own `Ledger Lens files <code>.json` (compressed, named by a scrambled id, not the client's name), so **Open** works on the other device without uploading again.
+- With **Sync automatically** ticked, it syncs a few seconds after each change, every three minutes, and when the page comes back into view. **Sync now** does it on demand. A sync with nothing new writes nothing.
+- You can move the files to any folder and the app still finds them. Google Drive keeps earlier versions (right-click → File information → Manage versions).
+- For safety, Google asks again each time the page is opened. A device that synced before shows a **Sync paused** banner with a one-tap **Connect**.

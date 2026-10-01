@@ -93,7 +93,8 @@
             <ul>
               <li>Client files are read in your browser and never uploaded anywhere.</li>
               <li>Your reviews and settings are saved in this browser on this computer, and so is a copy of each client's latest files for the Open button (turn that off in the Clients panel if you prefer). Clearing browser data, or switching browsers or computers, starts fresh.</li>
-              <li>So back up, in the <strong>Clients</strong> panel: pick a <strong>file on this computer</strong> that the app keeps saving to (Chrome and Edge), connect <strong>Google Drive</strong>, or download a backup file now and then. The page reminds you if nothing has been backed up for 30 days. Backups hold reviews and settings, not the QuickBooks files, so keep those where you normally do.</li>
+              <li>So back up, in the <strong>Clients</strong> panel: pick a <strong>file on this computer</strong> that the app keeps saving to (Chrome and Edge), connect <strong>Google Drive</strong>, or download a backup file now and then. The page reminds you if nothing has been backed up for 30 days. Backup files hold reviews and settings, not the QuickBooks files, so keep those where you normally do.</li>
+              <li><strong>Laptop and phone:</strong> connect <strong>Google Drive</strong> in the <strong>Clients</strong> panel on each device. Saved clients, their QuickBooks files and receipt photos then stay in sync on their own (after each change, every few minutes, and when you come back to the page), and <strong>Open</strong> works on either device. Google asks you to connect again each time the page opens; tap <strong>Connect</strong> on the <em>Sync paused</em> banner.</li>
             </ul>
             <p><button class="btn" onClick=${() => { onClose(); onOpenClients(); }}>${Icon.cloud}Open Clients & backup</button></p>
           `)}

@@ -28,14 +28,16 @@
   const Backup = {
     format: 'ledger-lens-clients',
     build() {
-      return JSON.stringify({ format: this.format, version: 2, schema: ClientStore.schema, savedAt: new Date().toISOString(), clients: ClientStore.all(), settings: { preparer: safeStore.get('ll.preparer') || '', layout: safeStore.get('ll.layout') || '' } }, null, 2);
+      return JSON.stringify({ format: this.format, version: 2, schema: ClientStore.schema, savedAt: new Date().toISOString(), clients: ClientStore.all(), removed: ClientStore.removed(), settings: { preparer: safeStore.get('ll.preparer') || '', layout: safeStore.get('ll.layout') || '' } }, null, 2);
     },
-    restore(text) {
+    // `sync`: the copy came from the other device through Google Drive, so clients forgotten
+    // there are forgotten here too. A backup file restored by hand brings everything back.
+    restore(text, sync) {
       let data;
       try { data = JSON.parse(String(text || '')); } catch (e) { throw new Error('the file is not valid JSON'); }
       if (!data || data.format !== this.format) throw new Error('not a Ledger Lens backup');
       if (data.schema > ClientStore.schema) throw new Error('it was made by a newer version of Ledger Lens; reload the page to update, then try again');
-      const n = ClientStore.merge(data.clients);
+      const n = ClientStore.merge(data.clients, sync ? data.removed || {} : null, sync ? { synced: true } : null);
       const preparer = data.settings && typeof data.settings.preparer === 'string' ? data.settings.preparer : '';
       if (preparer && !safeStore.get('ll.preparer')) safeStore.set('ll.preparer', preparer);
       // The page layout comes back too, unless this browser already has one.
