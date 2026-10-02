@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab, Drive, useDrive, CardsTab } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab, Drive, useDrive, CardsTab, TaxPrepTab } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -47,6 +47,7 @@
     ['cards', 'Credit cards'],
     ['benchmarks', 'Benchmarks'],
     ['advisory', 'Tax & lending'],
+    ['taxprep', 'Tax prep'],
     ['assets', 'Fixed assets'],
   ];
   // Tabs for one industry, placed after the profitability tab.
@@ -113,6 +114,8 @@
     const [assets, setAssets] = useState([]);
     // The card payoff calculator's inputs (Credit cards tab).
     const [cardDebt, setCardDebt] = useState(null);
+    // Tax prep choices: return form, tax year, and accounts moved to another line.
+    const [taxPrepPrefs, setTaxPrepPrefs] = useState(null);
     // The client's industry: '' means detected from the file (landscaping adds its own tab).
     const [industry, setIndustry] = useState('');
     const [lenderOpen, setLenderOpen] = useState(false);
@@ -153,13 +156,13 @@
     const analyzeOpts = useMemo(() => (parsed.ok ? ({
       accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined, assets, customers: source.customers ? source.customers.parsed : null,
       voided: source.voided ? source.voided.parsed : null, employees: source.employees ? source.employees.parsed : null,
-      statements: source.statements ? source.statements.map((f) => f.parsed) : null,
+      statements: source.statements ? source.statements.map((f) => f.parsed) : null, taxPrep: taxPrepPrefs || undefined,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry, assets, source]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry, assets, source, taxPrepPrefs]);
     // Large exports are analyzed in the background so the page stays responsive (src/work.js).
     const { result, analyzing } = useAnalysis(parsed.ok, analyzeOpts);
     // The industry's own tab shows once the analysis knows the industry.
@@ -203,6 +206,7 @@
       setIndustry(saved && saved.industry ? saved.industry : '');
       setAssets(saved && Array.isArray(saved.assets) ? saved.assets : []);
       setCardDebt(saved && saved.cardDebt ? saved.cardDebt : null);
+      setTaxPrepPrefs(saved && saved.taxPrep ? saved.taxPrep : null);
       setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
@@ -220,10 +224,10 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, taxPrep: taxPrepPrefs, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, taxPrepPrefs, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
@@ -490,6 +494,7 @@
             : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
             : tab === 'cards' ? html`<${CardsTab} result=${result} statements=${(source.statements || []).map((f) => f.parsed)} debt=${cardDebt} setDebt=${setCardDebt} canSave=${!!clientId} onAdd=${source.kind === 'upload' ? () => document.getElementById('csv-add').click() : null} />`
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
+            : tab === 'taxprep' ? html`<${TaxPrepTab} result=${result} prefs=${taxPrepPrefs} setPrefs=${setTaxPrepPrefs} entity=${taxInputs.entity} />`
             : tab === 'assets' ? html`<${AssetsTab} result=${result} assets=${assets} setAssets=${setAssets} canSave=${!!clientId} />`
             : html`<${AdvisoryTab} result=${result} loanRequest=${loanRequest} setLoanRequest=${setLoanRequest} onPackage=${() => setLenderOpen(true)} canSave=${!!clientId} loanInputs=${loanInputs} setLoanInputs=${setLoanInputs} taxInputs=${taxInputs} setTaxInputs=${setTaxInputs} />`}
         </main>`}

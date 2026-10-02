@@ -92,6 +92,14 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   (bank CSV downloads, kind `statement`; every uploaded statement is kept in `source.statements`),
   `combinedStatementsCsv()`, `quickbooksUploadCsv()`, and `cardPayoff()` for one consolidation loan
   (inputs saved in the profile as `cardDebt`). Greenway has Chase and Amex statement fixtures.
+- Tax prep tab (`src/ui/taxprep.js`): `taxPrep()` in the engine (`result.taxPrep`) maps each P&L
+  account for one tax year to a line on Schedule C, 1120-S, 1065 or 1120 (`FORM_LINE_LIST`,
+  `TAX_KINDS`, `TAX_RULES` by account name), with book-to-tax adjustments (meals 50%, fines and
+  entertainment not deductible, charity to Schedule K / personal return, tax depreciation from the
+  fixed asset register), owner draws against officer pay (S-corp reasonable salary), and purchases that
+  look personal. The form follows the Tax & lending entity unless chosen; choices are saved in the
+  profile as `taxPrep` {form, year, lines}. `taxTrialBalanceCsv()` exports it. Line numbers are for
+  review; the return is filed in tax software.
 - Fixed assets: `assetSchedule()`, `depreciationEntry()`, `parseAssetList()` and `macrsRates()`
   (IRS Pub. 946 tables, mid-quarter rule, bonus by date, Section 179) in the engine;
   `fixedAssetFacts()` gives `result.fixedAssets` (purchases found, depreciation posted by year,

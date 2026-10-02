@@ -10,7 +10,7 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const PAGE = `file://${path.join(ROOT, 'index.html')}`;
 const SAMPLE = path.join(ROOT, 'sample-data', 'harbor-pine-transaction-detail.csv');
-const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory', 'assets'];
+const TABS = ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'cards', 'benchmarks', 'advisory', 'taxprep', 'assets'];
 
 // The page opens on Home; most tests work on the sample data.
 async function showSample(page) {
@@ -999,6 +999,36 @@ test('Credit cards: card statements combined and checked against QuickBooks, and
     assert.deepEqual(errors, [], `${colorScheme} ${width}px`);
     await page.close();
   }
+});
+
+test('Tax prep: Greenway as an S corporation, lines on the 1120-S, the owner check, and a line changed and saved', async (t) => {
+  if (skip) return t.skip(skip);
+  const dir = path.join(ROOT, 'sample-data', 'test-clients');
+  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss'].map((f) => path.join(dir, `greenway-${f}.csv`));
+  const { page, errors } = await openPage({ viewport: { width: 1280, height: 900 } });
+  await page.setInputFiles('#csv-upload', files);
+  await page.waitForSelector('#tab-taxprep');
+  await page.click('#tab-taxprep');
+  await page.selectOption('#tp-form', 'S');
+  const main = page.locator('main');
+  await main.locator('h2', { hasText: 'Return lines' }).waitFor();
+  assert.equal(await page.locator('#tp-year').inputValue(), '2025');
+  const text = await main.innerText();
+  for (const want of [/Line 1a · Gross receipts or sales/, /Line 7 · Compensation of officers|No officer salary/, /Line 11 · Rents/, /No officer salary in 2025/, /Tom Greenway/]) assert.match(text, want);
+  // Move Fuel to another line: saved with the client and still there after reopening.
+  await page.selectOption('select[aria-label="Tax line for Fuel"]', 'nd');
+  await page.waitForFunction(() => /Not deductible/.test(document.querySelector('main').innerText));
+  const download = page.waitForEvent('download');
+  await page.click('button:has-text("Download tax trial balance")');
+  assert.match((await download).suggestedFilename(), /^tax-trial-balance-2025-1120-s\.csv$/);
+  await page.reload();
+  await page.locator('.client-card button:has-text("Open")').first().click();
+  await page.waitForSelector('#tab-taxprep');
+  await page.click('#tab-taxprep');
+  assert.equal(await page.locator('select[aria-label="Tax line for Fuel"]').inputValue(), 'nd');
+  assert.equal(await page.locator('#tp-form').inputValue(), 'S');
+  assert.deepEqual(errors, []);
+  await page.close();
 });
 
 test('Flag a problem: pick mode on a phone, then the email fallback away from the site', async (t) => {

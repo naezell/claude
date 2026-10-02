@@ -4626,6 +4626,8 @@
       delete sched.monthBook;
       out.fixedAssets.schedule = sched;
     }
+    // Tax prep: the books mapped to the business return for one tax year.
+    out.taxPrep = taxPrep(txns, accountClass, out, { ...(opts.taxPrep || {}), entity: opts.tax && opts.tax.entity });
     return out;
   }
 
@@ -5544,6 +5546,205 @@
     };
   }
 
+  // ---------------------------------------------------------------- tax prep: form lines and book-to-tax
+  // Each profit-and-loss account is matched to its line on the business return (Schedule C,
+  // Form 1120-S, 1065 or 1120), with the usual book-to-tax differences: meals at 50%, fines and
+  // entertainment not deductible, charity separately stated, and tax depreciation from the fixed
+  // asset register. Line numbers follow the recent forms; the preparer confirms them in the tax
+  // software, which is where the return is filed.
+  const TAX_FORMS = {
+    C: { label: 'Schedule C (Form 1040)', short: 'Schedule C', entity: 'sole' },
+    S: { label: 'Form 1120-S', short: '1120-S', entity: 'scorp' },
+    P: { label: 'Form 1065', short: '1065', entity: 'partnership' },
+    CC: { label: 'Form 1120', short: '1120', entity: 'ccorp' },
+  };
+  // In form order. (An object would put line 1a after line 26.)
+  const FORM_LINE_LIST = {
+    C: [['1', 'Gross receipts or sales'], ['2', 'Returns and allowances'], ['4', 'Cost of goods sold (Part III)'], ['6', 'Other income'], ['8', 'Advertising'], ['9', 'Car and truck expenses'], ['10', 'Commissions and fees'], ['11', 'Contract labor'], ['13', 'Depreciation and section 179'], ['14', 'Employee benefit programs'], ['15', 'Insurance (other than health)'], ['16a', 'Mortgage interest'], ['16b', 'Other interest'], ['17', 'Legal and professional services'], ['18', 'Office expense'], ['19', 'Pension and profit-sharing plans'], ['20a', 'Rent: vehicles, machinery, equipment'], ['20b', 'Rent: other business property'], ['21', 'Repairs and maintenance'], ['22', 'Supplies'], ['23', 'Taxes and licenses'], ['24a', 'Travel'], ['24b', 'Deductible meals'], ['25', 'Utilities'], ['26', 'Wages'], ['27b', 'Other expenses (Part V)']],
+    S: [['1a', 'Gross receipts or sales'], ['1b', 'Returns and allowances'], ['2', 'Cost of goods sold (Form 1125-A)'], ['5', 'Other income'], ['7', 'Compensation of officers'], ['8', 'Salaries and wages'], ['9', 'Repairs and maintenance'], ['10', 'Bad debts'], ['11', 'Rents'], ['12', 'Taxes and licenses'], ['13', 'Interest'], ['14', 'Depreciation'], ['16', 'Advertising'], ['17', 'Pension, profit-sharing plans'], ['18', 'Employee benefit programs'], ['20', 'Other deductions']],
+    P: [['1a', 'Gross receipts or sales'], ['1b', 'Returns and allowances'], ['2', 'Cost of goods sold (Form 1125-A)'], ['7', 'Other income'], ['9', 'Salaries and wages'], ['10', 'Guaranteed payments to partners'], ['11', 'Repairs and maintenance'], ['12', 'Bad debts'], ['13', 'Rent'], ['14', 'Taxes and licenses'], ['15', 'Interest'], ['16a', 'Depreciation'], ['18', 'Retirement plans'], ['19', 'Employee benefit programs'], ['21', 'Other deductions']],
+    CC: [['1a', 'Gross receipts or sales'], ['1b', 'Returns and allowances'], ['2', 'Cost of goods sold (Form 1125-A)'], ['5', 'Interest'], ['10', 'Other income'], ['12', 'Compensation of officers'], ['13', 'Salaries and wages'], ['14', 'Repairs and maintenance'], ['15', 'Bad debts'], ['16', 'Rents'], ['17', 'Taxes and licenses'], ['18', 'Interest'], ['19', 'Charitable contributions'], ['20', 'Depreciation'], ['22', 'Advertising'], ['23', 'Pension, profit-sharing plans'], ['24', 'Employee benefit programs'], ['26', 'Other deductions']],
+  };
+  const FORM_LINES = Object.fromEntries(Object.entries(FORM_LINE_LIST).map(([f, list]) => [f, Object.fromEntries(list)]));
+  // Not on page 1 of the return.
+  const TAX_SPECIAL = { K: 'Schedule K (separately stated)', nd: 'Not deductible', personal: 'Owner\'s personal return', off: 'Leave off the return', '?': 'Choose a line' };
+  // Kinds of account → the line on each form.
+  const TAX_KINDS = {
+    gross: { C: '1', S: '1a', P: '1a', CC: '1a' }, returns: { C: '2', S: '1b', P: '1b', CC: '1b' }, cogs: { C: '4', S: '2', P: '2', CC: '2' },
+    otherIncome: { C: '6', S: '5', P: '7', CC: '10' }, interestIncome: { C: '6', S: 'K', P: 'K', CC: '5' },
+    advertising: { C: '8', S: '16', P: '21', CC: '22' }, car: { C: '9', S: '20', P: '21', CC: '26' }, commissions: { C: '10', S: '20', P: '21', CC: '26' },
+    contractLabor: { C: '11', S: '20', P: '21', CC: '26' }, depreciation: { C: '13', S: '14', P: '16a', CC: '20' }, benefits: { C: '14', S: '18', P: '19', CC: '24' },
+    insurance: { C: '15', S: '20', P: '21', CC: '26' }, mortgageInterest: { C: '16a', S: '13', P: '15', CC: '18' }, interest: { C: '16b', S: '13', P: '15', CC: '18' },
+    legal: { C: '17', S: '20', P: '21', CC: '26' }, office: { C: '18', S: '20', P: '21', CC: '26' }, pension: { C: '19', S: '17', P: '18', CC: '23' },
+    rentEquipment: { C: '20a', S: '11', P: '13', CC: '16' }, rentProperty: { C: '20b', S: '11', P: '13', CC: '16' }, repairs: { C: '21', S: '9', P: '11', CC: '14' },
+    supplies: { C: '22', S: '20', P: '21', CC: '26' }, taxes: { C: '23', S: '12', P: '14', CC: '17' }, travel: { C: '24a', S: '20', P: '21', CC: '26' },
+    meals: { C: '24b', S: '20', P: '21', CC: '26' }, utilities: { C: '25', S: '20', P: '21', CC: '26' }, wages: { C: '26', S: '8', P: '9', CC: '13' },
+    gifts: { C: '27b', S: '20', P: '21', CC: '26' },
+    officerComp: { C: 'nd', S: '7', P: '10', CC: '12' }, badDebts: { C: '27b', S: '10', P: '12', CC: '15' }, other: { C: '27b', S: '20', P: '21', CC: '26' },
+    charity: { C: 'personal', S: 'K', P: 'K', CC: '19' }, nondeductible: { C: 'nd', S: 'nd', P: 'nd', CC: 'nd' }, incomeTax: { C: 'personal', S: 'nd', P: 'nd', CC: 'nd' },
+    unknown: { C: '?', S: '?', P: '?', CC: '?' },
+  };
+  // Account names → kind, first match wins (order matters: "life insurance" before "insurance").
+  const TAX_RULES = [
+    [/uncategori[sz]ed|ask my accountant|suspense|opening balance/i, 'unknown'],
+    [/penalt|\bfines?\b|entertain|political|lobby|officer.?life|life insurance|club dues|country club/i, 'nondeductible'],
+    [/income tax|federal tax|estimated tax|\birs\b/i, 'incomeTax'],
+    [/401|retirement|pension|simple ira|sep ira|profit.?sharing/i, 'pension'],
+    [/charit|donation|contribution/i, 'charity'],
+    [/\bgifts?\b/i, 'gifts'],
+    [/officer|owner'?s? (salary|wage|pay|comp)|shareholder (salary|wage)|guaranteed payment/i, 'officerComp'],
+    [/health|medical|dental|vision|employee benefit|benefits\b/i, 'benefits'],
+    [/payroll tax|employer tax|futa|suta|\bfica\b|tax(es)?\b|licen[sc]e|permit/i, 'taxes'],
+    [/wage|salar|payroll|overtime|bonus/i, 'wages'],
+    [/meal|dining|restaurant/i, 'meals'],
+    [/travel|airfare|hotel|lodging/i, 'travel'],
+    [/(lease|rent).*(equip|vehicle|truck|machin|car\b)|(equip|vehicle|truck|machin).*(lease|rent)/i, 'rentEquipment'],
+    [/\brent\b|lease/i, 'rentProperty'],
+    [/depreciation|amorti[sz]ation/i, 'depreciation'],
+    [/mortgage interest/i, 'mortgageInterest'],
+    [/interest|finance charge/i, 'interest'],
+    [/insurance/i, 'insurance'],
+    [/legal|professional|accounting|bookkeep|attorney|\bcpa\b|consult/i, 'legal'],
+    [/advertis|marketing|promotion/i, 'advertising'],
+    [/commission/i, 'commissions'],
+    [/contract labor|subcontract|freelance|outside services|contractor/i, 'contractLabor'],
+    [/repair|maintenance/i, 'repairs'],
+    [/office|postage|printing|software|subscription|computer/i, 'office'],
+    [/utilit|electric|water|gas (and|&) electric|phone|telephone|internet|cell/i, 'utilities'],
+    [/fuel|gasoline|\bgas\b|auto|vehicle|\bcar\b|truck|mileage|parking|toll/i, 'car'],
+    [/suppl|tools|materials|uniform/i, 'supplies'],
+    [/bad debt/i, 'badDebts'],
+  ];
+  const PERSONAL_PAYEE = /netflix|spotify|hulu|disney ?\+|apple\.com\/bill|itunes|kroger|safeway|whole foods|trader joe|grocery|hy-?vee|aldi\b|walmart|target\b|costco|sam'?s club|starbucks|doordash|uber ?eats|grubhub|salon|\bspa\b|golf|fitness|\bgym\b|peloton|airbnb|cruise|jewel|liquor|wine|tobacco|vape|cvs|walgreens|petco|petsmart|amazon prime|venmo|cash app/i;
+
+  function taxKindOf(account, cls) {
+    if (cls === 'cogs') return 'cogs';
+    if (cls === 'income') {
+      if (/return|refund|allowance|discount/i.test(account)) return 'returns';
+      if (/interest/i.test(account)) return 'interestIncome';
+      if (/other income|misc|gain|finance charge|rental income|reimburse/i.test(account)) return 'otherIncome';
+      return 'gross';
+    }
+    const name = leafAccount(account) + ' ' + account;
+    for (const [rx, kind] of TAX_RULES) if (rx.test(name)) return kind;
+    return 'other';
+  }
+  const taxLineLabel = (form, code) => TAX_SPECIAL[code] || (FORM_LINES[form] && FORM_LINES[form][code] ? `Line ${code} · ${FORM_LINES[form][code]}` : `Line ${code}`);
+  const taxLineOptions = (form) => [...(FORM_LINE_LIST[form] || []).map(([code, label]) => [code, `Line ${code} · ${label}`]), ...Object.entries(TAX_SPECIAL).filter(([k]) => k !== '?' && (k !== 'K' || form !== 'C') && (k !== 'personal' || form === 'C')).map(([k, v]) => [k, v])];
+  const formFor = (entity) => ({ sole: 'C', scorp: 'S', partnership: 'P', ccorp: 'CC' })[entity] || 'C';
+
+  function taxPrep(txns, accountClass, result, opts) {
+    opts = opts || {};
+    const form = TAX_FORMS[opts.form] ? opts.form : formFor(opts.entity);
+    const postings = toPostings(txns, accountClass);
+    const years = [...new Set(postings.map((p) => p.t.date.getUTCFullYear()))].sort((a, b) => a - b);
+    if (!years.length) return null;
+    // Default: the latest year the export covers through December.
+    const last = dateRange(txns, result.meta).last;
+    const fullYear = last && last.getUTCMonth() === 11 && last.getUTCDate() >= 28 ? last.getUTCFullYear() : last ? last.getUTCFullYear() - 1 : years[years.length - 1];
+    const year = years.includes(+opts.year) ? +opts.year : years.includes(fullYear) ? fullYear : years[years.length - 1];
+    const accts = new Map();
+    for (const p of postings) {
+      if (p.t.date.getUTCFullYear() !== year) continue;
+      const e = accts.get(p.category) || { account: p.category, cls: p.cls, book: 0, payees: new Map() };
+      e.book += p.value;
+      accts.set(p.category, e);
+    }
+    const overrides = opts.lines || {};
+    const regDep = result.fixedAssets && result.fixedAssets.schedule ? (result.fixedAssets.schedule.years || []).find((y) => y.year === year) : null;
+    const rows = [];
+    const depRows = [];
+    for (const e of accts.values()) {
+      const kind = taxKindOf(e.account, e.cls);
+      const auto = TAX_KINDS[kind][form];
+      const line = overrides[e.account] && (FORM_LINES[form][overrides[e.account]] || TAX_SPECIAL[overrides[e.account]]) ? overrides[e.account] : auto;
+      const book = round2(e.book);
+      let tax = book, note = '';
+      if (line === 'nd') { tax = 0; note = kind === 'officerComp' ? "An owner's pay isn't a business deduction for a sole proprietor; it's a draw." : kind === 'incomeTax' ? 'Income tax is not deductible on the business return.' : 'Not deductible (fines, penalties, entertainment, political, officer life insurance).'; }
+      else if (line === 'K' || line === 'personal' || line === 'off') { tax = 0; note = line === 'K' ? 'Reported separately on Schedule K and passed through to the owners.' : line === 'personal' ? "Goes on the owner's personal return, not the business return." : ''; }
+      else if (kind === 'meals') { tax = round2(book * 0.5); note = 'Business meals are 50% deductible (100% for company-wide events such as a holiday party).'; }
+      else if (kind === 'charity' && form === 'CC') note = 'Limited to 10% of taxable income.';
+      else if (kind === 'gifts') note = 'Business gifts are deductible up to $25 per person a year; check the list.';
+      else if (kind === 'benefits' && form === 'S' && /health|medical|dental/i.test(e.account)) note = 'Health insurance for a more-than-2% shareholder goes in their W-2 wages and is deducted as officer pay, not here.';
+      if (line === '?') note = 'Choose the line for this account.';
+      const row = { account: e.account, cls: e.cls, kind, book, line, lineLabel: taxLineLabel(form, line), auto: line === auto, tax, adjustment: round2(tax - book), note };
+      rows.push(row);
+      if (kind === 'depreciation') depRows.push(row);
+    }
+    // Tax depreciation from the register replaces book depreciation.
+    if (regDep && depRows.length) {
+      const bookDep = depRows.reduce((t, r) => t + r.book, 0);
+      depRows.forEach((r, i) => { r.tax = i === 0 ? round2(regDep.tax - (bookDep - r.book)) : r.tax; r.adjustment = round2(r.tax - r.book); r.note = `Tax depreciation from the fixed asset register: ${fmtMoney(regDep.tax)} for ${year}.`; });
+    } else if (depRows.length) depRows.forEach((r) => { r.note = 'Book depreciation. Use the tax figure from Form 4562 (add the assets on the Fixed assets tab to get it here).'; });
+    rows.sort((a, b) => (a.cls === b.cls ? b.book - a.book : ['income', 'cogs', 'expense'].indexOf(a.cls) - ['income', 'cogs', 'expense'].indexOf(b.cls)));
+    // Totals per line, as positive amounts the way the form shows them.
+    const lineMap = new Map();
+    for (const r of rows) {
+      const l = lineMap.get(r.line) || { code: r.line, label: r.lineLabel, book: 0, tax: 0, accounts: 0 };
+      const sign = r.kind === 'returns' ? -1 : 1;
+      l.book += sign * r.book; l.tax += sign * r.tax; l.accounts++;
+      lineMap.set(r.line, l);
+    }
+    const order = FORM_LINE_LIST[form].map(([code]) => code);
+    const lines = [...lineMap.values()].map((l) => ({ ...l, book: round2(l.book), tax: round2(l.tax) })).sort((a, b) => {
+      const ia = order.indexOf(a.code), ib = order.indexOf(b.code);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    });
+    const net = (key) => round2(rows.reduce((t, r) => t + (r.cls === 'income' ? r[key] : -r[key]), 0));
+    const bookNet = net('book'), taxNet = net('tax');
+    const adjustments = rows.filter((r) => Math.abs(r.adjustment) >= 0.01).map((r) => ({ account: r.account, line: r.lineLabel, book: r.book, tax: r.tax, diff: r.adjustment, note: r.note }));
+
+    // Owner pay against money taken out (draws and distributions).
+    const draws = new Map();
+    for (const t of txns) {
+      if (t.date.getUTCFullYear() !== year || roleOf(accountClass, t.account) !== 'cash' || t.amount >= 0) continue;
+      if (!/draw|distribution|dividend/i.test(t.split || '')) continue;
+      const who = t.name || leafAccount(t.split);
+      draws.set(who, (draws.get(who) || 0) - t.amount);
+    }
+    const drawTotal = round2([...draws.values()].reduce((t, v) => t + v, 0));
+    const officerPay = round2(rows.filter((r) => r.kind === 'officerComp').reduce((t, r) => t + r.book, 0));
+    const ownerFlags = [];
+    if (form === 'S' && drawTotal > 0) {
+      const share = officerPay / (officerPay + drawTotal);
+      if (!officerPay) ownerFlags.push({ level: 'high', text: `No officer salary in ${year}, but ${fmtMoney(drawTotal)} taken out in distributions. The IRS expects an S corporation owner who works in the business to take a reasonable salary through payroll.` });
+      else if (share < 0.3) ownerFlags.push({ level: 'medium', text: `Officer salary is ${fmtPct(share)} of what the owners took out (${fmtMoney(officerPay)} salary, ${fmtMoney(drawTotal)} distributions). A salary that low against distributions draws IRS attention; check it is reasonable for the work done.` });
+    }
+    if (form === 'C' && officerPay) ownerFlags.push({ level: 'medium', text: `${fmtMoney(officerPay)} is booked as the owner's pay. A sole proprietor can't deduct pay to themselves; it is a draw, and it's left off the return here.` });
+    if (form === 'P' && officerPay) ownerFlags.push({ level: 'low', text: `${fmtMoney(officerPay)} is booked as partner pay: guaranteed payments on line 10, which also go on each partner's K-1.` });
+    if (form === 'S' && rows.some((r) => r.kind === 'benefits' && /health|medical|dental/i.test(r.account))) ownerFlags.push({ level: 'low', text: 'Health insurance is booked. If any of it covers a more-than-2% shareholder, it must be added to their W-2 (box 1) before year-end.' });
+    if (!rows.some((r) => r.kind === 'wages' || r.kind === 'officerComp') && form === 'S') ownerFlags.push({ level: 'medium', text: 'No wages or officer pay at all this year.' });
+
+    // Purchases that look personal, to ask about before the return.
+    const personal = [];
+    for (const p of postings) {
+      if (p.t.date.getUTCFullYear() !== year || p.cls !== 'expense' || p.value <= 0) continue;
+      const who = counterpartyOf(p.t) || p.t.memo || '';
+      if (PERSONAL_PAYEE.test(`${who} ${p.t.memo || ''}`)) personal.push({ date: p.t.dateStr, payee: who, account: p.category, amount: round2(p.value) });
+    }
+    personal.sort((a, b) => b.amount - a.amount);
+
+    return {
+      form, formLabel: TAX_FORMS[form].label, year, years, rows, lines, bookNet, taxNet,
+      adjustments, adjustmentTotal: round2(taxNet - bookNet), unmapped: rows.filter((r) => r.line === '?'),
+      owner: { draws: [...draws.entries()].map(([who, amount]) => ({ who, amount: round2(amount) })).sort((a, b) => b.amount - a.amount), drawTotal, officerPay, flags: ownerFlags },
+      personal: personal.slice(0, 50), personalTotal: round2(personal.reduce((t, x) => t + x.amount, 0)), personalCount: personal.length,
+      lineOptions: taxLineOptions(form), depreciationFromRegister: !!(regDep && depRows.length),
+    };
+  }
+
+  // The trial balance mapped to the return, for the tax software or the CPA.
+  function taxTrialBalanceCsv(prep) {
+    const out = [['Account', 'Type', 'Book amount', 'Adjustment', 'Tax amount', 'Form', 'Line', 'Line description', 'Note']];
+    for (const r of prep.rows) out.push([r.account, r.cls === 'cogs' ? 'Cost of goods sold' : r.cls === 'income' ? 'Income' : 'Expense', r.book.toFixed(2), r.adjustment.toFixed(2), r.tax.toFixed(2), TAX_FORMS[prep.form].short, r.line, r.lineLabel.replace(/^Line [^·]+· /, ''), r.note]);
+    out.push([]);
+    out.push(['Totals by line']);
+    for (const l of prep.lines) out.push([l.label, '', l.book.toFixed(2), (l.tax - l.book).toFixed(2), l.tax.toFixed(2), TAX_FORMS[prep.form].short, l.code, '', '']);
+    out.push(['Net income (book)', '', prep.bookNet.toFixed(2)]);
+    out.push(['Ordinary business income (tax, before items left to the preparer)', '', '', '', prep.taxNet.toFixed(2)]);
+    return out.map((r) => r.map(csvCell).join(',')).join('\n');
+  }
+
   // ---------------------------------------------------------------- free health check
 
   // A short teaser report: how many problems and how many dollars, never which transactions,
@@ -6254,6 +6455,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, parseReceiptText, checkReceipt, TANK_GALLONS, parseCardStatement, cardReview, combinedStatementsCsv, quickbooksUploadCsv, cardPayoff, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, parseReceiptText, checkReceipt, TANK_GALLONS, parseCardStatement, cardReview, combinedStatementsCsv, quickbooksUploadCsv, cardPayoff, TAX_FORMS, FORM_LINES, taxKindOf, taxPrep, taxTrialBalanceCsv, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

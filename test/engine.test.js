@@ -1075,3 +1075,44 @@ test('card payoff: several cards against one loan, with the fee and cards that n
   assert.equal(never.savings, null);
   assert.equal(E.cardPayoff([], { rate: 10 }), null);
 });
+
+test('tax prep: accounts mapped to the return, book-to-tax adjustments, and owner checks', () => {
+  assert.equal(E.taxKindOf('Meals', 'expense'), 'meals');
+  assert.equal(E.taxKindOf('Officer Life Insurance', 'expense'), 'nondeductible');
+  assert.equal(E.taxKindOf('Truck Leases', 'expense'), 'rentEquipment');
+  assert.equal(E.taxKindOf('Payroll Expenses:Taxes', 'expense'), 'taxes');
+  assert.equal(E.taxKindOf('Sales Returns', 'income'), 'returns');
+  const lines = ['Acme Lawn LLC', 'Transaction Detail', 'All Dates', '', 'Date,Transaction Type,Num,Name,Memo/Description,Account,Split,Amount'];
+  const add = (d, type, name, acct, split, amt) => lines.push(`${d},${type},,${name},,${acct},${split},${amt}`);
+  add('03/01/2025', 'Deposit', 'Oak HOA', 'Lawn Income', 'Checking', '50000.00');
+  add('03/02/2025', 'Expense', 'Olive Garden', 'Meals', 'Checking', '400.00');
+  add('03/03/2025', 'Expense', 'City of Springfield', 'Penalties', 'Checking', '150.00');
+  add('03/04/2025', 'Expense', 'Kroger', 'Supplies', 'Checking', '80.00');
+  add('03/05/2025', 'Expense', 'Red Cross', 'Charitable Donations', 'Checking', '500.00');
+  add('03/06/2025', 'Check', 'Pat Owner', 'Checking', 'Owner Distributions', '-20000.00');
+  add('12/30/2025', 'Expense', 'Shell', 'Fuel', 'Checking', '1000.00');
+  const txns = E.parseTransactions(lines.join('\n'));
+  const r = E.analyze(txns, { tax: { entity: 'scorp' } });
+  const t = r.taxPrep;
+  assert.equal(t.form, 'S');
+  assert.equal(t.year, 2025);
+  const row = (a) => t.rows.find((x) => x.account === a);
+  assert.deepEqual([row('Meals').line, row('Meals').tax], ['20', 200]);
+  assert.deepEqual([row('Penalties').line, row('Penalties').tax], ['nd', 0]);
+  assert.deepEqual([row('Charitable Donations').line, row('Charitable Donations').tax], ['K', 0]);
+  assert.equal(row('Lawn Income').line, '1a');
+  assert.equal(t.bookNet, 50000 - 400 - 150 - 80 - 500 - 1000);
+  assert.equal(t.taxNet, 50000 - 200 - 80 - 1000);
+  // No salary with $20,000 of distributions: the S-corp reasonable salary check.
+  assert.equal(t.owner.drawTotal, 20000);
+  assert.match(t.owner.flags[0].text, /No officer salary/);
+  assert.deepEqual(t.personal.map((x) => x.payee), ['Kroger']);
+  // The same books as a sole proprietor: Schedule C lines; charity goes to the personal return.
+  const c = E.analyze(txns, { tax: { entity: 'sole' }, taxPrep: { lines: { Fuel: '27b' } } }).taxPrep;
+  assert.equal(c.form, 'C');
+  assert.equal(c.rows.find((x) => x.account === 'Meals').line, '24b');
+  assert.equal(c.rows.find((x) => x.account === 'Charitable Donations').line, 'personal');
+  assert.equal(c.rows.find((x) => x.account === 'Fuel').line, '27b', 'a line the bookkeeper chose wins');
+  assert.deepEqual(c.lines.map((l) => l.code).slice(0, 3), ['1', '22', '24b'], 'lines in form order');
+  assert.match(E.taxTrialBalanceCsv(c).split('\n')[0], /^Account,Type,Book amount,Adjustment,Tax amount,Form,Line,Line description,Note$/);
+});
