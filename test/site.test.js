@@ -82,7 +82,7 @@ test('the app works under the policy: every tab, a report preview, an Excel uplo
   if (skip) return t.skip(skip);
   const { page, errors } = await open('/');
   await showSample(page);
-  for (const tab of ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'benchmarks', 'advisory', 'assets']) {
+  for (const tab of ['audit', 'close', 'growth', 'cash', 'breakeven', 'trends', 'budget', 'vendors', 'cards', 'benchmarks', 'advisory', 'taxprep', 'assets']) {
     await page.click(`#tab-${tab}`);
     await page.waitForSelector(`main[aria-labelledby="tab-${tab}"] section`);
   }
