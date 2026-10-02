@@ -239,6 +239,41 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   await page.close();
 });
 
+test('answer link with tax documents: the client sends a PDF, and it comes in under Client answers', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await open('/');
+  await showSample(page);
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForSelector('button:has-text("Load sample")');
+  await page.click('button:has-text("Client questions")');
+  await page.check('#p-taxdocs');
+  await page.uncheck('#td-1098');
+  assert.match(await page.locator('.portal-block button:has-text("Create answer link")').innerText(), /items\)/);
+  await page.click('.portal-block button:has-text("Create answer link")');
+  const link = await page.locator('.portal-link').inputValue();
+  const client = await open(link.slice(base.length));
+  await client.page.waitForSelector('section.q');
+  const doc = client.page.locator('section.q', { hasText: '1099 forms you received' }).first();
+  assert.match(await doc.innerText(), /Add a photo or PDF of it/);
+  assert.equal(await client.page.locator('section.q', { hasText: 'Mortgage interest' }).count(), 0, 'unticked items are not asked');
+  const pdf = Buffer.from('%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
+  await doc.locator('input[type=file]').setInputFiles({ name: '1099-NEC-acme.pdf', mimeType: 'application/pdf', buffer: pdf });
+  await doc.locator('.thumb.pdf').waitFor();
+  await client.page.click('button:has-text("Send answers")');
+  await client.page.locator('.msg.good', { hasText: 'Thank you' }).waitFor();
+  assert.deepEqual(client.errors, []);
+  await page.click('.portal-block button:has-text("Check for answers")');
+  await page.locator('.banner', { hasText: 'through the answer link' }).waitFor();
+  await page.click('.drawer-head button');
+  const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Client answers' }) });
+  await panel.locator('.answer-pdf', { hasText: '1099-NEC-acme.pdf' }).waitFor();
+  assert.match(await panel.innerText(), /Tax documents/);
+  assert.deepEqual(await page.evaluate(() => window.__csp), []);
+  assert.deepEqual(errors, []);
+  await client.page.close();
+  await page.close();
+});
+
 test('Flag a problem: pick a panel, the picture has amounts and names blanked, and it is filed as a ticket', async (t) => {
   if (skip) return t.skip(skip);
   const { page, errors } = await open('/');

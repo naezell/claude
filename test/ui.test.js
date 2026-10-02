@@ -1012,6 +1012,7 @@ test('Tax prep: Greenway as an S corporation, lines on the 1120-S, the owner che
   await page.selectOption('#tp-form', 'S');
   const main = page.locator('main');
   await main.locator('h2', { hasText: 'Return lines' }).waitFor();
+  await main.locator('text=Line 1a · Gross receipts or sales').first().waitFor();
   assert.equal(await page.locator('#tp-year').inputValue(), '2025');
   const text = await main.innerText();
   for (const want of [/Line 1a · Gross receipts or sales/, /Line 7 · Compensation of officers|No officer salary/, /Line 11 · Rents/, /No officer salary in 2025/, /Tom Greenway/]) assert.match(text, want);
@@ -1029,6 +1030,53 @@ test('Tax prep: Greenway as an S corporation, lines on the 1120-S, the owner che
   assert.equal(await page.locator('#tp-form').inputValue(), 'S');
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('Tax season: deadlines on Home, the quarterly estimate tracker, and W-9 status saved for the 1099 list', async (t) => {
+  if (skip) return t.skip(skip);
+  const dir = path.join(ROOT, 'sample-data', 'test-clients');
+  const files = ['transaction-detail', 'chart-of-accounts', 'profit-and-loss'].map((f) => path.join(dir, `riverbend-${f}.csv`));
+  for (const [colorScheme, width] of [['light', 1280], ['dark', 400]]) {
+    // As if it were January 20, 2026: W-2s and 1099s are due February 2.
+    const { page, errors } = await openPage({ colorScheme, viewport: { width, height: 900 } }, (p) => p.clock.setFixedTime(new Date('2026-01-20T15:00:00Z')));
+    await page.setInputFiles('#csv-upload', files);
+    await page.waitForSelector('#tab-taxprep');
+    // Quarterly estimates: last year's tax entered, a personal payment added for Q1.
+    await page.click('#tab-taxprep');
+    await page.fill('#est-prior', '12000');
+    await page.locator('section.panel', { hasText: 'Quarterly estimates' }).locator('td', { hasText: '$3,000.00' }).first().waitFor();
+    await page.fill('#est-paid-Q1', '3000');
+    await page.locator('section.panel', { hasText: 'Quarterly estimates' }).locator('tr', { hasText: 'Q1' }).locator('.pill', { hasText: 'Paid' }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `tax prep scrolls sideways at ${width}px`);
+    // W-9 status on the 1099 review.
+    await page.click('#tab-vendors');
+    const w9 = page.locator('select[aria-label^="W-9 for"]').first();
+    await w9.selectOption('received');
+    if (width === 1280) {
+      const download = page.waitForEvent('download');
+      await page.click('button:has-text("Download 1099 worksheet")');
+      assert.match((await download).suggestedFilename(), /^1099-worksheet-\d{4}\.csv$/);
+    }
+    // Home lists the deadlines coming up for the client.
+    await page.locator('button', { hasText: 'Home' }).first().click();
+    const deadlines = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Tax deadlines' }) });
+    await deadlines.waitFor();
+    const text = await deadlines.innerText();
+    assert.match(text, /W-2s for 2025 to employees and the SSA/);
+    assert.match(text, /Estimated tax, Q4 2025/);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `home scrolls sideways at ${width}px`);
+    if (width === 1280) {
+      // The W-9 status and estimate inputs were saved with the client.
+      await page.locator('.client-card button:has-text("Open")').first().click();
+      await page.waitForSelector('#tab-vendors');
+      await page.click('#tab-vendors');
+      assert.equal(await page.locator('select[aria-label^="W-9 for"]').first().inputValue(), 'received');
+      await page.click('#tab-taxprep');
+      assert.equal(await page.locator('#est-paid-Q1').inputValue(), '3000');
+    }
+    assert.deepEqual(errors, [], `${colorScheme} ${width}px`);
+    await page.close();
+  }
 });
 
 test('Flag a problem: pick mode on a phone, then the email fallback away from the site', async (t) => {

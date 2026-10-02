@@ -1116,3 +1116,27 @@ test('tax prep: accounts mapped to the return, book-to-tax adjustments, and owne
   assert.deepEqual(c.lines.map((l) => l.code).slice(0, 3), ['1', '22', '24b'], 'lines in form order');
   assert.match(E.taxTrialBalanceCsv(c).split('\n')[0], /^Account,Type,Book amount,Adjustment,Tax amount,Form,Line,Line description,Note$/);
 });
+
+test('tax calendar and estimates: deadlines by entity, weekend dates, and the safe harbor', () => {
+  // January 31, 2026 is a Saturday: W-2s and 1099s move to Monday, February 2.
+  const jan = E.taxDeadlines('2026-01-05', 45, { entity: 'scorp', payroll: true, contractors: true });
+  assert.deepEqual(jan.map((d) => [d.date, d.kind]), [['2026-01-15', 'estimate'], ['2026-02-02', '1099'], ['2026-02-02', 'payroll']]);
+  const scorp = E.taxDeadlinesForYear(2026, { entity: 'scorp' }).map((d) => `${d.date} ${d.label}`);
+  assert.ok(scorp.includes('2026-03-16 Form 1120-S and K-1s for 2025 (or Form 7004 extension)'), 'March 15, 2026 is a Sunday');
+  assert.ok(!scorp.some((x) => /941|1099/.test(x)), 'no payroll or 1099 dates without payroll or contractors');
+  const corp = E.taxDeadlinesForYear(2026, { entity: 'ccorp' }).map((d) => d.label);
+  assert.ok(corp.includes('Corporate estimated tax, Q4 2026') && corp.includes('Form 1120 for 2025 (or Form 7004 extension)'));
+  // Estimates: 110% of last year's $12,000 is $3,300 a quarter; $3,300 paid personally in Q1, nothing in Q2.
+  const lines = ['Acme', 'Transaction Detail', 'All Dates', '', 'Date,Transaction Type,Num,Name,Memo/Description,Account,Split,Amount',
+    '01/05/2026,Deposit,,Client,,Sales,Checking,90000.00', '06/10/2026,Check,,IRS,1040-ES,Checking,Estimated Taxes,-2000.00', '07/31/2026,Expense,,Shell,,Fuel,Checking,100.00'];
+  const r = E.analyze(E.parseTransactions(lines.join('\n')), { tax: { entity: 'sole' }, today: '2026-07-31', taxPrep: { estimates: { priorTax: 12000, highIncome: true, paid: { Q1: 3300 } } } });
+  const est = r.estimates;
+  assert.equal(est.basis, 'safe');
+  assert.equal(est.perQuarter, 3300);
+  assert.deepEqual(est.quarters.map((q) => [q.quarter, q.paid, q.status]), [['Q1', 3300, 'Paid'], ['Q2', 2000, 'Short'], ['Q3', 0, 'Upcoming'], ['Q4', 0, 'Upcoming']]);
+  assert.equal(est.quarters[1].short, 1300);
+  assert.equal(est.shortTotal, 1300, 'behind counts only quarters already due');
+  // The 1099 worksheet: W-9 status and blank TIN and address columns.
+  const csv = E.form1099Csv({ vendors: [{ vendor: 'Mike Delaney Excavating', form: '1099-NEC', bank: 6984.77, card: 0, status: 'Review', note: 'Collect a W-9' }, { vendor: 'Shell', form: '1099-NEC', bank: 0, card: 900, status: 'Card only', note: '' }] }, { 'Mike Delaney Excavating': 'received' });
+  assert.deepEqual(csv.split('\n').map((l) => l.split(',').slice(0, 6).join('|')), ['Vendor|Form|Box 1 amount (check / transfer)|Paid by card (reported on 1099-K)|Screening status|W-9', 'Mike Delaney Excavating|1099-NEC|6984.77|0.00|Review|On file']);
+});

@@ -31,6 +31,8 @@
     if (s && s.landscape && s.landscape.missed) add('you', 5, `${s.landscape.missed} contract invoice${s.landscape.missed === 1 ? '' : 's'} not sent`, 'Customers billed every month with no invoice lately; see the Landscaping tab');
     if (s && s.close && s.close.done < s.close.total) add('you', 6, `${monthName(s.close.month)} close: ${s.close.done} of ${s.close.total} done`, 'On the Month-end close tab');
     if (s && s.landscape && s.landscape.stale) add('you', 8, `${s.landscape.stale} contract price${s.landscape.stale === 1 ? '' : 's'} unchanged for a year`, 'Worth raising at renewal; see the Landscaping tab');
+    const soon = window.LedgerEngine.taxDeadlines(new Date().toISOString().slice(0, 10), 7, { entity: (c.tax && c.tax.entity) || 'sole', payroll: !!(s && s.payroll), contractors: !!(s && s.contractors > 0), skipExtended: true });
+    for (const d of soon) add('you', 2, d.label, d.days < 0 ? `Was due ${shortDay(Date.parse(d.date))}` : `Due ${d.days === 0 ? 'today' : d.days === 1 ? 'tomorrow' : `in ${d.days} days`}`);
     if (daysAgo(c.loadedAt) > 35) add('you', 7, 'Due for a new export', s ? `Books loaded run to ${s.periodEnd}` : 'Upload their latest export');
     if (portal && portal.status === 'waiting' && portal.expiresAt > Date.now()) {
       const d = daysAgo(portal.createdAt);
@@ -142,6 +144,7 @@
         <section class="panel"><div class="panel-head"><h2>Waiting on you</h2><p>Most urgent first. Open a client to work on it.</p></div><div class="panel-body flush">${taskList(mine, 'Nothing waiting. Nice work.')}</div></section>
         <section class="panel"><div class="panel-head"><h2>Waiting on clients</h2><p>Questions sent through an answer link. Answers come in by themselves.</p></div><div class="panel-body flush">${taskList(theirs, 'No questions out with clients.')}</div></section>
       </div>
+      <${TaxDeadlines} list=${deadlinesFor(ids, clients)} />
       <${YourTickets} />
       <section class="panel">
         <div class="panel-head"><h2>Clients</h2><p>Every client loaded in this browser. For backups and to forget a client, use the Clients button.</p></div>
@@ -164,6 +167,30 @@
         </div>
       </section>
     </main>`;
+  }
+
+  // Federal tax deadlines in the next six weeks for every saved client, from each one's entity
+  // type (Tax & lending tab) and whether they run payroll or pay contractors.
+  const KIND_LABEL = { return: 'Return', extended: 'Extended return', estimate: 'Estimate', payroll: 'Payroll', 1099: '1099s' };
+  function deadlinesFor(ids, clients) {
+    const today = new Date().toISOString().slice(0, 10);
+    const E = window.LedgerEngine;
+    return ids.flatMap((id) => {
+      const c = clients[id];
+      const s = c.summary || {};
+      return E.taxDeadlines(today, 45, { entity: (c.tax && c.tax.entity) || 'sole', payroll: !!s.payroll, contractors: s.contractors > 0, skipExtended: true })
+        .map((d) => ({ ...d, id, name: c.name || id }));
+    }).sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+  }
+  function TaxDeadlines({ list }) {
+    if (!list.length) return null;
+    const when = (d) => (d.days < 0 ? `${-d.days} day${d.days === -1 ? '' : 's'} late` : d.days === 0 ? 'Today' : d.days === 1 ? 'Tomorrow' : `In ${d.days} days`);
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Tax deadlines</h2><p>Federal due dates in the next six weeks, from each client's entity type (set on Tax & lending). Extended returns and state dates aren't shown.</p></div>
+      <div class="panel-body flush"><ul class="task-list">${list.map((d, i) => html`<li key=${`${d.id}-${d.date}-${i}`}>
+        <div><span class="task-client">${d.name}</span><span class="task-text">${d.label} <span class=${`pill ${d.days <= 7 ? 'high' : d.days <= 21 ? 'medium' : 'low'}`}><span class="dot"></span>${when(d)}</span></span><span class="sub">${KIND_LABEL[d.kind]} · due ${new Date(`${d.date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</span></div>
+      </li>`)}</ul></div>
+    </section>`;
   }
 
   Object.assign(UI, { HomePage, homeTasks: tasksFor });
