@@ -4178,6 +4178,9 @@
       close: cl ? { month: cl.month, done: cl.done, total: cl.total } : null,
       industry: result.industry || 'general',
       landscape: result.landscape && result.landscape.contracts ? { missed: result.landscape.contracts.missed.length, stale: result.landscape.contracts.stale.length } : null,
+      // For the tax deadlines on Home: whether payroll forms and 1099s apply.
+      payroll: !!(result.taxPrep && result.taxPrep.rows.some((r) => r.kind === 'wages' || r.kind === 'officerComp')),
+      contractors: result.vendors && result.vendors.tax && result.vendors.tax.length ? result.vendors.tax[result.vendors.tax.length - 1].vendors.filter((v) => v.status === 'Review').length : 0,
     };
   }
 
@@ -4628,6 +4631,7 @@
     }
     // Tax prep: the books mapped to the business return for one tax year.
     out.taxPrep = taxPrep(txns, accountClass, out, { ...(opts.taxPrep || {}), entity: opts.tax && opts.tax.entity });
+    out.estimates = estimateTracker(txns, accountClass, out, { ...((opts.taxPrep && opts.taxPrep.estimates) || {}), entity: opts.tax && opts.tax.entity, today: opts.today });
     return out;
   }
 
@@ -5745,6 +5749,115 @@
     return out.map((r) => r.map(csvCell).join(',')).join('\n');
   }
 
+  // ---------------------------------------------------------------- tax calendar and estimates
+  // Federal deadlines for a calendar-year client, by entity: returns (and extended returns),
+  // quarterly estimates, payroll forms and 1099s. A date on a weekend moves to Monday; holiday
+  // shifts are left to the IRS calendar.
+  function businessDay(y, m, d) {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    const dow = dt.getUTCDay();
+    if (dow === 6) dt.setUTCDate(dt.getUTCDate() + 2);
+    if (dow === 0) dt.setUTCDate(dt.getUTCDate() + 1);
+    return isoDate(dt);
+  }
+  function taxDeadlinesForYear(year, opts) {
+    opts = opts || {};
+    const entity = ENTITY[opts.entity] ? opts.entity : 'sole';
+    const out = [];
+    const add = (m, d, label, kind, y) => out.push({ date: businessDay(y || year, m, d), label, kind });
+    const prior = year - 1;
+    if (opts.contractors) add(1, 31, `1099-NEC forms for ${prior} to contractors and the IRS`, '1099');
+    if (opts.payroll) {
+      add(1, 31, `W-2s for ${prior} to employees and the SSA; Form 941 (Q4) and Form 940`, 'payroll');
+      add(4, 30, 'Form 941 for Q1', 'payroll');
+      add(7, 31, 'Form 941 for Q2', 'payroll');
+      add(10, 31, 'Form 941 for Q3', 'payroll');
+    }
+    if (entity === 'ccorp') {
+      add(4, 15, `Form 1120 for ${prior} (or Form 7004 extension)`, 'return');
+      add(10, 15, `Extended Form 1120 for ${prior}`, 'extended');
+      for (const [m, d, q] of [[4, 15, 'Q1'], [6, 15, 'Q2'], [9, 15, 'Q3'], [12, 15, 'Q4']]) add(m, d, `Corporate estimated tax, ${q} ${year}`, 'estimate');
+    } else {
+      if (entity === 'scorp') { add(3, 15, `Form 1120-S and K-1s for ${prior} (or Form 7004 extension)`, 'return'); add(9, 15, `Extended Form 1120-S for ${prior}`, 'extended'); }
+      if (entity === 'partnership') { add(3, 15, `Form 1065 and K-1s for ${prior} (or Form 7004 extension)`, 'return'); add(9, 15, `Extended Form 1065 for ${prior}`, 'extended'); }
+      add(4, 15, `${entity === 'sole' ? 'Form 1040 with Schedule C' : "Owners' Form 1040"} for ${prior} (or Form 4868 extension)`, 'return');
+      add(10, 15, `Extended Form 1040 for ${prior}`, 'extended');
+      add(1, 15, `Estimated tax, Q4 ${prior}`, 'estimate');
+      for (const [m, d, q] of [[4, 15, 'Q1'], [6, 15, 'Q2'], [9, 15, 'Q3']]) add(m, d, `Estimated tax, ${q} ${year}`, 'estimate');
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  // What falls due between `from` and `days` later (ISO dates), plus anything up to a week late.
+  function taxDeadlines(from, days, opts) {
+    const start = new Date(`${from}T00:00:00Z`);
+    const end = isoDate(new Date(start.getTime() + (days || 45) * DAY));
+    const late = isoDate(new Date(start.getTime() - 7 * DAY));
+    const y = start.getUTCFullYear();
+    return [...taxDeadlinesForYear(y, opts), ...taxDeadlinesForYear(y + 1, opts)]
+      .filter((d) => d.date >= late && d.date <= end && (!opts || !opts.skipExtended || d.kind !== 'extended'))
+      .map((d) => ({ ...d, days: Math.round((Date.parse(d.date) - start.getTime()) / DAY) }));
+  }
+
+  // Quarterly estimated tax: what is due each quarter under the safe harbor (100% of last year's
+  // tax, 110% when last year's income was over $150,000; corporations 100%), or a quarter of this
+  // year's estimate, against what was paid. Payments come from the books (tax payments from the
+  // business accounts) plus any the bookkeeper adds (paid from personal accounts).
+  function estimateTracker(txns, accountClass, result, opts) {
+    opts = opts || {};
+    const entity = ENTITY[opts.entity] ? opts.entity : 'sole';
+    const last = dateRange(txns, result.meta).last;
+    const year = +opts.year || (last ? last.getUTCFullYear() : new Date().getUTCFullYear());
+    const corp = entity === 'ccorp';
+    const windows = corp
+      ? [['Q1', `${year}-01-01`, `${year}-04-15`], ['Q2', `${year}-04-16`, `${year}-06-15`], ['Q3', `${year}-06-16`, `${year}-09-15`], ['Q4', `${year}-09-16`, `${year}-12-15`]]
+      : [['Q1', `${year}-01-01`, `${year}-04-15`], ['Q2', `${year}-04-16`, `${year}-06-15`], ['Q3', `${year}-06-16`, `${year}-09-15`], ['Q4', `${year}-09-16`, `${year + 1}-01-15`]];
+    const found = [];
+    for (const t of txns) {
+      if (t.amount >= 0 || roleOf(accountClass, t.account) !== 'cash') continue;
+      if (!(TAX_ACCOUNT.test(t.split) || TAX_ACCOUNT.test(t.memo) || /\birs\b|us treasury|eftps 1040|estimated/i.test(t.name || ''))) continue;
+      if (/payroll|941|940|withholding/i.test(`${t.split} ${t.memo} ${t.name}`)) continue;
+      found.push({ date: t.dateStr, amount: round2(-t.amount), who: t.name || t.memo || '' });
+    }
+    const priorTax = +opts.priorTax || 0;
+    const plan = result.tax;
+    const basis = priorTax > 0 ? 'safe' : plan && plan.setAside ? 'current' : null;
+    const yearly = basis === 'safe' ? priorTax * (opts.highIncome && !corp ? 1.1 : 1) : basis === 'current' ? plan.setAside * 0.9 : 0;
+    const per = round2(yearly / 4);
+    const manual = opts.paid || {};
+    // Quarters are judged against today: payments made after the export ends can be added by hand.
+    const asOf = opts.today ? String(opts.today).slice(0, 10) : isoDate(new Date());
+    let cumDue = 0, cumPaid = 0, behind = 0;
+    const quarters = windows.map(([q, from, due]) => {
+      const books = round2(found.filter((p) => p.date >= from && p.date <= due).reduce((t, p) => t + p.amount, 0));
+      const extra = +manual[q] || 0;
+      const paid = round2(books + extra);
+      cumDue += per; cumPaid += paid;
+      const past = due <= asOf;
+      const short = round2(Math.max(0, cumDue - cumPaid));
+      if (past) behind = short;
+      return { quarter: q, due: businessDay(+due.slice(0, 4), +due.slice(5, 7), +due.slice(8, 10)), required: per, books, extra, paid, short, status: !per ? 'n/a' : past ? (short > 0.5 ? 'Short' : 'Paid') : cumPaid + 0.5 >= cumDue ? 'Paid ahead' : 'Upcoming' };
+    });
+    return {
+      year, entity, basis, yearly: round2(yearly), perQuarter: per, quarters,
+      paidTotal: round2(cumPaid), shortTotal: round2(behind),
+      payments: found.filter((p) => p.date >= windows[0][1] && p.date <= windows[3][2]),
+      next: quarters.find((q) => q.status === 'Upcoming' || q.status === 'Paid ahead') || null,
+    };
+  }
+
+  // The 1099 list for the year as a worksheet: amounts from the books, W-9 status from the
+  // bookkeeper, and blank columns for the details the W-9 gives (copied into the IRS's IRIS
+  // template or the tax software).
+  function form1099Csv(yearData, w9) {
+    const rows = [['Vendor', 'Form', 'Box 1 amount (check / transfer)', 'Paid by card (reported on 1099-K)', 'Screening status', 'W-9', 'Recipient TIN', 'Address', 'City', 'State', 'ZIP', 'Note']];
+    for (const v of (yearData && yearData.vendors) || []) {
+      if (v.status === 'Below threshold' || v.status === 'Card only') continue;
+      rows.push([v.vendor, v.form, v.bank.toFixed(2), v.card.toFixed(2), v.status, W9_STATUS[(w9 || {})[v.vendor]] || 'Not asked', '', '', '', '', '', v.note]);
+    }
+    return rows.map((r) => r.map(csvCell).join(',')).join('\n');
+  }
+  const W9_STATUS = { asked: 'Requested', received: 'On file', exempt: 'Not needed (corporation)' };
+
   // ---------------------------------------------------------------- free health check
 
   // A short teaser report: how many problems and how many dollars, never which transactions,
@@ -6455,6 +6568,6 @@
   return {
     parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
-    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, parseReceiptText, checkReceipt, TANK_GALLONS, parseCardStatement, cardReview, combinedStatementsCsv, quickbooksUploadCsv, cardPayoff, TAX_FORMS, FORM_LINES, taxKindOf, taxPrep, taxTrialBalanceCsv, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
+    analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, parseReceiptText, checkReceipt, TANK_GALLONS, parseCardStatement, cardReview, combinedStatementsCsv, quickbooksUploadCsv, cardPayoff, TAX_FORMS, FORM_LINES, taxKindOf, taxPrep, taxTrialBalanceCsv, taxDeadlines, taxDeadlinesForYear, estimateTracker, form1099Csv, W9_STATUS, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
 });

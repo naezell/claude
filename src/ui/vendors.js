@@ -46,7 +46,7 @@
     </section>`;
   }
 
-  function VendorsTab({ vendors: v }) {
+  function VendorsTab({ vendors: v, w9, setW9 }) {
     const t = useTokens();
     const [year, setYear] = useState(() => {
       const full = v ? [...v.tax].reverse().find((y) => y.full) : null;
@@ -172,16 +172,23 @@
             ${cardCount > 0 && html`<label class="check" for="show-card" style=${{ paddingTop: 0 }}><input id="show-card" type="checkbox" checked=${showCard} onChange=${(e) => setShowCard(e.target.checked)} />Show ${cardCount} vendor${cardCount === 1 ? '' : 's'} paid only by card</label>`}
           </div>
           <div class="panel-body flush">${taxRows.length ? html`<div class="table-wrap"><table>
-            <thead><tr><th>Status</th><th>Vendor</th><th class="num">Check / transfer</th><th class="num">Card</th><th>Form</th><th>Note</th></tr></thead>
+            <thead><tr><th>Status</th><th>Vendor</th><th class="num">Check / transfer</th><th class="num">Card</th><th>Form</th>${setW9 && html`<th>W-9</th>`}<th>Note</th></tr></thead>
             <tbody>${taxRows.map((x) => html`<tr key=${x.vendor}>
               <td><span class=${`pill ${statusPill[x.status]}`}>${x.status}</span></td>
               <td>${x.vendor}<span class="sub">${x.accounts.join(', ')}</span></td>
               <td class="num"><${Money} v=${x.bank} /></td>
               <td class="num">${x.card ? html`<${Money} v=${x.card} />` : html`<span class="sub">-</span>`}</td>
               <td class="nowrap">${x.status === 'Review' || x.status === 'Likely exempt' ? x.form : html`<span class="sub">-</span>`}</td>
+              ${setW9 && html`<td>${x.status === 'Review' || x.status === 'Likely exempt' ? html`<select class="select" aria-label=${`W-9 for ${x.vendor}`} value=${(w9 || {})[x.vendor] || ''} onChange=${(e) => { const next = { ...(w9 || {}) }; if (e.target.value) next[x.vendor] = e.target.value; else delete next[x.vendor]; setW9(next); }}>
+                <option value="">Not asked</option><option value="asked">Requested</option><option value="received">On file</option><option value="exempt">Not needed</option>
+              </select>` : html`<span class="sub">-</span>`}</td>`}
               <td class="sub" style=${{ display: 'table-cell' }}>${x.note}</td>
             </tr>`)}</tbody>
           </table></div>` : html`<div class="empty">${Icon.check}No vendors at or near the threshold for ${year}.</div>`}</div>
+          ${setW9 && yr && html`<div class="panel-body" style=${{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+            <button class="btn" onClick=${() => UI.saveTextFile(`1099-worksheet-${yr.year}.csv`, E.form1099Csv(yr, w9))}>Download 1099 worksheet (CSV)</button>
+            <span class="sub">Amounts and W-9 status, with columns for the TIN and address from each W-9. Copy them into the IRS's IRIS template or your tax software. 1099-NECs are due to contractors and the IRS by January 31.</span>
+          </div>`}
           <div class="panel-body"><p class="chart-note">A screening list, not tax advice. Payments to corporations are usually exempt (attorneys are not), and card payments are reported by the card company on 1099-K. Rent paid to a landlord that is not a corporation goes on 1099-MISC.</p></div>
         </section>`}
         `],

@@ -100,6 +100,14 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   look personal. The form follows the Tax & lending entity unless chosen; choices are saved in the
   profile as `taxPrep` {form, year, lines}. `taxTrialBalanceCsv()` exports it. Line numbers are for
   review; the return is filed in tax software.
+- Tax season extras: `taxDeadlines()` / `taxDeadlinesForYear()` (federal dates by entity, payroll and
+  1099s, weekend shift) feed **Tax deadlines** and urgent tasks on Home, using each profile's
+  `tax.entity` and `summary.payroll` / `summary.contractors`. `estimateTracker()` (`result.estimates`:
+  safe harbor from `taxPrep.estimates` {priorTax, highIncome, paid by quarter}, payments found in the
+  books, judged against `opts.today`) is the Tax prep tab's **Quarterly estimates**. W-9 status per
+  vendor is the profile's `w9`; `form1099Csv()` is the 1099 worksheet on the Vendors tab. The answer
+  link can add **tax document requests** (`TAX_DOCS` in portal.js, rows keyed `taxdoc|year|id`,
+  `docs: true`); clients may attach PDFs (up to 1.5 MB each) to those, stored with the photos.
 - Fixed assets: `assetSchedule()`, `depreciationEntry()`, `parseAssetList()` and `macrsRates()`
   (IRS Pub. 946 tables, mid-quarter rule, bonus by date, Section 179) in the engine;
   `fixedAssetFacts()` gives `result.fixedAssets` (purchases found, depreciation posted by year,

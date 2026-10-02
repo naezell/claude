@@ -45,7 +45,7 @@
             <div class="chips">${QUESTION_SECTIONS.map(([k, l]) => html`<button key=${k} class="chip" aria-pressed=${include[k]} onClick=${() => setInclude({ ...include, [k]: !include[k] })}>${l}</button>`)}</div>
           </div>
         </div>
-        <${PortalBlock} q=${q} portal=${portal} setPortal=${setPortal} canSave=${canSave} client=${result.meta.company || ''} greeting=${greeting.trim()} preparer=${preparer} onCheck=${onCheckPortal} />
+        <${PortalBlock} q=${q} portal=${portal} setPortal=${setPortal} canSave=${canSave} client=${result.meta.company || ''} greeting=${greeting.trim()} preparer=${preparer} onCheck=${onCheckPortal} taxYear=${result.taxPrep ? result.taxPrep.year : undefined} taxForm=${result.taxPrep ? result.taxPrep.form : undefined} />
         <pre class="report-pre" ref=${preRef}>${q.text}</pre>
         <div class="drawer-foot">
           <button class="btn primary" onClick=${async () => setStatus(await copyText(q.text, preRef.current))}>${Icon.copy}Copy text</button>

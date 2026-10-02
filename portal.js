@@ -8,6 +8,8 @@
   var Seal = window.LedgerSeal;
   var app = document.getElementById('app');
   var MAX_PHOTOS = 3;
+  // Tax forms often come as PDFs; each is kept as it is, up to this size.
+  var MAX_PDF = 1.5 * 1024 * 1024;
   var PHOTO_EDGE = 1600;
   // What the site accepts for one set of answers (MAX_ANSWERS_BYTES in netlify/functions/lib/portal.mjs).
   var MAX_SEALED = 4 * 1024 * 1024;
@@ -33,7 +35,15 @@
   // Shrinks a photo to at most PHOTO_EDGE pixels on its long side, as a JPEG data URL.
   function shrink(file) {
     return new Promise(function (resolve, reject) {
-      if (!/^image\//.test(file.type)) { reject(new Error(file.name + ' is not a photo.')); return; }
+      if (file.type === 'application/pdf') {
+        if (file.size > MAX_PDF) { reject(new Error(file.name + ' is too large (over 1.5 MB). Take a photo of it instead.')); return; }
+        var reader = new FileReader();
+        reader.onload = function () { resolve({ name: file.name, data: String(reader.result) }); };
+        reader.onerror = function () { reject(new Error(file.name + ' could not be read.')); };
+        reader.readAsDataURL(file);
+        return;
+      }
+      if (!/^image\//.test(file.type)) { reject(new Error(file.name + ' is not a photo or a PDF.')); return; }
       var url = URL.createObjectURL(file);
       var img = new Image();
       img.onload = function () {
@@ -71,13 +81,13 @@
       function drawThumbs() {
         thumbs.textContent = '';
         state.photos.forEach(function (p, i) {
-          thumbs.appendChild(el('span', { class: 'thumb' }, [
-            el('img', { src: p.data, alt: 'Photo ' + (i + 1) }),
+          thumbs.appendChild(el('span', { class: 'thumb' + (/^data:application\/pdf/.test(p.data) ? ' pdf' : '') }, [
+            /^data:application\/pdf/.test(p.data) ? el('span', { class: 'pdf-name', text: 'PDF · ' + p.name }) : el('img', { src: p.data, alt: 'Photo ' + (i + 1) }),
             el('button', { type: 'button', 'aria-label': 'Remove photo ' + (i + 1), text: '×', onclick: function () { state.photos.splice(i, 1); drawThumbs(); } }),
           ]));
         });
       }
-      var file = el('input', { type: 'file', accept: 'image/*', multiple: 'multiple', id: 'f-' + q.ref, onchange: function (e) {
+      var file = el('input', { type: 'file', accept: q.docs ? 'image/*,application/pdf' : 'image/*', multiple: 'multiple', id: 'f-' + q.ref, onchange: function (e) {
         var files = Array.prototype.slice.call(e.target.files || [], 0, MAX_PHOTOS - state.photos.length);
         e.target.value = '';
         Promise.all(files.map(shrink)).then(function (ps) { state.photos = state.photos.concat(ps).slice(0, MAX_PHOTOS); drawThumbs(); }, function (err) { status(err.message, true); });
@@ -89,7 +99,7 @@
         el('label', { class: 'text', for: id, text: q.question }),
         ta,
         el('div', { class: 'row' }, [
-          el('label', { class: 'btn', for: 'f-' + q.ref }, [document.createTextNode(q.receipt ? 'Add a photo of the receipt' : 'Add a photo'), file]),
+          el('label', { class: 'btn', for: 'f-' + q.ref }, [document.createTextNode(q.docs ? 'Add a photo or PDF of it' : q.receipt ? 'Add a photo of the receipt' : 'Add a photo'), file]),
           thumbs,
         ]),
       ]));

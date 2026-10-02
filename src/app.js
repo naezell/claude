@@ -116,6 +116,10 @@
     const [cardDebt, setCardDebt] = useState(null);
     // Tax prep choices: return form, tax year, and accounts moved to another line.
     const [taxPrepPrefs, setTaxPrepPrefs] = useState(null);
+    // W-9 status per vendor for the 1099 review (Vendors tab).
+    const [w9, setW9] = useState(null);
+    // Typing in the estimate amounts shouldn't re-run the analysis on every key.
+    const taxPrepTyped = useDebounced(taxPrepPrefs, 300);
     // The client's industry: '' means detected from the file (landscaping adds its own tab).
     const [industry, setIndustry] = useState('');
     const [lenderOpen, setLenderOpen] = useState(false);
@@ -156,13 +160,13 @@
     const analyzeOpts = useMemo(() => (parsed.ok ? ({
       accountClass, groupBy, chart, pnl, reviewed, closed, answers, attachments, receiptLimit: parseFloat(receiptLimit) || 0, scenario: typed.scenario, industry: industry || undefined, assets, customers: source.customers ? source.customers.parsed : null,
       voided: source.voided ? source.voided.parsed : null, employees: source.employees ? source.employees.parsed : null,
-      statements: source.statements ? source.statements.map((f) => f.parsed) : null, taxPrep: taxPrepPrefs || undefined,
+      statements: source.statements ? source.statements.map((f) => f.parsed) : null, taxPrep: taxPrepTyped || undefined,
       budget: uploadedBudget && typed.budget.mode !== 'history' ? uploadedBudget.parsed : null,
       budgetGrowth: { revenueGrowth: parseFloat(typed.budget.revenueGrowth) || 0, costGrowth: parseFloat(typed.budget.costGrowth) || 0 },
       cushion: typed.cash.cushion === '' ? undefined : parseFloat(typed.cash.cushion),
       loan: { amount: parseFloat(typed.loan.amount) || 0, rate: parseFloat(typed.loan.rate) || 0, years: parseFloat(typed.loan.years) || 10, addBacks: parseFloat(typed.loan.addBacks) || 0 },
       tax: { entity: typed.tax.entity, rate: typed.tax.rate === '' ? undefined : parseFloat(typed.tax.rate), salary: parseFloat(typed.tax.salary) || 0, paid: typed.tax.paid === '' ? undefined : parseFloat(typed.tax.paid) }, startingCash: isNaN(startingCash) ? undefined : startingCash, includeDoubtful: cashInputs.includeDoubtful,
-    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry, assets, source, taxPrepPrefs]);
+    }) : null), [parsed, accountClass, groupBy, chart, pnl, uploadedBudget, reviewed, closed, answers, attachments, receiptLimit, startingCash, cashInputs.includeDoubtful, typed, industry, assets, source, taxPrepTyped]);
     // Large exports are analyzed in the background so the page stays responsive (src/work.js).
     const { result, analyzing } = useAnalysis(parsed.ok, analyzeOpts);
     // The industry's own tab shows once the analysis knows the industry.
@@ -207,6 +211,7 @@
       setAssets(saved && Array.isArray(saved.assets) ? saved.assets : []);
       setCardDebt(saved && saved.cardDebt ? saved.cardDebt : null);
       setTaxPrepPrefs(saved && saved.taxPrep ? saved.taxPrep : null);
+      setW9(saved && saved.w9 ? saved.w9 : null);
       setReceiptLimit(saved && saved.receiptLimit ? String(saved.receiptLimit) : '');
       setCashInputs({ startingCash: '', cushion: saved && saved.cushion ? String(saved.cushion) : '', includeDoubtful: false });
       setBenchPrefs(saved ? saved.bench || null : null);
@@ -224,10 +229,10 @@
     useEffect(() => {
       if (!clientId || !summaryJson) return;
       const saved = ClientStore.get(clientId);
-      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, taxPrep: taxPrepPrefs, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
+      const profile = { name: parsed.ok.meta.company || clientId, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, taxPrep: taxPrepPrefs, w9, receiptLimit, cushion: cashInputs.cushion || '', bench: benchPrefs, loan: loanInputs, tax: taxInputs, budgetPrefs,
         summary: JSON.parse(summaryJson), loadedAt: loadedAtRef.current || (saved && saved.loadedAt) || new Date().toISOString() };
       ClientStore.put(clientId, profile);
-    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, taxPrepPrefs, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
+    }, [clientId, summaryJson, accountClass, reviewed, closed, checklist, customSteps, answers, portal, loanRequest, industry, assets, cardDebt, taxPrepPrefs, w9, receiptLimit, cashInputs.cushion, benchPrefs, loanInputs, taxInputs, budgetPrefs]);
     // Keep a copy of this client's files in the browser, so the Clients panel can reopen them.
     useEffect(() => {
       if (!clientId || source.kind !== 'upload') return;
@@ -491,7 +496,7 @@
             : tab === 'breakeven' ? html`<${BreakEvenTab} be=${result.breakeven} onOpenMapping=${() => setTab('audit')} />`
             : tab === 'trends' ? html`<${TrendsTab} trend=${result.trend} />`
             : tab === 'budget' ? html`<${BudgetTab} bva=${result.budget} uploaded=${uploadedBudget} prefs=${budgetPrefs} setPrefs=${setBudgetPrefs} />`
-            : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} />`
+            : tab === 'vendors' ? html`<${VendorsTab} vendors=${result.vendors} w9=${w9} setW9=${clientId ? setW9 : null} />`
             : tab === 'cards' ? html`<${CardsTab} result=${result} statements=${(source.statements || []).map((f) => f.parsed)} debt=${cardDebt} setDebt=${setCardDebt} canSave=${!!clientId} onAdd=${source.kind === 'upload' ? () => document.getElementById('csv-add').click() : null} />`
             : tab === 'benchmarks' ? html`<${BenchmarksTab} result=${result} onResult=${setBenchmarks} prefs=${benchPrefs} onPrefs=${setBenchPrefs} />`
             : tab === 'taxprep' ? html`<${TaxPrepTab} result=${result} prefs=${taxPrepPrefs} setPrefs=${setTaxPrepPrefs} entity=${taxInputs.entity} />`

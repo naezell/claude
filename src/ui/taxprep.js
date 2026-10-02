@@ -8,7 +8,7 @@
   const E = window.LedgerEngine;
   const { fmtMoney } = E;
   const UI = window.LedgerUI;
-  const { wholeMoney, Banner, Arrange, saveTextFile } = UI;
+  const { wholeMoney, Banner, Arrange, saveTextFile, MoneyInput } = UI;
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many || `${one}s`}`;
   const ENTITY_LABEL = { sole: 'sole proprietor', scorp: 'S corporation', partnership: 'partnership', ccorp: 'C corporation' };
@@ -41,7 +41,7 @@
         <tbody>${t.rows.map((r) => html`<tr key=${r.account}>
           <td>${r.account}<span class="sub">${r.cls === 'income' ? 'Income' : r.cls === 'cogs' ? 'Cost of goods sold' : 'Expense'}</span></td>
           <td class="num">${fmtMoney(r.book)}</td>
-          <td><select class="select" aria-label=${`Tax line for ${r.account}`} value=${prefs && prefs.lines && prefs.lines[r.account] ? r.line : ''} onChange=${(e) => set(r.account, e.target.value)}>
+          <td><select class="select" aria-label=${`Tax line for ${r.account}`} value=${(prefs && prefs.lines && prefs.lines[r.account]) || ''} onChange=${(e) => set(r.account, e.target.value)}>
             <option value="">${r.auto ? `${r.lineLabel.split(' · ')[0]} (suggested)` : 'Use the suggestion'}</option>
             ${t.lineOptions.map(([code, label]) => html`<option key=${code} value=${code}>${label}</option>`)}
           </select><span class="sub">${r.lineLabel}${r.note ? ` · ${r.note}` : ''}</span></td>
@@ -97,6 +97,36 @@
     </section>`;
   }
 
+  // Quarterly estimated tax: what's due under the safe harbor against what was paid.
+  function Estimates({ est, prefs, setPrefs }) {
+    const e = (prefs && prefs.estimates) || {};
+    const set = (patch) => setPrefs({ ...(prefs || {}), estimates: { ...e, ...patch } });
+    const pill = { Paid: 'good', 'Paid ahead': 'good', Short: 'high', Upcoming: 'low', 'n/a': 'low' };
+    const corp = est.entity === 'ccorp';
+    return html`<section class="panel">
+      <div class="panel-head"><h2>Quarterly estimates</h2><p>${est.year} estimated tax${corp ? ' for the corporation' : ' for the owner'}. With last year's total tax entered, each quarter is a quarter of the safe harbor (${corp ? '100% of last year' : '100% of last year, 110% if last year\'s income was over $150,000'}), so no underpayment penalty applies even if this year's tax comes out higher.</p></div>
+      <div class="panel-body">
+        <div class="drawer-fields est-fields">
+          <${MoneyInput} id="est-prior" label=${`${est.year - 1} total tax (from last year's return)`} value=${e.priorTax || ''} placeholder="0" onChange=${(v) => set({ priorTax: v })} />
+          ${!corp && html`<label class="check" for="est-high"><input id="est-high" type="checkbox" checked=${!!e.highIncome} onChange=${(ev) => set({ highIncome: ev.target.checked })} />Last year's income was over $150,000 (110%)</label>`}
+        </div>
+        ${est.basis === 'current' ? html`<p class="hint">No prior-year tax entered, so each quarter is 90% of this year's estimate from the Tax & lending tab, split four ways.</p>` : ''}
+        ${!est.basis ? html`<p class="hint">Enter last year's total tax to see what's due each quarter.</p>` : ''}
+      </div>
+      ${est.basis && html`<div class="panel-body flush"><div class="table-wrap"><table>
+        <thead><tr><th>Quarter</th><th>Due</th><th class="num">Due this quarter</th><th class="num">Paid (books)</th><th>Paid from personal accounts</th><th class="num">Behind</th><th>Status</th></tr></thead>
+        <tbody>${est.quarters.map((q) => html`<tr key=${q.quarter}>
+          <td>${q.quarter}</td><td class="nowrap">${q.due}</td><td class="num">${fmtMoney(q.required)}</td><td class="num">${fmtMoney(q.books)}</td>
+          <td><${MoneyInput} id=${`est-paid-${q.quarter}`} label="" value=${(e.paid || {})[q.quarter] || ''} placeholder="0" onChange=${(v) => set({ paid: { ...(e.paid || {}), [q.quarter]: v } })} /></td>
+          <td class="num">${q.status === 'Short' ? fmtMoney(q.short) : '—'}</td>
+          <td><span class=${`pill ${pill[q.status]}`}><span class="dot"></span>${q.status}</span></td>
+        </tr>`)}</tbody>
+      </table></div></div>`}
+      ${est.basis && est.shortTotal > 0.5 && est.quarters.some((q) => q.status === 'Short') ? html`<div class="panel-body"><${Banner} level="high" label="Behind">${wholeMoney(est.shortTotal)} behind on estimates so far. Paying it with the next quarter limits the penalty, which runs like interest from each due date.</${Banner}></div>` : ''}
+      <div class="panel-body"><p class="hint">Payments are found in the books when they go to the IRS from a business account. Add any the owner paid personally.</p></div>
+    </section>`;
+  }
+
   function TaxPrepTab({ result, prefs, setPrefs, entity }) {
     const t = result.taxPrep;
     if (!t) return html`<section class="panel"><div class="empty">No income or expenses to map.</div></section>`;
@@ -132,6 +162,7 @@
         ['adjust', 'Book-to-tax adjustments', html`<${Adjustments} t=${t} />`],
         ['owner', 'Owner pay and distributions', html`<${OwnerChecks} t=${t} />`],
         ['personal', 'Looks personal', html`<${Personal} t=${t} />`],
+        ['estimates', 'Quarterly estimates', html`<${Estimates} est=${result.estimates} prefs=${prefs} setPrefs=${setPrefs} />`],
       ]} />`;
   }
 
