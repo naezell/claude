@@ -525,6 +525,10 @@
   .backup-block h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font: 600 15px var(--cond); }
   .backup-block h3 svg { width: 16px; height: 16px; }
   .backup-block p { margin: 0 0 10px; color: var(--ink-2); font-size: 13px; max-width: 75ch; }
+  .passphrase { display: grid; gap: 6px; max-width: 420px; }
+  .passphrase label:not(.check) { font-size: 13px; font-weight: 600; color: var(--ink); margin-top: 4px; }
+  .passphrase input[type=password], .passphrase input[type=text] { font: inherit; font-size: 16px; padding: 9px 10px; border: 1px solid var(--hair); border-radius: 8px; width: 100%; box-sizing: border-box; }
+  .passphrase .error { margin: 4px 0 0; }
   .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .backup-status { margin: 8px 0 0 !important; min-height: 1.2em; font-size: 12.5px; }
 
@@ -608,6 +612,7 @@
 <script src="src/store.js"></script>
 <script src="src/work.js"></script>
 <script src="src/sealed.js"></script>
+<script src="src/vault.js"></script>
 <script src="src/ui/shared.js"></script>
 <script src="src/ui/arrange.js"></script>
 <script src="src/ui/ocr.js"></script>
