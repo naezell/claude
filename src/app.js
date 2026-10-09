@@ -473,7 +473,7 @@
         ${!storage.error && ClientStore.nearlyFull() && html`<${Banner} level="medium" label="Storage nearly full">This browser has almost used up the space it allows this site. Back up, then forget clients you no longer work with. <button class="linkish" onClick=${() => setClientsOpen(true)}>Open Clients</button></${Banner}>`}
         ${!welcome && backupDue && !backupSnoozed && html`<${Banner} level="medium" label="Back up">Your saved clients have not been backed up in over 30 days. They live only in this browser. <button class="linkish" onClick=${() => setClientsOpen(true)}>Back up now</button> · <button class="linkish" onClick=${() => setBackupSnoozed(true)}>Later</button></${Banner}>`}
         ${driveState.account && driveState.auto && Drive.enabled() && !Drive.connected() && !driveLater && html`<${Banner} level="medium" label="Sync paused">Connect Google Drive to bring in work from your other devices and keep this one in sync. <button class="linkish" onClick=${() => Drive.connect()}>Connect</button> · <button class="linkish" onClick=${() => setDriveLater(true)}>Not now</button></${Banner}>`}
-        ${driveState.needPass && Drive.connected() && html`<${Banner} level="medium" label=${driveState.needPass.mode === 'create' ? 'Lock your backup' : 'Backup locked'}>${driveState.needPass.mode === 'create' ? 'Set a backup passphrase so your Google Drive backup is encrypted. Syncing waits until it is set.' : 'Type your backup passphrase to keep syncing with your other devices.'} <button class="linkish" onClick=${() => setClientsOpen(true)}>Open Clients</button></${Banner}>`}
+        ${driveState.needPass && Drive.connected() && html`<${Banner} level="medium" label="Passphrase changed">Your passphrase was changed on another device. Type the new one to keep syncing with Google Drive. <button class="linkish" onClick=${() => setClientsOpen(true)}>Open Clients</button></${Banner}>`}
         ${restored && restored.synced && html`<${Banner} level="good" label="Synced">Brought in the latest work on ${restored.name} from your other device. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
         ${restored && !restored.synced && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
 
@@ -519,6 +519,8 @@
     </${LayoutContext.Provider}>`;
   }
 
-  // Saved clients load from the browser's database first, so the page opens with them in place.
-  ClientStore.ready.then(() => ReactDOM.createRoot(document.getElementById('root')).render(html`<${ErrorBoundary}><${App} /></${ErrorBoundary}>`));
+  // The lock screen comes first: saved clients are opened (and the app shown) only once the
+  // passphrase has been typed.
+  const { LockScreen } = UI;
+  ReactDOM.createRoot(document.getElementById('root')).render(html`<${ErrorBoundary}><${LockScreen}><${App} /></${LockScreen}></${ErrorBoundary}>`);
 })();

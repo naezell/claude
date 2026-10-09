@@ -49,14 +49,26 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   unchanged profiles so synced copies don't bounce between devices.
 - No client data leaves the browser unsealed. Only Google (sign-in, Drive backup) is contacted,
   plus the site's own portal endpoints.
-- Drive backup encryption (`src/vault.js`): every Drive file is sealed with AES-GCM under a key
-  from Mark's backup passphrase (PBKDF2-SHA256, 600,000 rounds, salt stored in each file as
-  `kdf`). The passphrase is never stored; the derived key is non-extractable and, if he ticks
-  Remember, kept in IndexedDB `ledger-lens-vault`. `Drive.sync()` does nothing until a key fits
-  the backup in Drive (`state.needPass`: `create` or `unlock`). Unencrypted files from before are
-  read once and replaced. Client files carry appProperty `sealed` = the salt, so a passphrase
-  change (`Drive.changePassphrase`, with `Drive.previous` opening the old files) re-seals them
-  all. Never write anything to Drive unsealed.
+- Passphrase lock (`src/vault.js`, `src/lock.js`, `src/ui/lockscreen.js`): one Ledger Lens
+  passphrase, required, typed each time the page opens; it locks (page reload) after 30 minutes
+  without use or on **Lock now**. PBKDF2-SHA256 (600,000 rounds, fixed `SALT` so every device
+  gets the same key from the same words) gives an AES-GCM key and an HMAC key, both
+  non-extractable and kept in memory only. Nothing that opens the data is ever stored;
+  localStorage `ll.lock` holds only salt, rounds and `kid` (key fingerprint).
+  `ClientStore.ready` waits for `Lock.ready`.
+- Everything `src/store.js` writes is sealed: record values via `Lock.seal`, record keys
+  `h:<HMAC(client id)>` (ids are company names), `meta` fileIndex/removed/attachStamp sealed,
+  no client ids in localStorage. Writes go through one queue (`enqueue`) because sealing is
+  async and an IndexedDB transaction must not wait on it. Readable data from before is converted
+  at the first unlock. `Lock.change` re-seals everything (store resealer, then `commit`).
+  Never write client data to IndexedDB, localStorage or a file unsealed.
+- Backup files (Save backup file, the file on this computer) are sealed with `Lock.seal`;
+  restoring uses `Lock.openAny`, which reads old readable files and asks (`Lock.ask`) for the
+  passphrase of a file sealed with a different one.
+- Drive: every file is sealed with the same key; client files carry appProperty `sealed` = `kid`.
+  A Drive backup with another `kid` (passphrase changed on another device) sets
+  `state.needPass`; `Drive.usePassphrase` opens it and `Lock.adopt` switches this device to that
+  passphrase. Unencrypted Drive files are read once, replaced, and their old revisions deleted.
 - Client portal: `src/ui/portal.js` (Mark's side), `portal.html` + `portal.js` (the client's
   page, public, plain DOM), `src/sealed.js` (AES-GCM; the key lives only in the link after `#`),
   `netlify/functions/portal.mjs` + `lib/portal.mjs` (stores sealed records in Netlify Blobs,

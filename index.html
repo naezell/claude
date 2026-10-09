@@ -529,6 +529,15 @@
   .passphrase label:not(.check) { font-size: 13px; font-weight: 600; color: var(--ink); margin-top: 4px; }
   .passphrase input[type=password], .passphrase input[type=text] { font: inherit; font-size: 16px; padding: 9px 10px; border: 1px solid var(--hair); border-radius: 8px; width: 100%; box-sizing: border-box; }
   .passphrase .error { margin: 4px 0 0; }
+  .lock-screen { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; align-items: center; padding: 24px 16px; box-sizing: border-box; }
+  .lock-card { width: 100%; max-width: 460px; background: var(--surface); border: 1px solid var(--hair); border-radius: 14px; padding: 24px; box-sizing: border-box; }
+  .lock-card h1 { display: flex; align-items: center; gap: 8px; font-size: 22px; margin: 0 0 12px; }
+  .lock-card h1 svg { width: 22px; height: 22px; }
+  .lock-forgot { margin: 14px 0 0; font-size: 14px; }
+  .lock-forgot p { margin: 0 0 10px; }
+  .backup-block .passphrase { margin-top: 12px; }
+  .lock-forgot .link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
+  .lock-ask { z-index: 60; }
   .backup-actions { display: flex; flex-wrap: wrap; gap: 8px; }
   .backup-status { margin: 8px 0 0 !important; min-height: 1.2em; font-size: 12.5px; }
 
@@ -609,11 +618,13 @@
 <script src="src/firm.js"></script>
 <script src="src/engine.js"></script>
 <script src="src/sample.js"></script>
+<script src="src/vault.js"></script>
+<script src="src/lock.js"></script>
 <script src="src/store.js"></script>
 <script src="src/work.js"></script>
 <script src="src/sealed.js"></script>
-<script src="src/vault.js"></script>
 <script src="src/ui/shared.js"></script>
+<script src="src/ui/lockscreen.js"></script>
 <script src="src/ui/arrange.js"></script>
 <script src="src/ui/ocr.js"></script>
 <script src="src/ui/portal.js"></script>

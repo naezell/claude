@@ -7,6 +7,12 @@
  *
  * If IndexedDB is not available, localStorage is used; if neither is, clients are kept in memory
  * for this visit only and the status says so. Other open tabs are told about each change.
+ *
+ * Everything is encrypted with the Ledger Lens passphrase (src/lock.js) before it is written:
+ * each record's value is sealed, and records are named by an HMAC of the client id ("h:…")
+ * instead of the id itself, which is made from the company name. Nothing loads until the page is
+ * unlocked. Data saved before encryption is converted, and the readable copy deleted, the first
+ * time the page is unlocked. Writes are queued so they reach the database in order.
  */
 (function () {
   'use strict';
@@ -25,6 +31,18 @@
   // shape of a saved client changes in a way older data needs converting for.
   const SCHEMA = 1;
   const LEGACY_KEY = 'll.clients.v1';
+  // Basic-storage fallback (no IndexedDB): one sealed copy of everything.
+  const SEALED_KEY = 'll.clients.sealed';
+  const Lock = window.LedgerLock;
+  const isSealed = (v) => window.LedgerVault.isSealed(v);
+  const sealJson = (v) => Lock.seal(JSON.stringify(v));
+  const openJson = async (v) => JSON.parse(await Lock.open(v));
+  // Record names for client ids under the current key, kept so each is worked out once.
+  let names = new Map();
+  const nameOf = async (id) => { if (!names.has(id)) names.set(id, await Lock.hid(id)); return names.get(id); };
+  // One write at a time, in order (sealing is asynchronous, a transaction must not wait on it).
+  let queue = Promise.resolve();
+  const enqueue = (fn) => { const run = queue.then(fn, fn); queue = run.catch(() => {}); return run; };
   const OPEN_TIMEOUT = 4000;
 
   // Converts a record saved under an older schema to the current one.
@@ -132,14 +150,13 @@
     // Clients forgotten on purpose, { id: when }, so syncing doesn't bring them back from
     // another device. Kept for a year.
     removed() {
-      let r = {};
-      try { r = JSON.parse(safeStore.get('ll.removed') || '{}') || {}; } catch (e) { r = {}; }
+      const r = { ...removedList };
       const cutoff = new Date(Date.now() - 365 * 864e5).toISOString();
       for (const [id, at] of Object.entries(r)) if (String(at) < cutoff) delete r[id];
       return r;
     },
-    markRemoved(id, at) { const r = this.removed(); if (!r[id] || r[id] < at) { r[id] = at; safeStore.set('ll.removed', JSON.stringify(r)); } },
-    forgetRemoval(id) { const r = this.removed(); if (r[id]) { delete r[id]; safeStore.set('ll.removed', JSON.stringify(r)); } },
+    markRemoved(id, at) { const r = this.removed(); if (!r[id] || r[id] < at) { r[id] = at; removedList = r; saveMeta('removed', r); } },
+    forgetRemoval(id) { const r = this.removed(); if (r[id]) { delete r[id]; removedList = r; saveMeta('removed', r); } },
     // Import keeps whichever copy of each client was updated more recently. With `removed`
     // (from a sync), clients forgotten on the other device after their last change go here too.
     merge(incoming, removed, info) {
@@ -163,25 +180,24 @@
     // Writes changed records (null = delete) wherever clients are kept.
     write(changes) {
       if (this.status.where === 'indexeddb' && db) {
-        let tx;
-        try {
-          tx = db.transaction('clients', 'readwrite');
-          const st = tx.objectStore('clients');
-          for (const [id, p] of Object.entries(changes)) { if (p) st.put(p, id); else st.delete(id); }
-        } catch (e) { this.setStatus({ error: describe(e) }); return Promise.resolve(false); }
-        return done(tx).then(() => {
-          this.setStatus({ error: '', savedAt: new Date().toISOString() });
-          if (channel) { try { channel.postMessage({ ids: Object.keys(changes) }); } catch (e) { /* ignore */ } }
-          this.askToKeep();
-          return true;
-        }, (e) => { this.setStatus({ error: describe(e) }); return false; });
+        return enqueue(async () => {
+          const rows = [];
+          for (const [id, p] of Object.entries(changes)) rows.push([await nameOf(id), p ? await sealJson({ id, profile: p }) : null]);
+          let tx;
+          try {
+            tx = db.transaction('clients', 'readwrite');
+            const st = tx.objectStore('clients');
+            for (const [name, sealed] of rows) { if (sealed) st.put(sealed, name); else st.delete(name); }
+          } catch (e) { this.setStatus({ error: describe(e) }); return false; }
+          return done(tx).then(() => {
+            this.setStatus({ error: '', savedAt: new Date().toISOString() });
+            if (channel) { try { channel.postMessage({ ids: Object.keys(changes) }); } catch (e) { /* ignore */ } }
+            this.askToKeep();
+            return true;
+          }, (e) => { this.setStatus({ error: describe(e) }); return false; });
+        });
       }
-      if (this.status.where === 'localstorage') {
-        let ok = false;
-        try { localStorage.setItem(LEGACY_KEY, JSON.stringify(cache)); ok = true; } catch (e) { this.setStatus({ error: describe(e) }); }
-        if (ok) this.setStatus({ error: '', savedAt: new Date().toISOString() });
-        return Promise.resolve(ok);
-      }
+      if (this.status.where === 'localstorage') return saveBasic();
       if (this.status.where === 'memory' && Object.keys(changes).length) {
         this.setStatus({ error: 'this browser is not letting the site save anything, so clients are kept only until the page is closed' });
       }
@@ -233,111 +249,165 @@
       // Reopening a client saves the same files again; skip that.
       const had = fileIndex[id];
       if (had && had.bytes === info.bytes && had.names.join('\n') === info.names.join('\n')) return Promise.resolve(true);
-      const next = { ...fileIndex, [id]: info };
-      try {
-        const tx = db.transaction(['files', 'meta'], 'readwrite');
-        tx.objectStore('files').put({ files }, id);
-        tx.objectStore('meta').put(next, 'fileIndex');
-        return done(tx).then(() => { fileIndex = next; this.changed(); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
-      } catch (e) { ClientStore.setStatus({ error: describe(e) }); return Promise.resolve(false); }
+      return putFiles(id, files, info);
     },
     index() { return { ...fileIndex }; },
     // Files that came from another device: kept with that device's save time, so the two
     // agree on which copy is newer.
     putSynced(id, files, savedAt) {
       if (!id || !this.available() || !this.enabled() || !files || !files.length) return Promise.resolve(false);
-      const next = { ...fileIndex, [id]: { names: files.map((f) => f.name), savedAt, bytes: files.reduce((n, f) => n + f.text.length, 0) } };
-      try {
-        const tx = db.transaction(['files', 'meta'], 'readwrite');
-        tx.objectStore('files').put({ files }, id);
-        tx.objectStore('meta').put(next, 'fileIndex');
-        return done(tx).then(() => { fileIndex = next; this.changed(); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
-      } catch (e) { ClientStore.setStatus({ error: describe(e) }); return Promise.resolve(false); }
+      return putFiles(id, files, { names: files.map((f) => f.name), savedAt, bytes: files.reduce((n, f) => n + f.text.length, 0) });
     },
     // Resolves with [{ name, text }], or null when nothing is saved.
     get(id) {
       if (!id || !db || !fileIndex[id]) return Promise.resolve(null);
-      try {
-        return req(db.transaction('files', 'readonly').objectStore('files').get(id)).then((r) => (r && r.files) || null, () => null);
-      } catch (e) { return Promise.resolve(null); }
+      return enqueue(async () => {
+        const name = await nameOf(id);
+        const r = await req(db.transaction('files', 'readonly').objectStore('files').get(name));
+        return r ? ((await openJson(r)).files || null) : null;
+      }).catch(() => null);
     },
     remove(id) {
       if (!id || !db || !fileIndex[id]) return Promise.resolve(false);
       const next = { ...fileIndex };
       delete next[id];
-      try {
+      return enqueue(async () => {
+        const name = await nameOf(id);
+        const index = await sealJson(next);
         const tx = db.transaction(['files', 'meta'], 'readwrite');
-        tx.objectStore('files').delete(id);
-        tx.objectStore('meta').put(next, 'fileIndex');
-        return done(tx).then(() => { fileIndex = next; this.changed(); ClientStore.estimate(); return true; }, () => false);
-      } catch (e) { return Promise.resolve(false); }
+        tx.objectStore('files').delete(name);
+        tx.objectStore('meta').put(index, 'fileIndex');
+        await done(tx);
+        fileIndex = next; this.changed(); ClientStore.estimate();
+        return true;
+      }).catch(() => false);
     },
     clear() {
       if (!db) return Promise.resolve(false);
-      try {
+      return enqueue(async () => {
+        const index = await sealJson({});
         const tx = db.transaction(['files', 'meta'], 'readwrite');
         tx.objectStore('files').clear();
-        tx.objectStore('meta').put({}, 'fileIndex');
-        return done(tx).then(() => { fileIndex = {}; this.changed(); ClientStore.estimate(); return true; }, () => false);
-      } catch (e) { return Promise.resolve(false); }
+        tx.objectStore('meta').put(index, 'fileIndex');
+        await done(tx);
+        fileIndex = {}; this.changed(); ClientStore.estimate();
+        return true;
+      }).catch(() => false);
     },
   };
+
+  // Saves one client's files and the updated index, both sealed.
+  function putFiles(id, files, info) {
+    return enqueue(async () => {
+      const next = { ...fileIndex, [id]: info };
+      const name = await nameOf(id);
+      const [body, index] = [await sealJson({ files }), await sealJson(next)];
+      const tx = db.transaction(['files', 'meta'], 'readwrite');
+      tx.objectStore('files').put(body, name);
+      tx.objectStore('meta').put(index, 'fileIndex');
+      await done(tx);
+      fileIndex = next; FileStore.changed(); ClientStore.estimate();
+      return true;
+    }).catch((e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
+  }
+
+  // Small lists that name clients (forgotten clients, photo times), kept sealed in `meta`.
+  let removedList = {};
+  let stampList = {};
+  function saveMeta(key, value) {
+    if (ClientStore.status.where === 'localstorage') return saveBasic();
+    if (!db) return Promise.resolve(false);
+    return enqueue(async () => {
+      const sealed = await sealJson(value);
+      const tx = db.transaction('meta', 'readwrite');
+      tx.objectStore('meta').put(sealed, key);
+      await done(tx);
+      return true;
+    }).catch(() => false);
+  }
+  // Without IndexedDB: one sealed copy of the clients and the two lists in localStorage.
+  function saveBasic() {
+    return enqueue(async () => {
+      const sealed = await sealJson({ clients: cache, removed: removedList, stamps: stampList });
+      try { localStorage.setItem(SEALED_KEY, sealed); } catch (e) { ClientStore.setStatus({ error: describe(e) }); return false; }
+      ClientStore.setStatus({ error: '', savedAt: new Date().toISOString() });
+      return true;
+    });
+  }
 
   // Photos clients attach to their answers in the portal, kept per client and question:
   // key "<client id>|<question ref>", value [{ name, data (a JPEG data URL) }]. Not in backup
   // files, but synced to Google Drive with the client's exports.
   const AttachStore = {
     // When each client's photos last changed, { id: when }, so a sync knows which copy is newer.
-    stamps() { try { return JSON.parse(safeStore.get('ll.attachStamp') || '{}') || {}; } catch (e) { return {}; } },
-    stamp(clientId, at) { const s = this.stamps(); if (at) s[clientId] = at; else delete s[clientId]; safeStore.set('ll.attachStamp', JSON.stringify(s)); },
+    stamps() { return { ...stampList }; },
+    stamp(clientId, at) { const s = this.stamps(); if (at) s[clientId] = at; else delete s[clientId]; stampList = s; saveMeta('attachStamp', s); },
     put(clientId, ref, photos) {
       if (!db || !clientId || !photos || !photos.length) return Promise.resolve(false);
-      try {
+      return enqueue(async () => {
+        const name = await nameOf(clientId);
+        const sealed = await sealJson(photos);
         const tx = db.transaction('attachments', 'readwrite');
-        tx.objectStore('attachments').put(photos, `${clientId}|${ref}`);
-        return done(tx).then(() => { this.stamp(clientId, new Date().toISOString()); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
-      } catch (e) { return Promise.resolve(false); }
+        tx.objectStore('attachments').put(sealed, `${name}|${ref}`);
+        await done(tx);
+        return true;
+      }).then(() => { this.stamp(clientId, new Date().toISOString()); ClientStore.estimate(); return true; }, (e) => { ClientStore.setStatus({ error: describe(e) }); return false; });
     },
     // Every photo for one client, { ref: photos }.
     forClient(clientId) {
       if (!db || !clientId) return Promise.resolve({});
-      try {
+      return enqueue(async () => {
+        const name = await nameOf(clientId);
         const st = db.transaction('attachments', 'readonly').objectStore('attachments');
-        const range = IDBKeyRange.bound(`${clientId}|`, `${clientId}|\uffff`);
-        return Promise.all([req(st.getAllKeys(range)), req(st.getAll(range))]).then(([keys, values]) => {
-          const out = {};
-          keys.forEach((k, i) => { out[String(k).slice(clientId.length + 1)] = values[i]; });
-          return out;
-        }, () => ({}));
-      } catch (e) { return Promise.resolve({}); }
+        const range = IDBKeyRange.bound(`${name}|`, `${name}|\uffff`);
+        const [keys, values] = await Promise.all([req(st.getAllKeys(range)), req(st.getAll(range))]);
+        const out = {};
+        for (let i = 0; i < keys.length; i++) out[String(keys[i]).slice(name.length + 1)] = await openJson(values[i]);
+        return out;
+      }).catch(() => ({}));
     },
     // Photos that came from another device, replacing this client's.
     putClient(clientId, photos, at) {
       if (!db || !clientId) return Promise.resolve(false);
-      try {
+      return enqueue(async () => {
+        const name = await nameOf(clientId);
+        const rows = [];
+        for (const [ref, list] of Object.entries(photos || {})) if (Array.isArray(list) && list.length) rows.push([`${name}|${ref}`, await sealJson(list)]);
         const tx = db.transaction('attachments', 'readwrite');
         const st = tx.objectStore('attachments');
-        st.delete(IDBKeyRange.bound(`${clientId}|`, `${clientId}|\uffff`));
-        for (const [ref, list] of Object.entries(photos || {})) if (Array.isArray(list) && list.length) st.put(list, `${clientId}|${ref}`);
-        return done(tx).then(() => { this.stamp(clientId, at); return true; }, () => false);
-      } catch (e) { return Promise.resolve(false); }
+        st.delete(IDBKeyRange.bound(`${name}|`, `${name}|\uffff`));
+        for (const [k, v] of rows) st.put(v, k);
+        await done(tx);
+        return true;
+      }).then(() => { this.stamp(clientId, at); return true; }, () => false);
     },
     get(clientId, ref) {
       if (!db) return Promise.resolve([]);
-      try { return req(db.transaction('attachments', 'readonly').objectStore('attachments').get(`${clientId}|${ref}`)).then((v) => v || [], () => []); } catch (e) { return Promise.resolve([]); }
+      return enqueue(async () => {
+        const name = await nameOf(clientId);
+        const v = await req(db.transaction('attachments', 'readonly').objectStore('attachments').get(`${name}|${ref}`));
+        return v ? openJson(v) : [];
+      }).catch(() => []);
     },
     remove(clientId, ref) {
       if (!db) return Promise.resolve(false);
-      try { const tx = db.transaction('attachments', 'readwrite'); tx.objectStore('attachments').delete(`${clientId}|${ref}`); return done(tx).then(() => { this.stamp(clientId, new Date().toISOString()); return true; }, () => false); } catch (e) { return Promise.resolve(false); }
+      return enqueue(async () => {
+        const name = await nameOf(clientId);
+        const tx = db.transaction('attachments', 'readwrite');
+        tx.objectStore('attachments').delete(`${name}|${ref}`);
+        await done(tx);
+        return true;
+      }).then(() => { this.stamp(clientId, new Date().toISOString()); return true; }, () => false);
     },
     removeClient(clientId) {
       if (!db || !clientId) return Promise.resolve(false);
-      try {
+      return enqueue(async () => {
+        const name = await nameOf(clientId);
         const tx = db.transaction('attachments', 'readwrite');
-        const range = IDBKeyRange.bound(`${clientId}|`, `${clientId}|\uffff`);
-        tx.objectStore('attachments').delete(range);
-        return done(tx).then(() => { this.stamp(clientId, null); return true; }, () => false);
-      } catch (e) { return Promise.resolve(false); }
+        tx.objectStore('attachments').delete(IDBKeyRange.bound(`${name}|`, `${name}|\uffff`));
+        await done(tx);
+        return true;
+      }).then(() => { this.stamp(clientId, null); return true; }, () => false);
     },
   };
 
@@ -346,17 +416,36 @@
   }
 
   async function loadFromDb() {
+    // Nothing is opened before the passphrase is typed.
+    await Lock.ready;
     db = await openDb();
     const tx = db.transaction(['clients', 'meta'], 'readonly');
-    const [keys, values, schema, index] = await Promise.all([
+    const [keys, values, schema, index, removedRec, stampRec] = await Promise.all([
       req(tx.objectStore('clients').getAllKeys()),
       req(tx.objectStore('clients').getAll()),
       req(tx.objectStore('meta').get('schema')),
       req(tx.objectStore('meta').get('fileIndex')),
+      req(tx.objectStore('meta').get('removed')),
+      req(tx.objectStore('meta').get('attachStamp')),
     ]);
-    fileIndex = index || {};
     const from = typeof schema === 'number' ? schema : SCHEMA;
-    keys.forEach((k, i) => { cache[k] = upgrade(values[i], from); });
+    // Records from before encryption: named by the client id, readable. Converted below.
+    const plainKeys = [];
+    for (let i = 0; i < keys.length; i++) {
+      const v = values[i];
+      if (isSealed(v)) {
+        const { id, profile } = await openJson(v);
+        cache[id] = upgrade(profile, from);
+        names.set(id, String(keys[i]));
+      } else if (v && typeof v === 'object') {
+        cache[keys[i]] = upgrade(v, from);
+        plainKeys.push(keys[i]);
+      }
+    }
+    const plainIndex = index && !isSealed(index);
+    fileIndex = !index ? {} : plainIndex ? index : await openJson(index);
+    removedList = isSealed(removedRec) ? await openJson(removedRec) : legacyList('ll.removed');
+    stampList = isSealed(stampRec) ? await openJson(stampRec) : legacyList('ll.attachStamp');
     ClientStore.status.where = 'indexeddb';
     // Bring over clients saved by earlier versions of the page in localStorage (newer copy wins),
     // store the upgraded records, then free the old space once they are safely written.
@@ -367,13 +456,19 @@
         if (p && typeof p === 'object' && (!cache[id] || String(p.updatedAt || '') > String(cache[id].updatedAt || ''))) { cache[id] = p; changes[id] = p; }
       }
     }
+    for (const k of plainKeys) changes[k] = cache[k];
     if (from !== SCHEMA) Object.assign(changes, cache);
-    if (Object.keys(changes).length || schema !== SCHEMA) {
-      const wtx = db.transaction(['clients', 'meta'], 'readwrite');
-      for (const [id, p] of Object.entries(changes)) wtx.objectStore('clients').put(p, id);
-      wtx.objectStore('meta').put(SCHEMA, 'schema');
-      await done(wtx);
+    if (Object.keys(changes).length) await ClientStore.write(changes);
+    if (plainKeys.length) {
+      const dtx = db.transaction('clients', 'readwrite');
+      for (const k of plainKeys) dtx.objectStore('clients').delete(k);
+      await done(dtx);
     }
+    if (schema !== SCHEMA) { const stx = db.transaction('meta', 'readwrite'); stx.objectStore('meta').put(SCHEMA, 'schema'); await done(stx); }
+    if (plainIndex || !index) await saveMeta('fileIndex', fileIndex);
+    if (!isSealed(removedRec)) { await saveMeta('removed', removedList); safeStore.remove('ll.removed'); }
+    if (!isSealed(stampRec)) { await saveMeta('attachStamp', stampList); safeStore.remove('ll.attachStamp'); }
+    await sealPlainFiles();
     if (legacy) safeStore.remove(LEGACY_KEY);
     if (typeof BroadcastChannel !== 'undefined') {
       channel = new BroadcastChannel('ledger-lens-clients');
@@ -381,17 +476,103 @@
         if (ev.data && ev.data.fileIndex) { fileIndex = ev.data.fileIndex; FileStore.changed(true); return; }
         const ids = (ev.data && ev.data.ids) || [];
         if (!ids.length || !db) return;
-        const rtx = db.transaction('clients', 'readonly');
-        const st = rtx.objectStore('clients');
-        Promise.all(ids.map((id) => req(st.get(id)).then((p) => { if (p) cache[id] = p; else delete cache[id]; })))
-          .then(() => ClientStore.changed({ remote: true }), () => { /* ignore */ });
+        enqueue(async () => {
+          for (const id of ids) {
+            const v = await req(db.transaction('clients', 'readonly').objectStore('clients').get(await nameOf(id)));
+            if (v) cache[id] = (await openJson(v)).profile; else delete cache[id];
+          }
+        }).then(() => ClientStore.changed({ remote: true }), () => { /* ignore */ });
       };
     }
   }
 
-  ClientStore.ready = loadFromDb().catch((e) => {
+  function legacyList(key) {
+    try { return JSON.parse(safeStore.get(key) || '{}') || {}; } catch (e) { return {}; }
+  }
+
+  // Exports and photos saved before encryption: sealed under the opaque names, one at a time
+  // (they can be large), and the readable copies deleted.
+  async function sealPlainFiles() {
+    const plain = (store) => new Promise((resolve, reject) => {
+      const out = [];
+      const r = db.transaction(store, 'readonly').objectStore(store).openCursor();
+      r.onsuccess = () => { const c = r.result; if (!c) { resolve(out); return; } if (!isSealed(c.value)) out.push(c.key); c.continue(); };
+      r.onerror = () => reject(r.error);
+    });
+    for (const k of await plain('files')) {
+      const v = await req(db.transaction('files', 'readonly').objectStore('files').get(k));
+      const name = await nameOf(String(k));
+      const sealed = await sealJson(v && v.files ? { files: v.files } : { files: [] });
+      const tx = db.transaction('files', 'readwrite');
+      tx.objectStore('files').put(sealed, name);
+      tx.objectStore('files').delete(k);
+      await done(tx);
+    }
+    for (const k of await plain('attachments')) {
+      const v = await req(db.transaction('attachments', 'readonly').objectStore('attachments').get(k));
+      const cut = String(k).lastIndexOf('|');
+      const name = await nameOf(String(k).slice(0, cut));
+      const sealed = await sealJson(v || []);
+      const tx = db.transaction('attachments', 'readwrite');
+      tx.objectStore('attachments').put(sealed, `${name}${String(k).slice(cut)}`);
+      tx.objectStore('attachments').delete(k);
+      await done(tx);
+    }
+  }
+
+  // A new passphrase: every record is opened with the old key and sealed again with the new one,
+  // under the new opaque names. Runs in the write queue so nothing is written in between.
+  Lock.resealers.push((oldKeys, newKeys, commit) => enqueue(async () => {
+    const V = window.LedgerVault;
+    if (ClientStore.status.where === 'localstorage') {
+      localStorage.setItem(SEALED_KEY, await V.seal(newKeys, JSON.stringify({ clients: cache, removed: removedList, stamps: stampList })));
+      commit();
+      return;
+    }
+    if (!db) { commit(); return; }
+    const nameFor = async (id) => V.hid(newKeys, id);
+    const back = new Map([...names.entries()].map(([id, n]) => [n, id]));
+    for (const id of Object.keys(cache)) if (!names.has(id)) back.set(await V.hid(oldKeys, id), id);
+    const all = (store) => { const st = db.transaction(store, 'readonly').objectStore(store); return Promise.all([req(st.getAllKeys()), req(st.getAll())]); };
+    const reseal = async (v) => V.seal(newKeys, await V.open(oldKeys, v));
+    for (const store of ['clients', 'files', 'attachments']) {
+      const [keys, values] = await all(store);
+      const rows = [];
+      for (let i = 0; i < keys.length; i++) {
+        const k = String(keys[i]);
+        const cut = store === 'attachments' ? k.lastIndexOf('|') : k.length;
+        const id = back.get(k.slice(0, cut));
+        if (id == null) continue;
+        rows.push([keys[i], `${await nameFor(id)}${k.slice(cut)}`, await reseal(values[i])]);
+      }
+      const tx = db.transaction(store, 'readwrite');
+      for (const [oldKey, newKey, v] of rows) { tx.objectStore(store).delete(oldKey); tx.objectStore(store).put(v, newKey); }
+      await done(tx);
+    }
+    const meta = [];
+    for (const [key, value] of [['fileIndex', fileIndex], ['removed', removedList], ['attachStamp', stampList]]) meta.push([key, await V.seal(newKeys, JSON.stringify(value))]);
+    const tx = db.transaction('meta', 'readwrite');
+    for (const [key, v] of meta) tx.objectStore('meta').put(v, key);
+    await done(tx);
+    names = new Map();
+    commit();
+  }));
+  // Pending writes finish before the page locks.
+  Lock.flushers.push(() => queue);
+
+  ClientStore.ready = loadFromDb().catch(async (e) => {
     db = null;
+    await Lock.ready;
     // IndexedDB is unavailable: fall back to localStorage, or memory if that is blocked too.
+    const sealed = safeStore.get(SEALED_KEY);
+    if (sealed) {
+      try {
+        const all = await openJson(sealed);
+        Object.assign(cache, all.clients || {});
+        removedList = all.removed || {};
+        stampList = all.stamps || {};
+      } catch (err) { /* unreadable: start empty rather than overwrite silently */ }
+    }
     const legacy = legacyClients();
     if (legacy) Object.assign(cache, legacy);
     const probe = safeStore.set('ll.probe', '1');
@@ -399,6 +580,8 @@
     ClientStore.status.where = probe ? 'localstorage' : 'memory';
     ClientStore.status.fallbackReason = describe(e);
     if (!probe) ClientStore.status.error = 'this browser is not letting the site save anything, so clients are kept only until the page is closed';
+    // A readable copy from before encryption is sealed, then removed.
+    if (probe && legacy) { await saveBasic(); safeStore.remove(LEGACY_KEY); }
   }).then(() => {
     ClientStore.setStatus({});
     if (ClientStore.count()) ClientStore.askToKeep(); else ClientStore.estimate();

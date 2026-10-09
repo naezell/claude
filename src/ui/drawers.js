@@ -6,6 +6,8 @@
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
   const { FileStore } = window.LedgerStore;
+  const Lock = window.LedgerLock;
+  const { PassphraseForm } = window.LedgerUI;
   const { safeStore, ClientStore, saveTextFile, copyText, slug, Icon, useEscape, Backup, Firm, Drive, useDrive, excelToCsv, LocalFile, useLocalFile, PortalBlock } = UI;
 
   // ------------------------------------------------------------ client questions drawer
@@ -125,50 +127,33 @@
     </div>`;
   }
 
-  // The backup passphrase: set once (mode 'create' or 'change'), then typed once on each device
-  // (mode 'unlock').
-  function PassphraseForm({ mode, reason, busy, onSubmit }) {
-    const [pass, setPass] = useState('');
-    const [again, setAgain] = useState('');
-    const [show, setShow] = useState(false);
-    const [remember, setRemember] = useState(true);
-    const [problem, setProblem] = useState('');
-    const fresh = mode !== 'unlock';
-    const submit = (e) => {
-      e.preventDefault();
-      if (fresh) {
-        const weak = window.LedgerVault.weakness(pass);
-        if (weak) { setProblem(weak); return; }
-        if (pass !== again) { setProblem('The two passphrases are not the same.'); return; }
-      } else if (!pass) { setProblem('Type the backup passphrase.'); return; }
-      setProblem('');
-      onSubmit(pass, remember);
+  // The Ledger Lens passphrase: what it protects, Change passphrase, Lock now.
+  function PassphraseBlock() {
+    const [changing, setChanging] = useState(false);
+    const [note, setNote] = useState('');
+    const change = async (pass) => {
+      setNote('');
+      await Lock.change(pass);
+      setChanging(false);
+      if (Drive.connected()) Drive.sync();
+      if (LocalFile.ready()) LocalFile.save();
+      setNote(`Everything on this device is now locked with the new passphrase${Drive.connected() ? ', and Google Drive is being updated. Your other devices will ask for it at their next sync' : ''}. Backup files saved before today still open with the old one.`);
     };
-    const intro = mode === 'unlock'
-      ? (reason === 'changed'
-        ? 'The backup passphrase was changed on another device. Type the new one to keep syncing.'
-        : 'Your Google Drive backup is locked. Type the backup passphrase you set on your other device.')
-      : mode === 'change'
-        ? 'Choose a new passphrase. Everything in Drive is locked again with it, and your other devices will ask for it once.'
-        : `${reason === 'upgrade' ? 'Your Google Drive backup is not encrypted yet. ' : ''}Choose a backup passphrase. Your clients, QuickBooks files and receipt photos are locked with it before they go to Google Drive, so only someone who knows it can read them. Use the same passphrase on each device.`;
-    return html`<form class="passphrase" onSubmit=${submit}>
-      <p>${intro}</p>
-      ${fresh && html`<p class="hint"><strong>Write it down and keep it safe.</strong> Nobody can recover it, not even the developer. If it is lost, the copy in Drive cannot be opened; the clients already saved on your devices are not affected, and you can set a new passphrase from any of them.</p>`}
-      <label for="pp-1">${fresh ? 'New backup passphrase' : 'Backup passphrase'}</label>
-      <input id="pp-1" type=${show ? 'text' : 'password'} autocomplete=${fresh ? 'new-password' : 'current-password'} value=${pass} onInput=${(e) => setPass(e.target.value)} />
-      ${fresh && html`<label for="pp-2">Type it again</label>
-      <input id="pp-2" type=${show ? 'text' : 'password'} autocomplete="new-password" value=${again} onInput=${(e) => setAgain(e.target.value)} />`}
-      <label class="check" for="pp-show"><input id="pp-show" type="checkbox" checked=${show} onChange=${(e) => setShow(e.target.checked)} />Show passphrase</label>
-      <label class="check" for="pp-remember"><input id="pp-remember" type="checkbox" checked=${remember} onChange=${(e) => setRemember(e.target.checked)} />Remember on this device (untick on a shared computer)</label>
-      ${problem && html`<p class="error" role="alert">${problem}</p>`}
-      <div class="backup-actions"><button class="btn primary" type="submit" disabled=${busy}>${mode === 'unlock' ? 'Unlock and sync' : mode === 'change' ? 'Change passphrase' : 'Lock and sync'}</button></div>
-    </form>`;
+    return html`<div class="backup-block">
+      <h3>${Icon.lock}Passphrase <span class="pill good"><span class="dot"></span>Encrypted</span></h3>
+      <p>Your clients, their QuickBooks files and receipt photos are encrypted with your passphrase: in this browser, in backup files and in Google Drive. Ledger Lens asks for it each time it opens and locks itself after 30 minutes without use.</p>
+      <div class="backup-actions">
+        <button class="btn" aria-expanded=${changing} onClick=${() => { setNote(''); setChanging(!changing); }}>Change passphrase</button>
+        <button class="btn" onClick=${() => Lock.lock()}>Lock now</button>
+      </div>
+      ${changing && html`<${PassphraseForm} mode="change" submitLabel="Change passphrase" intro="Choose a new passphrase. Everything is locked again with it; your other devices will ask for it once." onSubmit=${change} onCancel=${() => setChanging(false)} />`}
+      <p class="backup-status" role="status">${note}</p>
+    </div>`;
   }
 
   function DriveBackup({ onRestored }) {
     const st = useDrive();
     const [note, setNote] = useState('');
-    const [changing, setChanging] = useState(false);
     const connected = Drive.connected();
     useEffect(() => { Drive.prepare().catch(() => { /* reported when Connect is pressed */ }); }, []);
     const away = Drive.elsewhere();
@@ -195,22 +180,19 @@
     };
     if (connected && st.needPass) {
       return html`<div class="backup-block">
-        <h3>${Icon.cloud}Google Drive sync <span class="pill medium"><span class="dot"></span>${st.needPass.mode === 'create' ? 'Set a passphrase' : 'Locked'}</span></h3>
-        <${PassphraseForm} mode=${st.needPass.mode} reason=${st.needPass.reason} busy=${!!st.busy} onSubmit=${async (pass, remember) => { setNote(''); if (await Drive.usePassphrase(pass, remember)) onRestored(); }} />
+        <h3>${Icon.cloud}Google Drive sync <span class="pill medium"><span class="dot"></span>Passphrase changed</span></h3>
+        <${PassphraseForm} mode="unlock" submitLabel="Unlock and sync" intro="Your passphrase was changed on another device. Type the new one to keep syncing; this device switches to it too." onSubmit=${async (pass) => { setNote(''); if (await Drive.usePassphrase(pass)) onRestored(); }} />
         <p class="backup-status" role="status">${st.busy || st.error || note}</p>
       </div>`;
     }
     return html`<div class="backup-block">
       <h3>${Icon.cloud}Google Drive sync ${connected ? html`<span class="pill good"><span class="dot"></span>Connected</span> <span class="pill good"><span class="dot"></span>Encrypted</span>` : ''}</h3>
       ${connected
-        ? html`<p>Saved clients, their QuickBooks files and receipt photos stay in sync through your Google Drive${st.lastSaved ? `, last synced ${fmtWhen(st.lastSaved)}` : ''}. Everything is locked with your backup passphrase before it leaves this device, so Google stores only scrambled files. Connect on each computer and phone you use; the newest copy of each client wins. Google Drive keeps earlier versions too.</p>
+        ? html`<p>Saved clients, their QuickBooks files and receipt photos stay in sync through your Google Drive${st.lastSaved ? `, last synced ${fmtWhen(st.lastSaved)}` : ''}. Everything is locked with your passphrase before it leaves this device, so Google stores only scrambled files. Connect on each computer and phone you use; the newest copy of each client wins. Google Drive keeps earlier versions too.</p>
           <div class="backup-actions">
             <button class="btn primary" disabled=${!!st.busy} onClick=${syncNow}>Sync now</button>
             <button class="btn" disabled=${!!st.busy} onClick=${() => Drive.disconnect()}>Disconnect</button>
-            <button class="btn" disabled=${!!st.busy} aria-expanded=${changing} onClick=${() => setChanging(!changing)}>Change passphrase</button>
-            <button class="btn" disabled=${!!st.busy} title="This device asks for the passphrase again at the next sync" onClick=${() => { setNote(''); Drive.lock(); }}>Forget passphrase here</button>
           </div>
-          ${changing && html`<${PassphraseForm} mode="change" busy=${!!st.busy} onSubmit=${async (pass, remember) => { setNote(''); if (await Drive.changePassphrase(pass, remember)) { setChanging(false); setNote('The backup is now locked with the new passphrase. Your other devices will ask for it at their next sync.'); } }} />`}
           <label class="check" for="drive-auto" style=${{ paddingTop: '8px' }}><input id="drive-auto" type="checkbox" checked=${st.auto} onChange=${(e) => Drive.setAuto(e.target.checked)} />Sync automatically: after each change, every few minutes, and when you come back to the page</label>`
         : html`<p>${st.account ? 'Connect again to sync. Google asks each time the page is opened, for safety; one tap and the app catches up.' : 'Keep your laptop and phone in step: connect Google Drive on each one, and saved clients, their QuickBooks files and receipt photos follow you. Ledger Lens can only see the files it creates in your Drive, nothing else.'}</p>
           <div class="backup-actions"><button class="btn primary" disabled=${!!st.busy} onClick=${() => Drive.connect().then((ok) => ok && onRestored())}>${Icon.cloud}Connect Google Drive</button></div>`}
@@ -263,16 +245,16 @@
     const closedCount = list.filter((x) => x.st.level === 'good').length;
     const doExport = async () => {
       if (!list.length) { setStatus('Nothing to back up yet. A client is saved once you upload their export; the sample data is not saved.'); return; }
-      const msg = await saveTextFile(`ledger-lens-backup-${new Date().toISOString().slice(0, 10)}.json`, Backup.build());
+      const msg = await saveTextFile(`ledger-lens-backup-${new Date().toISOString().slice(0, 10)}.json`, await Lock.seal(Backup.build()));
       if (/^(Saved|Downloaded)/.test(msg)) Backup.mark('file');
       setStatus(msg);
     };
     const doImport = (file) => {
       if (!file) return;
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onload = async () => {
         try {
-          const n = Backup.restore(reader.result);
+          const n = Backup.restore(await Lock.openAny(String(reader.result)));
           refresh();
           setStatus(`Imported ${n} client${n === 1 ? '' : 's'} (newer copies kept).`);
         } catch (e) { setStatus(`${file.name} could not be imported: ${e.message}.`); }
@@ -316,6 +298,7 @@
           </table></div>` : html`<div class="empty">No clients yet. Upload a client's export; it shows up here with where their books stand.</div>`}
           <div class="backup">
             <${ComputerBackup} onRestored=${refresh} />
+            <${PassphraseBlock} />
             <${DriveBackup} onRestored=${refresh} />
             <div class="backup-block">
               <h3>${Icon.download}Download a backup file</h3>
