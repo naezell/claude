@@ -51,7 +51,10 @@ export function getCookie(request, name) {
   const header = request.headers.get('cookie') || '';
   for (const part of header.split(/;\s*/)) {
     const i = part.indexOf('=');
-    if (i > 0 && part.slice(0, i) === name) return decodeURIComponent(part.slice(i + 1));
+    if (i > 0 && part.slice(0, i) === name) {
+      // A malformed cookie is treated as no cookie (sign in again) rather than an error page.
+      try { return decodeURIComponent(part.slice(i + 1)); } catch (e) { return null; }
+    }
   }
   return null;
 }
@@ -60,7 +63,16 @@ export const sessionCookie = (value) => `${COOKIE}=${encodeURIComponent(value)};
 export const clearCookie = () => `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`;
 
 // Only same-site paths after sign-in, so the login page cannot be used to send people elsewhere.
-export const safeNext = (next) => (typeof next === 'string' && /^\/(?![/\\])/.test(next) ? next : '/');
+// Browsers drop tabs and line breaks from addresses ("/\t/evil.example" becomes "//evil.example"),
+// so the path is resolved the way a browser would and must stay on this site.
+export function safeNext(next) {
+  if (typeof next !== 'string' || !/^\/(?![/\\])/.test(next) || /[\u0000-\u001f\u007f\\]/.test(next)) return '/';
+  try {
+    const base = 'https://ledger-lens.invalid';
+    const u = new URL(next, base);
+    return u.origin === base ? u.pathname + u.search + u.hash : '/';
+  } catch (e) { return '/'; }
+}
 
 // Google's signing keys, cached for an hour.
 let jwksCache = null;

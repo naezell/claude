@@ -47,8 +47,9 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   removals), writes back only when something differs, then syncs one `client-files` file per client
   (exports + receipt photos, gzip+base64, appProperty `client` = hashed id). `ClientStore.put` skips
   unchanged profiles so synced copies don't bounce between devices.
-- No client data leaves the browser unsealed. Only Google (sign-in, Drive backup) is contacted,
-  plus the site's own portal endpoints.
+- No client data leaves the browser unsealed, with one exception: the Google Drive backup is
+  compressed but not encrypted, so it is readable by anyone with access to that Google account.
+  Only Google (sign-in, Drive backup) is contacted, plus the site's own portal endpoints.
 - Client portal: `src/ui/portal.js` (Mark's side), `portal.html` + `portal.js` (the client's
   page, public, plain DOM), `src/sealed.js` (AES-GCM; the key lives only in the link after `#`),
   `netlify/functions/portal.mjs` + `lib/portal.mjs` (stores sealed records in Netlify Blobs,
