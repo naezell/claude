@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const { ResponsiveContainer, BarChart, Bar, Line, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ReferenceLine } = Recharts;
   const E = window.LedgerEngine;
-  const { fmtMoney, fmtPct } = E;
+  const { fmtMoney, fmtPct, fmtWhole } = E;
   const UI = window.LedgerUI;
   const { compactMoney, truncate, useTokens, Icon, Money, ChartTooltip, shortDate, wholeMoney, InsightList, Arrange } = UI;
 
@@ -165,7 +165,7 @@
           <div class="panel-head">
             <h2>1099 contractor review</h2>
             ${yr && html`<span class=${`pill ${yr.reviewCount ? 'high' : 'good'}`}>${yr.reviewCount} to review</span>`}
-            <p>Vendors paid by check or bank transfer at or above the IRS threshold for the year: $600 for payments made through 2025, $2,000 from 2026 (adjusted for inflation from 2027). A W-9 settles whether each one needs a 1099.</p>
+            <p>Vendors paid by check or bank transfer at or above the IRS threshold for the year: $600 for payments made through 2025, $2,000 from 2026 (adjusted for inflation from 2027). A W-9 settles whether each one needs a 1099.${yr && !yr.thresholdConfirmed ? ` The IRS has not yet published the ${yr.year} amount, so ${fmtWhole(yr.threshold)} is used until it does.` : ''}</p>
           </div>
           <div class="panel-body" style=${{ display: 'flex', flexWrap: 'wrap', gap: '10px 16px', alignItems: 'center', paddingBottom: '12px' }}>
             <div class="seg" role="group" aria-label="Tax year">${v.tax.map((y) => html`<button key=${y.year} aria-pressed=${y.year === year} onClick=${() => setYear(y.year)}>${y.year}${y.full ? '' : ' so far'}</button>`)}</div>

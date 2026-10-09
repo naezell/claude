@@ -1140,3 +1140,61 @@ test('tax calendar and estimates: deadlines by entity, weekend dates, and the sa
   const csv = E.form1099Csv({ vendors: [{ vendor: 'Mike Delaney Excavating', form: '1099-NEC', bank: 6984.77, card: 0, status: 'Review', note: 'Collect a W-9' }, { vendor: 'Shell', form: '1099-NEC', bank: 0, card: 900, status: 'Card only', note: '' }] }, { 'Mike Delaney Excavating': 'received' });
   assert.deepEqual(csv.split('\n').map((l) => l.split(',').slice(0, 6).join('|')), ['Vendor|Form|Box 1 amount (check / transfer)|Paid by card (reported on 1099-K)|Screening status|W-9', 'Mike Delaney Excavating|1099-NEC|6984.77|0.00|Review|On file']);
 });
+
+test('parseDate refuses impossible and day-first dates instead of rolling them over', () => {
+  assert.equal(E.parseDate('02/29/2025'), null);
+  assert.equal(E.parseDate('13/45/2026'), null);
+  assert.equal(E.parseDate('13/05/2026'), null);
+  assert.equal(E.parseDate('04/31/2026'), null);
+  assert.equal(E.parseDate('2026-02-30'), null);
+  assert.equal(E.parseDate('1/5/202'), null);
+  assert.equal(E.parseDate('02/29/2024').toISOString().slice(0, 10), '2024-02-29');
+  assert.equal(E.parseDate('1/5/26').toISOString().slice(0, 10), '2026-01-05');
+  assert.equal(E.parseDate('2026-01-05').toISOString().slice(0, 10), '2026-01-05');
+  assert.equal(E.parseDate('46027').toISOString().slice(0, 10), '2026-01-05');
+});
+
+test('rows with unreadable dates are left out and counted, not moved to another month', () => {
+  const csv = ['Date,Transaction Type,Num,Name,Account,Split,Amount',
+    '01/05/2026,Expense,,A,Office Supplies,Checking,10.00',
+    '02/29/2026,Expense,,B,Office Supplies,Checking,20.00',
+    '13/05/2026,Expense,,C,Office Supplies,Checking,30.00'].join('\n');
+  const p = E.parseTransactions(csv);
+  assert.equal(p.transactions.length, 1);
+  assert.equal(p.meta.badDates.count, 2);
+  assert.deepEqual(p.meta.badDates.rows.map((b) => b.line), [3, 4]);
+  const merged = E.mergeParsed([p, E.parseTransactions(csv.replace('01/05/2026', '01/06/2026'))]);
+  assert.equal(merged.meta.badDates.count, 4);
+  assert.throws(() => E.readExport('Date,Transaction Type,Name,Account,Amount\n31/12/2026,Expense,A,Office,10'), /none of the dates could be read.*31\/12\/2026/);
+});
+
+test('CSV files the app writes cannot carry spreadsheet formulas', () => {
+  assert.equal(E.csvCell('=HYPERLINK("http://evil.example","Click")'), `"'=HYPERLINK(""http://evil.example"",""Click"")"`);
+  assert.equal(E.csvCell('@SUM(1+1)'), "'@SUM(1+1)");
+  assert.equal(E.csvCell('+1 555 0100'), "'+1 555 0100");
+  assert.equal(E.csvCell('-cmd'), "'-cmd");
+  assert.equal(E.csvCell('\tx'), "'\tx");
+  assert.equal(E.csvCell('-45.10'), '-45.10');
+  assert.equal(E.csvCell('+12'), '+12');
+  assert.equal(E.csvCell('Acme, Inc.'), '"Acme, Inc."');
+  assert.equal(E.csvCell(null), '');
+  const upload = E.quickbooksUploadCsv([{ date: '2026-01-02', description: '=HYPERLINK("http://evil.example")', amount: 5 }]);
+  assert.match(upload, /"'=HYPERLINK/);
+  assert.match(upload, /,-5\.00$/);
+  const csv = ['Date,Transaction Type,Num,Name,Memo/Description,Account,Split,Amount',
+    '01/06/2026,Expense,,@SUM(1+1),y,Ask My Accountant,Checking,99.00',
+    '01/07/2026,Invoice,1,Globex,Work,Sales,Accounts Receivable,1000.00'].join('\n');
+  const sheet = E.questionsSheet(E.clientQuestions(E.analyze(E.parseTransactions(csv))));
+  assert.ok(!/(^|,)@SUM/m.test(sheet), sheet);
+  assert.match(sheet, /'@SUM\(1\+1\)/);
+});
+
+test('1099 threshold: years after the newest published amount are marked unconfirmed', () => {
+  const rows = (y) => E.parseTransactions(['Date,Transaction Type,Num,Name,Account,Split,Amount', `03/01/${y},Check,1,R. Patel,Contract Labor,Checking,2500.00`].join('\n')).transactions;
+  const [y26] = E.tax1099(rows(2026), {}, {});
+  const [y27] = E.tax1099(rows(2027), {}, {});
+  assert.equal(y26.threshold, 2000);
+  assert.equal(y26.thresholdConfirmed, true);
+  assert.equal(y27.threshold, 2000);
+  assert.equal(y27.thresholdConfirmed, false);
+});

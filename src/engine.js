@@ -58,17 +58,37 @@
     const s = norm(v);
     // Excel stores dates as day counts from 1899-12-30; unformatted cells arrive that way.
     if (/^\d{5}(\.\d+)?$/.test(s) && +s > 20000 && +s < 80000) return new Date(Date.UTC(1899, 11, 30) + Math.floor(+s) * DAY);
-    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
     if (m) {
       let y = +m[3];
       if (y < 100) y += 2000;
-      const d = new Date(Date.UTC(y, +m[1] - 1, +m[2]));
-      return isNaN(d) ? null : d;
+      return validDate(y, +m[1], +m[2]);
     }
     m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    if (m) return validDate(+m[1], +m[2], +m[3]);
     return null;
   }
+
+  // A real calendar date or null. Date.UTC quietly rolls impossible dates over (02/29/2025 to
+  // March 1, 13/45/2026 to 2027), which would move a transaction into the wrong month, so the
+  // year, month and day must come back unchanged. Day-first dates (13/05/2026) are refused too.
+  function validDate(y, mo, d) {
+    if (y < 1900 || y > 2200 || mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const out = new Date(Date.UTC(y, mo - 1, d));
+    return out.getUTCFullYear() === y && out.getUTCMonth() === mo - 1 && out.getUTCDate() === d ? out : null;
+  }
+  // Text shaped like a date (whether or not it is a real one), to tell a bad date from a
+  // section heading.
+  const DATE_SHAPED = /^(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}|\d{4}-\d{1,2}-\d{1,2})/;
+
+  // One spreadsheet cell for the CSV files the app writes. Text from bank feeds and vendors can
+  // start with = + - @ (or a tab), which Excel and Google Sheets run as a formula, so such text
+  // gets a leading apostrophe and is shown as plain text. Plain numbers such as -45.10 stay numbers.
+  const csvCell = (v) => {
+    let s = v == null ? '' : String(v);
+    if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?\d[\d,]*(\.\d+)?$/.test(s)) s = `'${s}`;
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
 
   const DAY = 86400000;
   const EMPTY = Object.freeze({});
@@ -342,6 +362,7 @@
     const openingBalances = {};
     let section = '';
     let skippedTotals = 0;
+    const badDates = [];
     for (let i = header.index + 1; i < rows.length; i++) {
       const r = rows[i];
       const nonEmpty = r.map(norm).filter(Boolean);
@@ -356,6 +377,11 @@
         continue;
       }
       const date = parseDate(get(r, 'date'));
+      if (!date && DATE_SHAPED.test(get(r, 'date'))) {
+        // Looks like a date but is not a real one: left out, and counted so the page can say so.
+        badDates.push({ line: i + 1, value: get(r, 'date') });
+        continue;
+      }
       if (!date) {
         // Section header in "by Account" layouts ("Office Supplies", "Checking (1)").
         if (nonEmpty.length <= 2 && !/^(tuesday|monday|wednesday|thursday|friday|saturday|sunday),|accrual basis|cash basis|gmt/i.test(nonEmpty[0])) {
@@ -397,6 +423,7 @@
       transactions: txns,
       meta: {
         reportLines: meta,
+        badDates: { count: badDates.length, rows: badDates.slice(0, 20) },
         company: meta[0] || '',
         reportTitle: meta[1] || '',
         period: meta[2] || '',
@@ -1835,7 +1862,13 @@
   const CORP_SUFFIX = /\b(inc|incorporated|corp|corporation)\b\.?/i;
 
   const PAYROLL_ACCOUNT = /payroll|wages|salar/i;
-  const threshold1099 = (year) => (year <= 2025 ? 600 : 2000);
+  // 1099-NEC/MISC reporting threshold by tax year. $600 through 2025, $2,000 for 2026, then
+  // adjusted for inflation each year from 2027: add each year here when the IRS publishes it.
+  // Later years use the newest published amount and are marked as not yet confirmed.
+  const THRESHOLD_1099 = { 2025: 600, 2026: 2000 };
+  const LAST_1099_YEAR = Math.max(...Object.keys(THRESHOLD_1099).map(Number));
+  const threshold1099 = (year) => (year <= 2025 ? 600 : THRESHOLD_1099[Math.min(year, LAST_1099_YEAR)]);
+  const threshold1099Known = (year) => year <= LAST_1099_YEAR;
 
   // Payments to each vendor by calendar year, split by bank and card, for 1099 review.
   // Not payments for services: goods, utilities, insurance, interest, taxes, fees, travel.
@@ -1901,7 +1934,7 @@
       // Keep vendors paid $600+ by check or transfer (to watch the new $2,000 line fill up) and large card-only vendors.
       }).filter((v) => v.bank >= 600 || v.status === 'Card only')
         .sort((a, b) => (a.status === 'Review' ? 0 : 1) - (b.status === 'Review' ? 0 : 1) || b.bank - a.bank);
-      return { year, full, threshold: limit, vendors, reviewCount: vendors.filter((v) => v.status === 'Review').length };
+      return { year, full, threshold: limit, thresholdConfirmed: threshold1099Known(year), vendors, reviewCount: vendors.filter((v) => v.status === 'Review').length };
     });
     return out;
   }
@@ -2208,7 +2241,12 @@
     const stmt = parseCardStatement(text);
     if (stmt) return { kind: 'statement', data: stmt };
     const p = parseTransactions(text);
-    if (!p.transactions.length) throw new Error('has a header row but no dated transactions.');
+    if (!p.transactions.length) {
+      const bad = p.meta.badDates;
+      throw new Error(bad.count
+        ? `has a header row but no dated transactions: none of the dates could be read (for example "${bad.rows[0].value}" on row ${bad.rows[0].line}). Export it again from QuickBooks without changing the date format.`
+        : 'has a header row but no dated transactions.');
+    }
     return { kind: 'parsed', data: p };
   }
 
@@ -2258,6 +2296,10 @@
         periodRange,
         files: ordered.length,
         droppedOverlap: dropped,
+        badDates: (() => {
+          const all = ordered.flatMap((p) => (p.meta.badDates ? p.meta.badDates.rows : []));
+          return { count: ordered.reduce((n, p) => n + (p.meta.badDates ? p.meta.badDates.count : 0), 0), rows: all.slice(0, 20) };
+        })(),
       },
     };
   }
@@ -3203,7 +3245,7 @@
     const last = isYear ? `${period}-12-31` : isoDate(new Date(Date.UTC(+period.slice(0, 4), +period.slice(5, 7), 0)));
     const label = isYear ? period : new Date(`${period}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
     const no = `DEP-${period.replace('-', '')}`;
-    const q = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const q = csvCell;
     const [y, m, d] = last.split('-');
     const date = `${m}/${d}/${y}`;
     const rowsCsv = [['Journal No.', 'Journal Date', 'Account Name', 'Debits', 'Credits', 'Description']];
@@ -4283,10 +4325,7 @@
   // reference that maps each answer back. CSV opens in Excel, Numbers and Google Sheets.
   const ANSWER_HEADERS = ['Ref', 'Topic', 'Date', 'Payee', 'Amount', 'Question', 'Your answer', 'Receipt sent? (Yes/No)'];
   function questionsSheet(q) {
-    const cell = (v) => {
-      const s = v == null ? '' : String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
+    const cell = csvCell;
     const lines = [ANSWER_HEADERS.join(',')];
     for (const r of q.rows) lines.push([r.ref, r.section, r.date, r.payee, r.amount != null ? r.amount.toFixed(2) : '', r.question, '', ''].map(cell).join(','));
     return `﻿${lines.join('\r\n')}\r\n`;
@@ -5511,7 +5550,6 @@
     for (const x of charges || []) { const [y, m, d] = x.date.split('-'); rows.push([`${m}/${d}/${y}`, x.description, (-x.amount).toFixed(2)]); }
     return rows.map((r) => r.map(csvCell).join(',')).join('\n');
   }
-  const csvCell = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 
   // Paying several cards off with one loan, against keeping them: each card's balance, APR and
   // monthly payment (or the usual minimum: interest plus 1% of the balance, at least $35), and
@@ -6566,7 +6604,7 @@
   }
 
   return {
-    parseCSV, parseAmount, parseDate, parseTransactions, readExport, classifyAccount,
+    parseCSV, parseAmount, parseDate, csvCell, parseTransactions, readExport, classifyAccount,
     findUncategorized, findDuplicates, findMismatches, profitability, subscriptions,
     analyze, detectIndustry, landscapeAnalysis, SERVICE_LINES, playbookCost, PLAYBOOK_TIPS, parseCustomerList, splitAddress, streetKey, routeDensity, assetSchedule, depreciationEntry, parseAssetList, guessAssetCategory, macrsRates, defaultBonus, ASSET_CATEGORIES, TAX_METHODS, buildReport, buildHtmlReport, buildHealthCheck, healthCheckFacts, fraudChecks, usHoliday, parseVoidedDeleted, parseEmployeeList, parseReceiptText, checkReceipt, TANK_GALLONS, parseCardStatement, cardReview, combinedStatementsCsv, quickbooksUploadCsv, cardPayoff, TAX_FORMS, FORM_LINES, taxKindOf, taxPrep, taxTrialBalanceCsv, taxDeadlines, taxDeadlinesForYear, estimateTracker, form1099Csv, W9_STATUS, buildLenderReport, lenderPackage, LENDER_TESTS, lenderRead, unusualActivity, balanceSheetCheck, periodSnapshot, closedPeriodChanges, jobCostGaps, closeChecklist, clientSummary, CLOSE_STEPS, receiptCheck, parseAttachmentList, questionsSheet, parseAnswers, matchAnswers, parseBudget, budgetFromHistory, budgetVsActual, nextSteps, parseProfitAndLoss, tieOut, payeeKeyOf, cleanPayee, payeeOf, loanReadiness, taxPlan, ENTITY, pmt, clientQuestions, clientKey, REVIEW_STATUSES, parsePeriod, parseChartOfAccounts, resolveAccounts, roleOf, logicalRows, cashForecast, breakEven, whatIf, trends, customerRisk, mergeParsed, vendorAnalysis, tax1099, benchmarkInputs, benchmarkRequest, readBenchmark, compareBenchmarks, INDUSTRIES, STATES, BENCH_METRICS, fmtMoney, fmtWhole, fmtPct, counterpartyOf, leafAccount,
   };
