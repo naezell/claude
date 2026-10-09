@@ -6,6 +6,7 @@
   const { safeStore, ClientStore, Backup } = UI;
   const { FileStore, AttachStore } = window.LedgerStore;
   const Vault = window.LedgerVault;
+  const Lock = window.LedgerLock;
 
   // Signs in with Google in the browser and keeps one backup file in the user's Drive. The
   // drive.file scope only reaches files this app created, never the rest of the Drive.
@@ -38,14 +39,16 @@
       lastSaved: safeStore.get('ll.drive.lastSaved') || null,
       auto: safeStore.get('ll.drive.auto') !== 'off',
       account: safeStore.get('ll.drive.used') === 'yes',
-      // The backup passphrase: null while not needed, else { mode: 'create' | 'unlock', reason }.
-      // While it is set nothing is read from or written to Drive.
+      // Set when the backup in Drive was locked with a different passphrase (it was changed on
+      // another device): { mode: 'unlock', reason: 'changed' }. Nothing moves until it is typed.
       needPass: null,
-      locked: true,
     },
-    // The key from the passphrase ({ key, salt, iterations }), kept in memory and, when Mark
-    // chooses, in this browser as a key the page can use but not read out (see KeyStore).
-    vault: null,
+    // Everything in Drive is sealed with the Ledger Lens passphrase (src/lock.js), the same key
+    // that protects the data in this browser.
+    get vault() { return Lock.keys(); },
+    // During a passphrase change, the key the files in Drive were sealed with until now.
+    previous: null,
+    force: false,
     listeners: new Set(),
     set(patch) {
       Object.assign(this.state, patch);
@@ -107,7 +110,6 @@
         safeStore.set('ll.drive.used', 'yes');
         this.set({ token: resp.access_token, expires: Date.now() + (+resp.expires_in || 3600) * 1000, account: true });
         this.set({ busy: '' });
-        if (!this.vault) { this.vault = await KeyStore.get(); this.set({ locked: !this.vault }); }
         // Bring in the other devices' work before this one writes anything.
         await this.sync();
         return true;
@@ -177,12 +179,10 @@
           let pulled = 0, remote = null, sealedRemote = false, text = null;
           if (f) text = await (await this.api(`${API}/${f.id}?alt=media`)).text();
           // Nothing moves until there is a key that fits the backup in Drive.
-          if (!this.vault || (text && Vault.isSealed(text) && !this.keyFor(text))) {
-            const mode = text && Vault.isSealed(text) ? 'unlock' : 'create';
-            // A key that no longer fits means the passphrase was changed on another device.
-            const changed = !!this.vault;
-            if (this.vault) { this.vault = null; await KeyStore.clear(); }
-            this.set({ busy: '', locked: true, needPass: { mode, reason: changed ? 'changed' : mode === 'create' && text ? 'upgrade' : '' } });
+          // A key that does not fit means the passphrase was changed on another device.
+          if (!this.vault) throw new Error('Ledger Lens is locked');
+          if (text && Vault.isSealed(text) && !this.keyFor(text)) {
+            this.set({ busy: '', needPass: { mode: 'unlock', reason: 'changed' } });
             return null;
           }
           if (text) {
@@ -210,7 +210,7 @@
           return { pulled, pushed, filesUp: files.up, filesDown: files.down };
         } catch (e) {
           if (/not found/i.test(e.message)) { safeStore.set('ll.drive.fileId', ''); this.set({ fileId: null }); }
-          if (e.wrongPassphrase) { this.vault = null; await KeyStore.clear(); this.set({ locked: true, needPass: { mode: 'unlock', reason: 'changed' } }); }
+          if (e.wrongPassphrase) this.set({ needPass: { mode: 'unlock', reason: 'changed' } });
           this.set({ busy: '', error: `Not synced: ${e.message}.` });
           return null;
         }
@@ -248,14 +248,14 @@
         const r = remote.get(h);
         // Skipped when Drive already has this copy or a newer one, sealed with the current key.
         // Copies from before encryption, or sealed with an earlier passphrase, are sent again.
-        const sealedNow = r && r.appProperties.sealed === this.vault.salt;
+        const sealedNow = r && r.appProperties.sealed === this.vault.kid;
         if (r && sealedNow && !this.force && String(r.appProperties.savedAt || '') >= at) continue;
         if (r && !sealedNow && String(r.appProperties.savedAt || '') > at) continue; // brought down first, below
         const files = (await FileStore.get(id)) || [];
         const photos = await AttachStore.forClient(id);
         const body = await Vault.seal(this.vault, JSON.stringify({ format: 'ledger-lens-files', client: id, savedAt: at, filesSavedAt: (idx[id] || {}).savedAt || '', photosAt: stamps[id] || '', files, photos }));
         if (body.length > MAX_UPLOAD) { this.set({ error: `${clients[id].name || 'A client'}'s files are too large to sync; upload them on the other device.` }); continue; }
-        const meta = { appProperties: { [TAG.key]: FILES_TAG, client: h, savedAt: at, sealed: this.vault.salt } };
+        const meta = { appProperties: { [TAG.key]: FILES_TAG, client: h, savedAt: at, sealed: this.vault.kid } };
         if (r) {
           await this.multipart('PATCH', `${UPLOAD}/${r.id}?uploadType=multipart&fields=id`, meta, body);
           if (!sealedNow || this.force) await this.purgeVersions(r.id);
@@ -280,51 +280,34 @@
         if (data.photosAt && String(data.photosAt) > String(stamps[id] || '')) await AttachStore.putClient(id, data.photos || {}, data.photosAt);
         moved.down++;
         // A copy from before encryption: sync again straight away so it is replaced by a sealed one.
-        if (r.appProperties.sealed !== this.vault.salt) this.again = true;
+        if (r.appProperties.sealed !== this.vault.kid) this.again = true;
       }
       return moved;
     },
     setAuto(on) { safeStore.set('ll.drive.auto', on ? 'on' : 'off'); this.set({ auto: on }); },
 
-    // The passphrase Mark typed: a new one (first device, or a backup from before encryption)
-    // or the one that opens the backup already in Drive. Then sync.
-    async usePassphrase(pass, remember) {
-      const need = this.state.needPass;
-      if (!need) return false;
-      this.set({ busy: need.mode === 'create' ? 'Locking the backup…' : 'Unlocking the backup…', error: '' });
+    // The passphrase that opens the backup in Drive after it was changed on another device.
+    // This device switches to it too (its saved data is sealed again), then syncs.
+    async usePassphrase(pass) {
+      if (!this.state.needPass) return false;
+      this.set({ busy: 'Unlocking the backup…', error: '' });
       try {
-        if (need.mode === 'create') {
-          const weak = Vault.weakness(pass);
-          if (weak) throw new Error(weak);
-          this.vault = await Vault.create(pass);
-        } else {
-          const f = await this.locate();
-          const text = f ? await (await this.api(`${API}/${f.id}?alt=media`)).text() : null;
-          if (!text || !Vault.isSealed(text)) { this.set({ busy: '', needPass: { mode: 'create', reason: '' } }); return false; }
-          this.vault = await Vault.unlock(pass, text);
-        }
-        if (remember) await KeyStore.put(this.vault); else await KeyStore.clear();
-        this.set({ busy: '', needPass: null, locked: false });
+        const f = await this.locate();
+        const text = f ? await (await this.api(`${API}/${f.id}?alt=media`)).text() : null;
+        if (!text || !Vault.isSealed(text)) { this.set({ busy: '', needPass: null }); return !!(await this.sync()); }
+        const k = await Vault.unlock(pass, text);
+        await Lock.adopt(pass);
+        // Drive's copies open with `k`; if this device seals with other settings, they are all
+        // sealed again with this device's key.
+        this.previous = k;
+        this.force = k.kid !== Lock.kid();
+        this.set({ busy: '', needPass: null });
         return !!(await this.sync());
       } catch (e) {
-        this.vault = null;
+        this.previous = null;
         this.set({ busy: '', error: e.wrongPassphrase ? 'That passphrase does not open the backup. Use the one you set on your other device.' : `${e.message}` });
         return false;
       }
-    },
-    // A new passphrase: everything in Drive is sealed again with it. The other devices ask for
-    // the new one at their next sync.
-    async changePassphrase(pass, remember) {
-      const weak = Vault.weakness(pass);
-      if (weak) { this.set({ error: weak }); return false; }
-      this.set({ busy: 'Locking the backup with the new passphrase…', error: '' });
-      // The old key still opens what is in Drive until this sync has sealed it all again.
-      this.previous = this.vault;
-      this.vault = await Vault.create(pass);
-      if (remember) await KeyStore.put(this.vault); else await KeyStore.clear();
-      this.force = true;
-      this.set({ busy: '', locked: false, needPass: null });
-      return !!(await this.sync());
     },
     // Deletes every stored version of a file except the newest (best effort: Drive keeps the
     // newest one regardless, and an old version left behind is retried at the next change).
@@ -340,45 +323,11 @@
       if (this.previous && Vault.matches(this.previous, text)) return this.previous;
       return null;
     },
-    // Forgets the key on this device: the passphrase is asked for at the next sync.
-    async lock() {
-      this.vault = null;
-      await KeyStore.clear();
-      this.set({ locked: true, needPass: this.connected() ? { mode: 'unlock', reason: '' } : null });
-    },
   };
 
-  // The backup key, remembered in this browser. IndexedDB stores the CryptoKey object itself,
-  // which was made non-extractable: scripts can use it to seal and open, but cannot read it, and
-  // it never leaves this device. Separate from the clients database so its upgrades stay simple.
-  const KeyStore = {
-    db() {
-      return new Promise((resolve, reject) => {
-        if (typeof indexedDB === 'undefined') { reject(new Error('no IndexedDB')); return; }
-        const r = indexedDB.open('ledger-lens-vault', 1);
-        r.onupgradeneeded = () => r.result.createObjectStore('keys');
-        r.onsuccess = () => resolve(r.result);
-        r.onerror = () => reject(r.error);
-      });
-    },
-    async run(mode, fn) {
-      try {
-        const db = await this.db();
-        return await new Promise((resolve, reject) => {
-          const tx = db.transaction('keys', mode);
-          const req = fn(tx.objectStore('keys'));
-          tx.oncomplete = () => { db.close(); resolve(req && req.result); };
-          tx.onerror = () => { db.close(); reject(tx.error); };
-        });
-      } catch (e) { return null; }
-    },
-    async get() {
-      const v = await this.run('readonly', (s) => s.get('drive'));
-      return v && v.key && v.salt ? v : null;
-    },
-    put(vault) { return this.run('readwrite', (s) => s.put({ key: vault.key, salt: vault.salt, iterations: vault.iterations }, 'drive')); },
-    clear() { return this.run('readwrite', (s) => s.delete('drive')); },
-  };
+  // A new passphrase on this device: everything in Drive is sealed again with it at the next
+  // sync, which starts straight away. The other devices ask for the new one at their next sync.
+  Lock.resealers.push((old) => { Drive.previous = old; Drive.force = true; });
 
   // The parts of a backup two devices must agree on (not when it was written).
   const sameData = (d) => {

@@ -57,26 +57,28 @@ Redeploy (drag the folder in again, or push to Git if Netlify is connected).
 - You can move the files to any folder and the app still finds them. Google Drive keeps earlier versions (right-click → File information → Manage versions).
 - For safety, Google asks again each time the page is opened. A device that synced before shows a **Sync paused** banner with a one-tap **Connect**.
 
-## The backup passphrase (encryption)
+## The passphrase (encryption)
 
-Everything the app puts in Drive is encrypted on the device first, so Google (or anyone who gets
-into the Google account) only sees scrambled files.
+Ledger Lens asks for one passphrase, and everything it keeps is encrypted with it: the clients
+saved in the browser, backup files and Google Drive. Google (or anyone who gets into the Google
+account, or copies the browser's files off a laptop) only sees scrambled data.
 
-- **First device:** after **Connect Google Drive**, the app asks for a **backup passphrase** (at
-  least 12 characters; a short sentence works well) and to type it twice. Nothing is written to
-  Drive until it is set. **Write it down and keep it somewhere safe**: nobody can recover it.
-- **Each other device:** after connecting, type the same passphrase once. Leave **Remember on
-  this device** ticked on your own laptop and phone; untick it on a shared computer, and it is
-  asked for every time.
-- **Change passphrase** (Clients → Google Drive) locks everything in Drive again with a new one.
-  The other devices ask for the new passphrase at their next sync.
-- **Forget passphrase here** removes it from that device only.
-- **Lost passphrase:** the copy in Drive can't be opened, but the clients saved on each device
-  are untouched. On any device that still syncs (or after **Change passphrase** there), the
-  backup is written again with the new passphrase.
+- **First time on a device:** the app opens on a lock screen asking for a passphrase (at least 12
+  characters; a short sentence works well), typed twice. Clients already saved in that browser
+  are encrypted right away. **Write it down and keep it somewhere safe**: nobody can recover it.
+- **Use the same passphrase on each device.** Then Drive and backup files open everywhere.
+- **Each time Ledger Lens opens**, type the passphrase. It locks itself after 30 minutes without
+  use, and **Lock now** (Clients → Passphrase) locks it straight away.
+- **Change passphrase** (Clients → Passphrase) locks everything on that device and in Drive
+  again with a new one. The other devices ask for the new passphrase once, at their next sync,
+  and switch to it. Backup files saved before the change still open with the old passphrase (the
+  app asks for it when you restore one).
+- **Lost passphrase:** it cannot be recovered. **Forgot the passphrase?** on the lock screen
+  erases what Ledger Lens saved in that browser so a new one can be set; the Drive copy and
+  backup files stay locked with the old passphrase.
 - Backups made before encryption are read once and replaced with encrypted copies at the first
   sync, and the older readable versions in Drive's version history are deleted at the same time
   (the same happens after **Change passphrase**).
 - How it works: AES-256-GCM, with the key derived from the passphrase by PBKDF2-SHA256 (600,000
-  rounds) and a random salt stored in each file. The passphrase itself is never stored or sent
-  anywhere; the derived key is kept in the browser in a form scripts can use but cannot read out.
+  rounds). The passphrase and the key are never stored or sent anywhere; the key exists only in
+  the open page's memory.

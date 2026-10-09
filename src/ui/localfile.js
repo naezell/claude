@@ -109,8 +109,10 @@
       if (!this.ready()) return false;
       this.set({ busy: 'Saving…', error: '' });
       try {
+        // Encrypted with the Ledger Lens passphrase, like everything else saved.
+        const body = await window.LedgerLock.seal(Backup.build());
         const w = await this.state.handle.createWritable();
-        await w.write(Backup.build());
+        await w.write(body);
         await w.close();
         const at = new Date().toISOString();
         safeStore.set('ll.file.lastSaved', at);
@@ -128,7 +130,7 @@
       try {
         const file = await this.state.handle.getFile();
         const text = await file.text();
-        const n = text.trim() ? Backup.restore(text) : 0;
+        const n = text.trim() ? Backup.restore(await window.LedgerLock.openAny(text, 'The backup file')) : 0;
         this.set({ busy: '' });
         return n;
       } catch (e) {

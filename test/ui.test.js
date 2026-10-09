@@ -49,7 +49,17 @@ after(async () => { if (browser) await browser.close(); });
 
 // `setup(page)` runs before the page loads (init scripts); `serve(route, url)` may answer a
 // request itself and return true.
-async function openPage(opts, setup, serve) {
+const PASS = 'blue canoe at seven lakes';
+// The page opens on the lock screen: sets the passphrase (first time) or types it.
+async function unlock(page, pass = PASS) {
+  await page.waitForSelector('.lock-card #pp-1');
+  await page.fill('#pp-1', pass);
+  if (await page.locator('.lock-card #pp-2').count()) await page.fill('#pp-2', pass);
+  await page.locator('.lock-card button[type=submit]').click();
+  await page.waitForSelector('.lock-screen', { state: 'detached', timeout: 30000 });
+}
+
+async function openPage(opts, setup, serve, pass) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, ...(opts || {}) });
   const errors = [];
   const outside = [];
@@ -63,6 +73,7 @@ async function openPage(opts, setup, serve) {
     return route.abort();
   });
   await page.goto(PAGE);
+  await unlock(page, pass);
   await showSample(page);
   return { page, errors, outside };
 }
@@ -261,18 +272,34 @@ function fakeGoogle() {
   return { files, calls, serve, backup, clientFiles };
 }
 
-const PASS = 'blue canoe at seven lakes';
-// Sets the backup passphrase (first device) or types it (other devices) in the Clients drawer.
+// Types a passphrase in a form in the Clients drawer (Drive asking, or Change passphrase).
 async function lockBackup(page, pass = PASS) {
-  await page.waitForSelector('form.passphrase');
-  await page.fill('#pp-1', pass);
-  if (await page.locator('#pp-2').count()) await page.fill('#pp-2', pass);
-  await page.locator('form.passphrase button[type=submit]').click();
+  await page.waitForSelector('.drawer form.passphrase');
+  await page.fill('.drawer #pp-1', pass);
+  if (await page.locator('.drawer #pp-2').count()) await page.fill('.drawer #pp-2', pass);
+  await page.locator('.drawer form.passphrase button[type=submit]').click();
 }
 const sealedJson = async (page, text) => JSON.parse(await page.evaluate(async ({ text, pass }) => {
   const v = await window.LedgerVault.unlock(pass, text);
   return window.LedgerVault.open(v, text);
 }, { text, pass: PASS }));
+
+// Everything in the browser database, keys and values, as one string.
+const rawDb = (page) => page.evaluate(() => new Promise((resolve) => {
+  const r = indexedDB.open('ledger-lens');
+  r.onsuccess = () => {
+    const db = r.result;
+    const stores = [...db.objectStoreNames];
+    const tx = db.transaction(stores, 'readonly');
+    const out = [];
+    stores.forEach((n) => {
+      const st = tx.objectStore(n);
+      st.getAllKeys().onsuccess = (e) => out.push(JSON.stringify(e.target.result));
+      st.getAll().onsuccess = (e) => out.push(JSON.stringify(e.target.result));
+    });
+    tx.oncomplete = () => { db.close(); resolve(out.join('\n')); };
+  };
+}));
 
 const untilAsync = async (page, check, what, ms = 20000) => {
   const deadline = Date.now() + ms;
@@ -297,14 +324,7 @@ test('Google Drive sync: laptop and phone share clients, their files, changes an
   const laptop = await openPage({}, setup, g.serve);
   await laptop.page.click('button:has-text("Clients")');
   await laptop.page.click('button:has-text("Connect Google Drive")');
-  // Nothing goes to Drive until a backup passphrase is set.
-  await laptop.page.waitForSelector('form.passphrase');
-  assert.equal(g.files.size, 0);
-  await laptop.page.fill('#pp-1', 'too short');
-  await laptop.page.fill('#pp-2', 'too short');
-  await laptop.page.locator('form.passphrase button[type=submit]').click();
-  await laptop.page.waitForSelector('form.passphrase .error:has-text("at least 12")');
-  await lockBackup(laptop.page);
+  // Sealed with the passphrase typed when the page opened: no further question.
   await laptop.page.waitForSelector('button:has-text("Sync now"):enabled');
   await until(laptop.page, () => g.backup(), 'the backup file');
   assert.deepEqual(g.backup().meta.appProperties, { ledgerLens: 'clients-backup' });
@@ -324,18 +344,14 @@ test('Google Drive sync: laptop and phone share clients, their files, changes an
     assert.equal(JSON.parse(f.body).format, 'ledger-lens-sealed');
     assert.doesNotMatch(f.body, /harbor|Transaction Type|reviewed/i);
   }
-  assert.equal(g.clientFiles()[0].meta.appProperties.sealed, JSON.parse(g.backup().body).kdf.salt);
+  assert.equal(g.clientFiles()[0].meta.appProperties.sealed, JSON.parse(g.backup().body).kid);
   assert.equal(g.files.size, 2);
 
   // The phone connects and gets the client, and can open it from the synced files.
   const phone = await openPage({ viewport: { width: 400, height: 900 } }, setup, g.serve);
   await phone.page.click('button:has-text("Clients")');
   await phone.page.click('button:has-text("Connect Google Drive")');
-  // The phone asks for the passphrase set on the laptop; a wrong one is refused.
-  await phone.page.waitForSelector('form.passphrase:has-text("set on your other device")');
-  await lockBackup(phone.page, 'not the right passphrase');
-  await phone.page.waitForSelector('.backup-status:has-text("does not open the backup")');
-  await lockBackup(phone.page);
+  // The same passphrase on the phone: it opens the laptop's backup straight away.
   await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
   await phone.page.locator('.dash-row button:has-text("Open")').first().click();
   await phone.page.waitForSelector('.source:has-text("harbor-pine")');
@@ -384,9 +400,6 @@ test('Google Drive sync paused: a device that synced before offers to reconnect'
   await page.waitForSelector('.banner:has-text("Sync paused")');
   await page.locator('.banner:has-text("Sync paused") button:has-text("Connect")').click();
   await page.waitForSelector('.banner:has-text("Sync paused")', { state: 'detached' });
-  // Connected, but syncing waits for a passphrase: the banner leads to it.
-  await page.locator('.banner:has-text("Lock your backup") button:has-text("Open Clients")').click();
-  await lockBackup(page);
   await until(page, () => g.backup(), 'the first sync');
   assert.deepEqual(errors, []);
   await page.close();
@@ -402,8 +415,6 @@ test('Google Drive encryption: an old unencrypted backup is replaced, and a new 
   const laptop = await openPage({}, setup, g.serve);
   await laptop.page.click('button:has-text("Clients")');
   await laptop.page.click('button:has-text("Connect Google Drive")');
-  await laptop.page.waitForSelector('form.passphrase:has-text("not encrypted yet")');
-  await lockBackup(laptop.page);
   await laptop.page.waitForSelector('button:has-text("Sync now"):enabled');
   await until(laptop.page, () => JSON.parse(g.files.get('f900').body).format === 'ledger-lens-sealed', 'the old backup to be replaced');
   assert.doesNotMatch(g.files.get('f900').body, /Riverbend/);
@@ -411,33 +422,47 @@ test('Google Drive encryption: an old unencrypted backup is replaced, and a new 
   await until(laptop.page, () => g.files.get('f900').versions.every((v) => !/Riverbend/.test(v)), 'the old version to be deleted');
   assert.equal(g.files.get('f900').versions.length, 1);
   assert.equal(await laptop.page.evaluate(() => (window.LedgerStore.ClientStore.get('old1') || {}).name), 'Riverbend Plumbing', 'the old backup was read first');
-  const firstSalt = JSON.parse(g.files.get('f900').body).kdf.salt;
+  const kid = () => JSON.parse(g.files.get('f900').body).kid;
+  const firstKid = kid();
+  assert.equal(firstKid, await laptop.page.evaluate(() => window.LedgerLock.kid()));
 
-  // The phone unlocks with the passphrase, and the key is remembered: a reload syncs without asking.
-  const phone = await openPage({ viewport: { width: 400, height: 900 } }, setup, g.serve);
+  // A phone set up with a different passphrase is asked for the one Drive uses, and switches to it.
+  const phone = await openPage({ viewport: { width: 400, height: 900 } }, setup, g.serve, 'a different passphrase here');
   await phone.page.click('button:has-text("Clients")');
   await phone.page.click('button:has-text("Connect Google Drive")');
+  await phone.page.waitForSelector('.drawer form.passphrase:has-text("changed on another device")');
+  await lockBackup(phone.page, 'not the right passphrase');
+  await phone.page.waitForSelector('.backup-status:has-text("does not open the backup")');
   await lockBackup(phone.page);
   await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
   assert.equal(await phone.page.evaluate(() => (window.LedgerStore.ClientStore.get('old1') || {}).name), 'Riverbend Plumbing');
-  await phone.page.reload();
+  assert.equal(await phone.page.evaluate(() => window.LedgerLock.kid()), firstKid);
+  // After a reload the phone opens with the Drive passphrase, and syncs without asking.
+  await phone.page.reload(); await unlock(phone.page);
   await phone.page.click('button:has-text("Clients")');
   await phone.page.click('button:has-text("Connect Google Drive")');
   await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
-  assert.equal(await phone.page.locator('form.passphrase').count(), 0);
+  assert.equal(await phone.page.locator('.drawer form.passphrase').count(), 0);
 
-  // The laptop changes the passphrase: Drive is sealed again, and the phone asks for the new one.
-  await laptop.page.click('button:has-text("Change passphrase")');
+  // The laptop changes the passphrase: this device and Drive are sealed again, the phone asks once.
+  await laptop.page.locator('.backup-block', { hasText: 'Passphrase' }).locator('button:has-text("Change passphrase")').click();
   await lockBackup(laptop.page, 'new paddle for the canoe');
   await laptop.page.waitForSelector('.backup-status:has-text("now locked with the new passphrase")');
-  assert.notEqual(JSON.parse(g.files.get('f900').body).kdf.salt, firstSalt);
+  await until(laptop.page, () => kid() !== firstKid, 'Drive to be sealed with the new passphrase');
+  for (const f of g.files.values()) assert.equal(JSON.parse(f.body).kid, kid());
   await phone.page.click('button:has-text("Sync now")');
-  await phone.page.waitForSelector('form.passphrase:has-text("changed on another device")');
+  await phone.page.waitForSelector('.drawer form.passphrase:has-text("changed on another device")');
   await lockBackup(phone.page, 'new paddle for the canoe');
   await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
-  // Forgetting it on the phone asks again.
-  await phone.page.click('button:has-text("Forget passphrase here")');
-  await phone.page.waitForSelector('form.passphrase');
+  assert.equal(await phone.page.evaluate(() => window.LedgerLock.kid()), kid());
+  // The laptop opens with the new passphrase only.
+  await laptop.page.reload();
+  await laptop.page.fill('.lock-card #pp-1', PASS);
+  await laptop.page.locator('.lock-card button[type=submit]').click();
+  await laptop.page.waitForSelector('.lock-card .error:has-text("not right")');
+  await unlock(laptop.page, 'new paddle for the canoe');
+  await laptop.page.locator('.home, #tab-audit').first().waitFor();
+  assert.equal(await laptop.page.evaluate(() => (window.LedgerStore.ClientStore.get('old1') || {}).name), 'Riverbend Plumbing');
   assert.deepEqual(laptop.errors, []);
   assert.deepEqual(phone.errors, []);
   await laptop.page.close();
@@ -475,7 +500,7 @@ test('closed months: close the books, load an edited export, see the change, acc
   await panel.locator('button', { hasText: 'Accept changes' }).click();
   await panel.locator('.pill', { hasText: 'Closed through May 2026' }).waitFor();
   // The close is saved with the client, so it survives a reload.
-  await page.reload();
+  await page.reload(); await unlock(page);
   await page.setInputFiles('#csv-upload', { name: 'harbor-pine-july.csv', mimeType: 'text/csv', buffer: Buffer.from(edited) });
   await panel.locator('.pill', { hasText: 'Closed through May 2026' }).waitFor();
   assert.deepEqual(errors, []);
@@ -517,7 +542,7 @@ test('month-end close checklist and the all-clients dashboard', async (t) => {
   await panel.locator('.pill', { hasText: '1 of 16 done' }).waitFor();
   // Everything is saved with the client and comes back after a reload.
   await page.waitForTimeout(400);
-  await page.reload();
+  await page.reload(); await unlock(page);
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.click('#tab-close');
   await panel.locator('.pill', { hasText: '1 of 16 done' }).waitFor();
@@ -583,16 +608,20 @@ test('backup to a file on this computer: choose it, save automatically, restore 
   await page.click('button:has-text("Clients")');
   await page.click('button:has-text("Choose where to save")');
   await page.locator('.backup-block', { hasText: 'Saving automatically' }).waitFor();
-  assert.equal(JSON.parse(await page.evaluate(() => window.__file.text)).format, 'ledger-lens-clients');
+  // The file is sealed with the passphrase.
+  const fileData = () => page.evaluate(async () => JSON.parse(await window.LedgerLock.open(window.__file.text)));
+  assert.equal(JSON.parse(await page.evaluate(() => window.__file.text)).format, 'ledger-lens-sealed');
+  assert.equal((await fileData()).format, 'ledger-lens-clients');
   // A review on an uploaded client is written to the file a few seconds later.
   await page.click('.drawer-head button');
   await page.setInputFiles('#csv-upload', SAMPLE);
   await page.waitForSelector('button:has-text("Load sample")');
   const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Uncategorized transactions' }) });
   await panel.locator('select.review-select').first().selectOption('ok');
-  await page.waitForFunction(() => { try { return Object.values(JSON.parse(window.__file.text).clients).some((c) => Object.keys(c.reviewed || {}).length); } catch (e) { return false; } }, null, { timeout: 15000 });
+  await page.waitForFunction(async () => { try { return Object.values(JSON.parse(await window.LedgerLock.open(window.__file.text)).clients).some((c) => Object.keys(c.reviewed || {}).length); } catch (e) { return false; } }, null, { timeout: 15000 });
+  assert.doesNotMatch(await page.evaluate(() => window.__file.text), /harbor/i);
   // Restoring merges a client that only exists in the file.
-  await page.evaluate(() => { const d = JSON.parse(window.__file.text); d.clients['other co'] = { name: 'Other Co', updatedAt: '2030-01-01T00:00:00.000Z' }; window.__file.text = JSON.stringify(d); });
+  await page.evaluate(async () => { const d = JSON.parse(await window.LedgerLock.open(window.__file.text)); d.clients['other co'] = { name: 'Other Co', updatedAt: '2030-01-01T00:00:00.000Z' }; window.__file.text = await window.LedgerLock.seal(JSON.stringify(d)); });
   await page.click('button:has-text("Clients")');
   await page.click('button:has-text("Restore from it")');
   await page.waitForSelector('.dash-row:has-text("Other Co")');
@@ -623,7 +652,7 @@ test('Save backup file: explains when there is nothing yet, downloads once a cli
   await page.click('button:has-text("Clients")');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Save backup file")')]);
   assert.match(download.suggestedFilename(), /^ledger-lens-backup-\d{4}-\d{2}-\d{2}\.json$/);
-  const data = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+  const data = JSON.parse(await page.evaluate((text) => window.LedgerLock.open(text), fs.readFileSync(await download.path(), 'utf8')));
   assert.equal(data.format, 'ledger-lens-clients');
   assert.ok(Object.values(data.clients).some((c) => c.name === 'Harbor & Pine Design Co.'));
   assert.deepEqual(errors, []);
@@ -651,7 +680,7 @@ test('saved clients move from the old storage into the browser database and surv
   const { page, errors } = await openPage({}, (p) => p.addInitScript((data) => { if (!sessionStorage.getItem('seeded')) { localStorage.setItem('ll.clients.v1', data); sessionStorage.setItem('seeded', '1'); } }, JSON.stringify(old)));
   assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'indexeddb');
   assert.equal(await page.evaluate(() => localStorage.getItem('ll.clients.v1')), null, 'old copy removed once moved');
-  await page.reload();
+  await page.reload(); await unlock(page);
   await showSample(page);
   await page.click('button:has-text("Clients")');
   await page.waitForSelector('.dash-row:has-text("Old Co")');
@@ -679,7 +708,10 @@ test('without the browser database, clients are saved in basic storage instead',
   const { page, errors } = await openPage({}, (p) => p.addInitScript(() => { Object.defineProperty(window, 'indexedDB', { value: undefined }); }));
   assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'localstorage');
   await page.setInputFiles('#csv-upload', SAMPLE);
-  await page.waitForFunction(() => Object.values(JSON.parse(localStorage.getItem('ll.clients.v1') || '{}')).some((c) => c.name === 'Harbor & Pine Design Co.'));
+  // Kept as one sealed copy, never readable.
+  await page.waitForFunction(() => !!localStorage.getItem('ll.clients.sealed'));
+  await page.waitForFunction(async () => Object.values(JSON.parse(await window.LedgerLock.open(localStorage.getItem('ll.clients.sealed'))).clients).some((c) => c.name === 'Harbor & Pine Design Co.'));
+  assert.doesNotMatch(await page.evaluate(() => JSON.stringify(localStorage)), /harbor/i);
   assert.equal(await page.locator('.banner', { hasText: 'Not saving' }).count(), 0);
   assert.deepEqual(errors, []);
   await page.close();
@@ -694,6 +726,7 @@ test('a client saved in one tab shows up in another open tab', async (t) => {
     page.on('pageerror', (e) => errors.push(e.message));
     await page.route('**/*', (route) => (route.request().url().startsWith('file:') ? route.continue() : route.abort()));
     await page.goto(PAGE);
+    await unlock(page);
     await showSample(page);
     return page;
   };
@@ -784,7 +817,7 @@ test('Open reloads a client from the files kept in this browser, even after a re
   await page.waitForFunction(() => window.LedgerStore.FileStore.info('riverbend plumbing & heating llc') || Object.keys(window.LedgerStore.ClientStore.all()).some((id) => window.LedgerStore.FileStore.info(id)));
   // Switch away to the sample, then come back with one click.
   await page.click('button:has-text("Load sample")');
-  await page.reload();
+  await page.reload(); await unlock(page);
   await showSample(page);
   await page.click('button:has-text("Clients")');
   const row = page.locator('.dash-row', { hasText: 'Riverbend' });
@@ -815,7 +848,7 @@ test('forgetting a client deletes its saved files too', async (t) => {
   const row = page.locator('.dash-row', { hasText: 'Harbor' });
   await row.locator('button', { hasText: 'Forget' }).click();
   await row.locator('.confirm button', { hasText: 'Forget' }).click();
-  await page.waitForFunction(() => !Object.keys(window.LedgerStore.ClientStore.all()).length);
+  await page.waitForFunction(() => !Object.keys(window.LedgerStore.ClientStore.all()).length && !Object.keys(window.LedgerStore.FileStore.index()).length);
   const left = await page.evaluate(() => new Promise((resolve) => {
     const r = indexedDB.open('ledger-lens');
     r.onsuccess = () => { const q = r.result.transaction('files').objectStore('files').count(); q.onsuccess = () => resolve(q.result); };
@@ -843,12 +876,84 @@ test('a browser database from the previous version is upgraded with clients inta
     };
     del.onerror = () => reject(del.error);
   }));
-  await page.reload();
+  await page.reload(); await unlock(page);
   await showSample(page);
   assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.status.where), 'indexeddb');
   await page.click('button:has-text("Clients")');
   await page.waitForSelector('.dash-row:has-text("Earlier Co")');
   assert.equal(await page.locator('.keep-files input').isChecked(), true);
+  // The readable record was converted: nothing in the database names the client any more.
+  assert.doesNotMatch(await rawDb(page), /earlier/i);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('everything saved in the browser and in backup files is encrypted with the passphrase', async (t) => {
+  if (skip) return t.skip(skip);
+  const D = path.join(ROOT, 'sample-data', 'test-clients');
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', ['transaction-detail', 'chart-of-accounts', 'profit-and-loss', 'expenses-with-attachments'].map((f) => path.join(D, `riverbend-${f}.csv`)));
+  await page.locator('.banner', { hasText: '4 files uploaded' }).waitFor();
+  await page.waitForFunction(() => Object.keys(window.LedgerStore.ClientStore.all()).some((id) => window.LedgerStore.FileStore.info(id)));
+  const id = await page.evaluate(() => Object.keys(window.LedgerStore.ClientStore.all())[0]);
+  await page.evaluate((cid) => window.LedgerStore.AttachStore.put(cid, 'q1', [{ name: 'receipt.jpg', data: 'data:image/jpeg;base64,AAAA' }]), id);
+  await page.click('button:has-text("Clients")');
+  await page.locator('.dash-row', { hasText: 'Riverbend' }).locator('button', { hasText: 'Forget' }).waitFor();
+  // Every record, its name and the lists in localStorage: nothing readable.
+  const raw = await rawDb(page);
+  assert.match(raw, /ledger-lens-sealed/);
+  assert.doesNotMatch(raw, /riverbend|Transaction Type|receipt/i);
+  assert.doesNotMatch(await page.evaluate(() => JSON.stringify(localStorage)), /riverbend/i);
+  // The downloaded backup file is sealed too, and restores.
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('button:has-text("Save backup file")')]);
+  const file = fs.readFileSync(await download.path(), 'utf8');
+  assert.equal(JSON.parse(file).format, 'ledger-lens-sealed');
+  assert.doesNotMatch(file, /riverbend/i);
+  // Reopening needs the passphrase; a wrong one is refused.
+  await page.reload();
+  assert.equal(await page.locator('#tab-audit, .home').count(), 0, 'nothing shown while locked');
+  await page.fill('.lock-card #pp-1', 'not the passphrase at all');
+  await page.locator('.lock-card button[type=submit]').click();
+  await page.waitForSelector('.lock-card .error:has-text("not right")');
+  await unlock(page);
+  await page.click('button:has-text("Clients")');
+  await page.waitForSelector('.dash-row:has-text("Riverbend")');
+  assert.equal((await page.evaluate((cid) => window.LedgerStore.FileStore.get(cid), id)).length, 4);
+  assert.equal((await page.evaluate((cid) => window.LedgerStore.AttachStore.get(cid, 'q1'), id))[0].name, 'receipt.jpg');
+  // A backup file from another passphrase asks for it.
+  const other = await page.evaluate(async (text) => {
+    const k = await window.LedgerVault.derive('another long passphrase');
+    const plain = await window.LedgerLock.open(text);
+    const b = JSON.parse(plain);
+    b.clients = { 'other co': { name: 'Other Co', updatedAt: '2026-10-01T00:00:00.000Z' } };
+    return window.LedgerVault.seal(k, JSON.stringify(b));
+  }, file);
+  const otherPath = path.join(require('os').tmpdir(), `ll-other-${process.pid}.json`);
+  fs.writeFileSync(otherPath, other);
+  await page.setInputFiles('#clients-import', otherPath);
+  await page.waitForSelector('.lock-ask form.passphrase');
+  await page.fill('.lock-ask #pp-1', 'another long passphrase');
+  await page.locator('.lock-ask button[type=submit]').click();
+  await page.waitForSelector('.dash-row:has-text("Other Co")');
+  fs.unlinkSync(otherPath);
+  // Lock now goes back to the lock screen.
+  await page.click('button:has-text("Lock now")');
+  await page.waitForSelector('.lock-card #pp-1');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('forgot the passphrase: erasing this browser starts over', async (t) => {
+  if (skip) return t.skip(skip);
+  const { page, errors } = await openPage();
+  await page.setInputFiles('#csv-upload', SAMPLE);
+  await page.waitForFunction(() => window.LedgerStore.ClientStore.count() === 1);
+  await page.reload();
+  await page.click('button:has-text("Forgot the passphrase?")');
+  await page.click('button:has-text("Erase this browser")');
+  await page.waitForSelector('.lock-card #pp-2');
+  await unlock(page, 'a fresh start for the books');
+  assert.equal(await page.evaluate(() => window.LedgerStore.ClientStore.count()), 0);
   assert.deepEqual(errors, []);
   await page.close();
 });
@@ -870,7 +975,7 @@ test('Customize: move and hide sections and tabs, kept after a reload, Reset res
   assert.ok(!after.includes('Closed months'), 'closed months hidden');
   assert.equal(await page.locator('#tab-benchmarks').count(), 0);
   // Kept after a reload.
-  await page.reload();
+  await page.reload(); await unlock(page);
   await showSample(page);
   const reloaded = await titles();
   assert.deepEqual(reloaded, after);
@@ -911,6 +1016,7 @@ test('Home: opens first, lists clients with what is waiting on Mark and on clien
   page.on('pageerror', (e) => errors.push(e.message));
   await page.route('**/*', (route) => (route.request().url().startsWith('file:') ? route.continue() : route.abort()));
   await page.goto(PAGE);
+  await unlock(page);
   // A new browser: a welcome, no tabs.
   await page.locator('.home-empty', { hasText: 'Welcome to Ledger Lens' }).waitFor();
   assert.equal(await page.locator('#tab-audit').count(), 0);
@@ -943,7 +1049,7 @@ test('Home: opens first, lists clients with what is waiting on Mark and on clien
   await page.locator('.banner', { hasText: 'Opened Riverbend' }).waitFor();
   await page.waitForSelector('#tab-audit');
   // After a reload it opens on Home again, with the client still there.
-  await page.reload();
+  await page.reload(); await unlock(page);
   await page.locator('.client-card', { hasText: 'Riverbend' }).waitFor();
   const sideways = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   assert.equal(sideways, false);
@@ -1091,7 +1197,7 @@ test('Credit cards: card statements combined and checked against QuickBooks, and
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1), false, `cards tab scrolls sideways at ${width}px`);
     if (width === 1280) {
       // Saved with the client: reopen it and the card is still there.
-      await page.reload();
+      await page.reload(); await unlock(page);
       await page.locator('.client-card button:has-text("Open")').first().click();
       await page.waitForSelector('#tab-cards');
       await page.click('#tab-cards');
@@ -1124,7 +1230,7 @@ test('Tax prep: Greenway as an S corporation, lines on the 1120-S, the owner che
   const download = page.waitForEvent('download');
   await page.click('button:has-text("Download tax trial balance")');
   assert.match((await download).suggestedFilename(), /^tax-trial-balance-2025-1120-s\.csv$/);
-  await page.reload();
+  await page.reload(); await unlock(page);
   await page.locator('.client-card button:has-text("Open")').first().click();
   await page.waitForSelector('#tab-taxprep');
   await page.click('#tab-taxprep');
@@ -1237,7 +1343,7 @@ test('Fixed assets: add a purchase found in the books, see its depreciation and 
       // The close checklist gains the depreciation step; the register is saved with the client.
       await page.click('#tab-close');
       assert.match(await page.locator('main').innerText(), /Depreciation posted from the fixed asset register/);
-      await page.reload();
+      await page.reload(); await unlock(page);
       await page.locator('.client-card button:has-text("Open")').first().click();
       await page.waitForSelector('#tab-assets');
       await page.click('#tab-assets');
