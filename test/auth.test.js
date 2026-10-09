@@ -74,6 +74,12 @@ test('cookies, public paths and the after-sign-in redirect', async () => {
   assert.match(A.clearCookie(), /Max-Age=0/);
   assert.equal(A.safeNext('/?tab=cash'), '/?tab=cash');
   for (const bad of ['//evil.example', 'https://evil.example', '/\\evil.example', '', null]) assert.equal(A.safeNext(bad), '/', String(bad));
+  // Browsers drop tabs and line breaks, which would turn these into //evil.example.
+  for (const bad of ['/\t/evil.example', '/\n/evil.example', '/\r/evil.example', '/x\\..\\..']) assert.equal(A.safeNext(bad), '/', JSON.stringify(bad));
+  assert.equal(A.safeNext('/portal?x=1#y'), '/portal?x=1#y');
+  // A malformed cookie reads as no cookie instead of an error.
+  const broken = { headers: { get: () => 'll_session=%E0%A4%A' } };
+  assert.equal(A.getCookie(broken, 'll_session'), null);
   assert.ok(A.isPublic('/login') && A.isPublic('/auth/verify') && A.isPublic('/assets/7d-logo.png'));
   assert.ok(!A.isPublic('/') && !A.isPublic('/src/engine.js') && !A.isPublic('/index.html'));
 });

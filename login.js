@@ -3,7 +3,15 @@
 (function () {
   var params = new URLSearchParams(location.search);
   var next = params.get('next') || '/';
-  if (!/^\/(?![\/\\])/.test(next)) next = '/';
+  // Same-site paths only. Browsers drop tabs and line breaks from addresses, so "/<tab>/evil.example"
+  // would leave the site: refuse control characters, then check where the path really leads.
+  if (!/^\/(?![\/\\])/.test(next) || /[\u0000-\u001f\u007f\\]/.test(next)) next = '/';
+  else {
+    try {
+      var u = new URL(next, location.origin);
+      next = u.origin === location.origin ? u.pathname + u.search + u.hash : '/';
+    } catch (e) { next = '/'; }
+  }
   var msg = document.getElementById('msg');
   var show = function (text, error) { msg.textContent = text; msg.className = 'msg' + (error ? ' error' : ''); };
   if (params.get('signedout')) show('You are signed out.');
