@@ -47,9 +47,16 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
   removals), writes back only when something differs, then syncs one `client-files` file per client
   (exports + receipt photos, gzip+base64, appProperty `client` = hashed id). `ClientStore.put` skips
   unchanged profiles so synced copies don't bounce between devices.
-- No client data leaves the browser unsealed, with one exception: the Google Drive backup is
-  compressed but not encrypted, so it is readable by anyone with access to that Google account.
-  Only Google (sign-in, Drive backup) is contacted, plus the site's own portal endpoints.
+- No client data leaves the browser unsealed. Only Google (sign-in, Drive backup) is contacted,
+  plus the site's own portal endpoints.
+- Drive backup encryption (`src/vault.js`): every Drive file is sealed with AES-GCM under a key
+  from Mark's backup passphrase (PBKDF2-SHA256, 600,000 rounds, salt stored in each file as
+  `kdf`). The passphrase is never stored; the derived key is non-extractable and, if he ticks
+  Remember, kept in IndexedDB `ledger-lens-vault`. `Drive.sync()` does nothing until a key fits
+  the backup in Drive (`state.needPass`: `create` or `unlock`). Unencrypted files from before are
+  read once and replaced. Client files carry appProperty `sealed` = the salt, so a passphrase
+  change (`Drive.changePassphrase`, with `Drive.previous` opening the old files) re-seals them
+  all. Never write anything to Drive unsealed.
 - Client portal: `src/ui/portal.js` (Mark's side), `portal.html` + `portal.js` (the client's
   page, public, plain DOM), `src/sealed.js` (AES-GCM; the key lives only in the link after `#`),
   `netlify/functions/portal.mjs` + `lib/portal.mjs` (stores sealed records in Netlify Blobs,

@@ -225,13 +225,20 @@ function fakeGoogle() {
       await json({ files: hits.map(([id, f]) => ({ id, name: f.name, modifiedTime: f.modified, appProperties: f.meta.appProperties })) });
       return true;
     }
+    // Stored versions: every upload adds one, as in Drive.
+    const revs = u.pathname.match(/^\/drive\/v3\/files\/(\w+)\/revisions(?:\/(\w+))?$/);
+    if (revs) {
+      const f = files.get(revs[1]);
+      if (req.method() === 'GET') { await json({ revisions: f.versions.map((v, i) => ({ id: `r${i}` })) }); return true; }
+      if (req.method() === 'DELETE') { const i = +revs[2].slice(1); f.versions[i] = null; f.versions = f.versions.filter(Boolean); await route.fulfill({ status: 204, headers: cors }); return true; }
+    }
     const one = u.pathname.match(/^\/drive\/v3\/files\/(\w+)$/);
     if (req.method() === 'GET' && one) { await route.fulfill({ body: files.get(one[1]).body, contentType: 'application/json', headers: cors }); return true; }
     if (req.method() === 'DELETE' && one) { files.delete(one[1]); await route.fulfill({ status: 204, headers: cors }); return true; }
     if (req.method() === 'POST' && u.pathname === '/upload/drive/v3/files') {
       const { meta, body } = parseMultipart(req.postData());
       const id = `f${++n}`;
-      files.set(id, { name: meta.name, body, modified: new Date().toISOString(), meta });
+      files.set(id, { name: meta.name, body, modified: new Date().toISOString(), meta, versions: [body] });
       await json({ id, modifiedTime: files.get(id).modified });
       return true;
     }
@@ -242,6 +249,7 @@ function fakeGoogle() {
         const { meta, body } = parseMultipart(req.postData());
         f.body = body; f.meta = { ...f.meta, ...meta };
       } else f.body = req.postData();
+      f.versions = [...(f.versions || []), f.body];
       f.modified = new Date().toISOString();
       await json({ id: patch[1], modifiedTime: f.modified });
       return true;
@@ -253,6 +261,26 @@ function fakeGoogle() {
   return { files, calls, serve, backup, clientFiles };
 }
 
+const PASS = 'blue canoe at seven lakes';
+// Sets the backup passphrase (first device) or types it (other devices) in the Clients drawer.
+async function lockBackup(page, pass = PASS) {
+  await page.waitForSelector('form.passphrase');
+  await page.fill('#pp-1', pass);
+  if (await page.locator('#pp-2').count()) await page.fill('#pp-2', pass);
+  await page.locator('form.passphrase button[type=submit]').click();
+}
+const sealedJson = async (page, text) => JSON.parse(await page.evaluate(async ({ text, pass }) => {
+  const v = await window.LedgerVault.unlock(pass, text);
+  return window.LedgerVault.open(v, text);
+}, { text, pass: PASS }));
+
+const untilAsync = async (page, check, what, ms = 20000) => {
+  const deadline = Date.now() + ms;
+  while (!(await check())) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await page.waitForTimeout(250);
+  }
+};
 const until = async (page, check, what, ms = 20000) => {
   const deadline = Date.now() + ms;
   while (!check()) {
@@ -269,26 +297,45 @@ test('Google Drive sync: laptop and phone share clients, their files, changes an
   const laptop = await openPage({}, setup, g.serve);
   await laptop.page.click('button:has-text("Clients")');
   await laptop.page.click('button:has-text("Connect Google Drive")');
+  // Nothing goes to Drive until a backup passphrase is set.
+  await laptop.page.waitForSelector('form.passphrase');
+  assert.equal(g.files.size, 0);
+  await laptop.page.fill('#pp-1', 'too short');
+  await laptop.page.fill('#pp-2', 'too short');
+  await laptop.page.locator('form.passphrase button[type=submit]').click();
+  await laptop.page.waitForSelector('form.passphrase .error:has-text("at least 12")');
+  await lockBackup(laptop.page);
   await laptop.page.waitForSelector('button:has-text("Sync now"):enabled');
   await until(laptop.page, () => g.backup(), 'the backup file');
   assert.deepEqual(g.backup().meta.appProperties, { ledgerLens: 'clients-backup' });
-  assert.equal(JSON.parse(g.backup().body).format, 'ledger-lens-clients');
+  assert.equal(JSON.parse(g.backup().body).format, 'ledger-lens-sealed');
+  assert.equal((await sealedJson(laptop.page, g.backup().body)).format, 'ledger-lens-clients');
   await laptop.page.click('.drawer-head button');
   await laptop.page.setInputFiles('#csv-upload', SAMPLE);
   await laptop.page.waitForSelector('button:has-text("Load sample")');
   const panel = (page) => page.locator('section.panel', { has: page.locator('h2', { hasText: 'Uncategorized transactions' }) });
   await panel(laptop.page).locator('select.review-select').first().selectOption('ok');
-  await until(laptop.page, () => Object.keys(JSON.parse(g.backup().body).clients).length === 1 && g.clientFiles().length === 1, 'the laptop to sync the client and its files');
-  const [clientId] = Object.keys(JSON.parse(g.backup().body).clients);
-  // The files are stored under a scrambled id, compressed, never under the client's name.
+  const backupData = () => sealedJson(laptop.page, g.backup().body);
+  await untilAsync(laptop.page, async () => g.clientFiles().length === 1 && Object.keys((await backupData()).clients).length === 1, 'the laptop to sync the client and its files');
+  const [clientId] = Object.keys((await backupData()).clients);
+  // The files are stored under a scrambled id, sealed with the passphrase, never readable in Drive.
   assert.doesNotMatch(g.clientFiles()[0].name, /harbor/i);
-  assert.equal(JSON.parse(g.clientFiles()[0].body).enc, 'gzip');
+  for (const f of g.files.values()) {
+    assert.equal(JSON.parse(f.body).format, 'ledger-lens-sealed');
+    assert.doesNotMatch(f.body, /harbor|Transaction Type|reviewed/i);
+  }
+  assert.equal(g.clientFiles()[0].meta.appProperties.sealed, JSON.parse(g.backup().body).kdf.salt);
   assert.equal(g.files.size, 2);
 
   // The phone connects and gets the client, and can open it from the synced files.
   const phone = await openPage({ viewport: { width: 400, height: 900 } }, setup, g.serve);
   await phone.page.click('button:has-text("Clients")');
   await phone.page.click('button:has-text("Connect Google Drive")');
+  // The phone asks for the passphrase set on the laptop; a wrong one is refused.
+  await phone.page.waitForSelector('form.passphrase:has-text("set on your other device")');
+  await lockBackup(phone.page, 'not the right passphrase');
+  await phone.page.waitForSelector('.backup-status:has-text("does not open the backup")');
+  await lockBackup(phone.page);
   await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
   await phone.page.locator('.dash-row button:has-text("Open")').first().click();
   await phone.page.waitForSelector('.source:has-text("harbor-pine")');
@@ -298,7 +345,7 @@ test('Google Drive sync: laptop and phone share clients, their files, changes an
   assert.equal(await flagged(phone.page), await flagged(laptop.page));
   // A change on the phone goes back to Drive, and the laptop picks it up on its next sync.
   await panel(phone.page).locator('select.review-select').first().selectOption('ok');
-  await until(phone.page, () => Object.keys(JSON.parse(g.backup().body).clients[clientId].reviewed).length === 2, 'the phone to sync its change');
+  await untilAsync(phone.page, async () => Object.keys((await backupData()).clients[clientId].reviewed).length === 2, 'the phone to sync its change');
   await laptop.page.click('button:has-text("Clients")');
   await laptop.page.click('button:has-text("Sync now")');
   await laptop.page.waitForSelector('.backup-status:has-text("brought in")');
@@ -318,7 +365,7 @@ test('Google Drive sync: laptop and phone share clients, their files, changes an
   await phone.page.click('button:has-text("Clients")');
   await phone.page.locator('.dash-row button:has-text("Forget")').first().click();
   await phone.page.locator('.confirm button:has-text("Forget")').click();
-  await until(phone.page, () => !Object.keys(JSON.parse(g.backup().body).clients).length && g.clientFiles().length === 0, 'the phone to sync the removal');
+  await untilAsync(phone.page, async () => g.clientFiles().length === 0 && !Object.keys((await backupData()).clients).length, 'the phone to sync the removal');
   await laptop.page.click('button:has-text("Sync now")');
   await laptop.page.waitForSelector('.dash-row', { state: 'detached' });
   assert.deepEqual(laptop.errors, []);
@@ -337,9 +384,64 @@ test('Google Drive sync paused: a device that synced before offers to reconnect'
   await page.waitForSelector('.banner:has-text("Sync paused")');
   await page.locator('.banner:has-text("Sync paused") button:has-text("Connect")').click();
   await page.waitForSelector('.banner:has-text("Sync paused")', { state: 'detached' });
+  // Connected, but syncing waits for a passphrase: the banner leads to it.
+  await page.locator('.banner:has-text("Lock your backup") button:has-text("Open Clients")').click();
+  await lockBackup(page);
   await until(page, () => g.backup(), 'the first sync');
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('Google Drive encryption: an old unencrypted backup is replaced, and a new passphrase reaches the other device', async (t) => {
+  if (skip) return t.skip(skip);
+  const g = fakeGoogle();
+  const setup = (p) => p.addInitScript(() => { window.LedgerConfig = { googleClientId: 'test-client.apps.googleusercontent.com', googleOrigins: [] }; });
+  // A backup written before encryption, with one client and its (gzip) files.
+  const legacy = { format: 'ledger-lens-clients', version: 2, schema: 1, savedAt: '2026-09-01T00:00:00.000Z', clients: { old1: { name: 'Riverbend Plumbing', updatedAt: '2026-09-01T00:00:00.000Z', reviewed: { x: 'ok' } } }, removed: {}, settings: {} };
+  g.files.set('f900', { name: 'Ledger Lens backup.json', body: JSON.stringify(legacy), modified: '2026-09-01T00:00:00.000Z', meta: { appProperties: { ledgerLens: 'clients-backup' } }, versions: [JSON.stringify(legacy)] });
+  const laptop = await openPage({}, setup, g.serve);
+  await laptop.page.click('button:has-text("Clients")');
+  await laptop.page.click('button:has-text("Connect Google Drive")');
+  await laptop.page.waitForSelector('form.passphrase:has-text("not encrypted yet")');
+  await lockBackup(laptop.page);
+  await laptop.page.waitForSelector('button:has-text("Sync now"):enabled');
+  await until(laptop.page, () => JSON.parse(g.files.get('f900').body).format === 'ledger-lens-sealed', 'the old backup to be replaced');
+  assert.doesNotMatch(g.files.get('f900').body, /Riverbend/);
+  // The readable version from before is gone from Drive's version history too.
+  await until(laptop.page, () => g.files.get('f900').versions.every((v) => !/Riverbend/.test(v)), 'the old version to be deleted');
+  assert.equal(g.files.get('f900').versions.length, 1);
+  assert.equal(await laptop.page.evaluate(() => (window.LedgerStore.ClientStore.get('old1') || {}).name), 'Riverbend Plumbing', 'the old backup was read first');
+  const firstSalt = JSON.parse(g.files.get('f900').body).kdf.salt;
+
+  // The phone unlocks with the passphrase, and the key is remembered: a reload syncs without asking.
+  const phone = await openPage({ viewport: { width: 400, height: 900 } }, setup, g.serve);
+  await phone.page.click('button:has-text("Clients")');
+  await phone.page.click('button:has-text("Connect Google Drive")');
+  await lockBackup(phone.page);
+  await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
+  assert.equal(await phone.page.evaluate(() => (window.LedgerStore.ClientStore.get('old1') || {}).name), 'Riverbend Plumbing');
+  await phone.page.reload();
+  await phone.page.click('button:has-text("Clients")');
+  await phone.page.click('button:has-text("Connect Google Drive")');
+  await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
+  assert.equal(await phone.page.locator('form.passphrase').count(), 0);
+
+  // The laptop changes the passphrase: Drive is sealed again, and the phone asks for the new one.
+  await laptop.page.click('button:has-text("Change passphrase")');
+  await lockBackup(laptop.page, 'new paddle for the canoe');
+  await laptop.page.waitForSelector('.backup-status:has-text("now locked with the new passphrase")');
+  assert.notEqual(JSON.parse(g.files.get('f900').body).kdf.salt, firstSalt);
+  await phone.page.click('button:has-text("Sync now")');
+  await phone.page.waitForSelector('form.passphrase:has-text("changed on another device")');
+  await lockBackup(phone.page, 'new paddle for the canoe');
+  await phone.page.waitForSelector('button:has-text("Sync now"):enabled');
+  // Forgetting it on the phone asks again.
+  await phone.page.click('button:has-text("Forget passphrase here")');
+  await phone.page.waitForSelector('form.passphrase');
+  assert.deepEqual(laptop.errors, []);
+  assert.deepEqual(phone.errors, []);
+  await laptop.page.close();
+  await phone.page.close();
 });
 
 test('Google Drive is only offered on the registered address; elsewhere the app points there', async (t) => {
