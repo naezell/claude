@@ -12,15 +12,47 @@
   const shortDay = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
   // Where to go to work on an automatic step.
-  const STEP_TAB = { uncategorized: 'audit', duplicates: 'audit', coding: 'audit', balance: 'audit', unusual: 'audit', closed: 'audit', tieout: 'audit', jobs: 'growth', receipts: 'audit' };
+  const REVIEW_TARGETS = {
+    uncategorized: { tab: 'audit', part: 'uncategorized' },
+    duplicates: { tab: 'audit', part: 'duplicates' },
+    coding: { tab: 'audit', part: 'mismatches' },
+    balance: { tab: 'audit', part: 'balance' },
+    unusual: { tab: 'audit', part: 'unusual' },
+    jobs: { tab: 'growth', part: 'jobcosts' },
+    contractbilling: { tab: 'landscape', part: 'contracts' },
+    equipbuys: { tab: 'assets' },
+    receipts: { tab: 'audit', part: 'receipts' },
+    depreciation: { tab: 'assets' },
+    tieout: { tab: 'audit', part: 'tieout' },
+  };
+  const CLOSE_TARGET = { tab: 'audit', part: 'closed' };
 
-  function CloseTab({ result, checklist, setChecklist, customSteps, setCustomSteps, canSave, goTo }) {
+  function MonthlyWorkflow({ close, hasPnl, sample, portal, onLoad, onReview, onClose, onReport }) {
+    const items = close ? close.items : [];
+    const review = items.filter((it) => !it.done && Object.hasOwn(REVIEW_TARGETS, it.id));
+    const remaining = items.filter((it) => !it.done && it.id !== 'report').length;
+    const first = review[0] && REVIEW_TARGETS[review[0].id];
+    const count = (n, name) => `${n} ${name}${n === 1 ? '' : 's'}`;
+    const steps = [
+      ['Load reports', hasPnl ? 'Transaction Detail and P&L loaded' : 'Add a matching P&L to check the totals', sample ? null : onLoad],
+      ['Review exceptions', review.length ? `${count(review.length, 'check')} open` : 'Open the diagnostic audit', () => onReview(first)],
+      ['Close month', !close ? 'Load an export covering a full month' : portal && portal.status === 'waiting' ? 'Waiting for client answers' : remaining ? `${count(remaining, 'step')} left before reporting` : 'Close steps complete', onClose],
+      ['Prepare client report', items.some((it) => it.id === 'report' && it.done) ? 'Marked as sent' : remaining ? 'Review the close before sending' : 'Open report preview', onReport],
+    ];
+    return html`<nav class="monthly-workflow panel" aria-labelledby="monthly-workflow-title">
+      <div class="panel-head"><h2 id="monthly-workflow-title">${close ? `Monthly workflow · ${monthName(close.month)}` : 'Monthly workflow'}</h2></div>
+      <ol>${steps.map(([label, detail, action]) => html`<li key=${label}>
+        ${action ? html`<button class="linkish" onClick=${action}>${label}</button>` : html`<strong>${label}</strong>`}
+        <span class="sub">${detail}</span>
+      </li>`)}</ol>
+    </nav>`;
+  }
+
+  function CloseTab({ result, month, setMonth, close: cl, checklist, setChecklist, customSteps, setCustomSteps, canSave, goTo, onQuestions, onReport }) {
     const months = result.closableMonths || [];
-    const [month, setMonth] = useState(months[months.length - 1] || '');
     const [newStep, setNewStep] = useState('');
     if (!month) return html`<section class="panel"><div class="empty">This export does not cover a full month yet.</div></section>`;
     const state = checklist[month] || {};
-    const cl = E.closeChecklist(result, month, state, customSteps);
     const update = (patch) => setChecklist((prev) => ({ ...prev, [month]: { ...(prev[month] || {}), ...patch } }));
     const tick = (id, on) => {
       const done = { ...(state.done || {}) };
@@ -60,7 +92,9 @@
                   <span class="sub">
                     ${it.auto ? html`<span class=${`pill ${autoDone ? 'good' : 'medium'}`}>${autoDone ? 'Clear' : it.auto.note}</span> <span class="hint">checked by the app</span>` : ''}
                     ${it.doneAt ? html`<span class="hint">Ticked ${shortDay(it.doneAt)}</span>` : ''}
-                    ${it.auto && !autoDone && STEP_TAB[it.id] ? html` <button class="linkish" onClick=${() => goTo(STEP_TAB[it.id])}>Go to it</button>` : ''}
+                    ${!it.done && (REVIEW_TARGETS[it.id] || it.id === 'closed') ? html` <button class="linkish" onClick=${() => goTo(REVIEW_TARGETS[it.id] || CLOSE_TARGET)}>Go to it</button>` : ''}
+                    ${!it.done && it.id === 'questions' ? html` <button class="linkish" onClick=${onQuestions}>Open question list</button>` : ''}
+                    ${!it.done && it.id === 'report' ? html` <button class="linkish" onClick=${onReport}>Preview report</button>` : ''}
                     ${it.custom ? html` <button class="linkish" onClick=${() => setCustomSteps((prev) => prev.filter((c) => c.id !== it.id))}>Remove step</button>` : ''}
                   </span>
                 </div>
@@ -89,5 +123,5 @@
     `;
   }
 
-  Object.assign(UI, { CloseTab });
+  Object.assign(UI, { CloseTab, MonthlyWorkflow });
 })();

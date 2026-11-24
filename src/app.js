@@ -5,7 +5,7 @@
   const html = htm.bind(React.createElement);
   const E = window.LedgerEngine;
   const UI = window.LedgerUI;
-  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab, Drive, useDrive, CardsTab, TaxPrepTab } = UI;
+  const { safeStore, ClientStore, emptyProfile, excelToCsv, useDebounced, Icon, AuditTab, GrowthTab, Banner, CashTab, BreakEvenTab, TrendsTab, BudgetTab, VendorsTab, BenchmarksTab, AdvisoryTab, QuestionsDrawer, ClientsDrawer, ReportDrawer, HelpDrawer, Firm, Backup, CloseTab, MonthlyWorkflow, ProblemDrawer, ErrorBoundary, LayoutContext, CustomizeBar, Layout, arrangeIds, Portal, HomePage, LenderDrawer, LandscapeTab, IndustryPick, FlagFlow, AssetsTab, FraudTab, Drive, useDrive, CardsTab, TaxPrepTab } = UI;
 
   const Work = window.LedgerWork;
   const { FileStore, AttachStore } = window.LedgerStore;
@@ -67,6 +67,12 @@
     sourceRef.current = source;
     const [error, setError] = useState('');
     const [tab, setTab] = useState(() => safeStore.get('ll.tab') || 'audit');
+    const [taskTarget, setTaskTarget] = useState(null);
+    const [closeMonth, setCloseMonth] = useState(null);
+    const [restoredSource, setRestoredSource] = useState(null);
+    const attendedTask = useRef(null);
+    const clientUpload = useRef(null);
+    const fileRequest = useRef(0);
     const [groupBy, setGroupBy] = useState('customer');
     const [accountClass, setAccountClass] = useState({});
     const [reportOpen, setReportOpen] = useState(false);
@@ -85,7 +91,8 @@
     const [layout, setLayoutState] = useState(() => Layout.load());
     const setLayout = useCallback((next) => { Layout.save(next); setLayoutState(next); }, []);
     const [customizing, setCustomizing] = useState(false);
-    const layoutCtx = useMemo(() => ({ customizing, layout, setLayout }), [customizing, layout, setLayout]);
+    const revealedPart = taskTarget && taskTarget.part ? `${taskTarget.tab}:${taskTarget.part}` : null;
+    const layoutCtx = useMemo(() => ({ customizing, layout, setLayout, revealedPart }), [customizing, layout, setLayout, revealedPart]);
     // Number of files being read, for the progress note.
     const [reading, setReading] = useState(0);
     const [welcome, setWelcome] = useState(() => !safeStore.get('ll.welcomed'));
@@ -175,10 +182,14 @@
     const tabs = tabsFor(result ? result.industry : lastIndustry);
     const tabOrder = arrangeIds(tabs.map((t) => t[0]), layout.tabs.order);
     const hiddenTabs = new Set(layout.tabs.hidden || []);
-    // A hidden tab, or another industry's tab, can't stay open: go to the first one shown.
+    // A task can temporarily reveal a hidden tab without changing the saved layout.
     useEffect(() => {
-      if ((hiddenTabs.has(tab) && !customizing) || (result && !tabOrder.includes(tab))) setTab(tabOrder.find((t) => !hiddenTabs.has(t)) || 'audit');
-    }, [layout, tab, customizing, result]);
+      if (taskTarget && taskTarget.tab === tab && (restoredSource !== source || !result || analyzing)) return;
+      if ((hiddenTabs.has(tab) && !customizing && (!taskTarget || taskTarget.tab !== tab)) || (result && !tabOrder.includes(tab))) {
+        setTaskTarget(null);
+        setTab(tabOrder.find((t) => !hiddenTabs.has(t)) || 'audit');
+      }
+    }, [layout, tab, customizing, result, analyzing, taskTarget, restoredSource, source]);
 
     // Restore a client's saved settings when their file loads; the sample always starts clean.
     const clientId = source.kind === 'upload' && parsed.ok ? E.clientKey(parsed.ok.meta) : null;
@@ -220,7 +231,23 @@
       setLoanInputs(saved && saved.loan ? saved.loan : { amount: '', rate: '10.5', years: '10', addBacks: '' });
       setTaxInputs(saved && saved.tax ? saved.tax : { entity: 'sole', rate: '', salary: '', paid: '' });
       setRestored(saved && !emptyProfile(saved) ? { name: saved.name, updatedAt: saved.updatedAt, corrections: Object.keys(saved.accountClass || {}).length, reviews: Object.keys(saved.reviewed || {}).length, synced: fromSync } : null);
+      setRestoredSource(source);
     }, [source, clientId, syncTick]);
+    useEffect(() => {
+      if (!taskTarget || attendedTask.current === taskTarget || !result || analyzing || restoredSource !== source ||
+          tab !== taskTarget.tab || !tabOrder.includes(tab)) return;
+      attendedTask.current = taskTarget;
+      if (taskTarget.drawer === 'questions') { setQuestionsOpen(true); return; }
+      const panel = document.querySelector(`main[aria-labelledby="tab-${tab}"]`);
+      const part = taskTarget.part && panel && panel.querySelector(`[data-part="${tab}:${taskTarget.part}"]`);
+      const heading = part && part.querySelector('h2, h3');
+      const focus = heading || document.getElementById(`tab-${tab}`);
+      if (focus) {
+        if (heading) heading.tabIndex = -1;
+        focus.focus({ preventScroll: true });
+        (heading || panel || focus).scrollIntoView({ block: 'start' });
+      }
+    }, [taskTarget, result, analyzing, source, restoredSource, tab]);
     // A short summary of where this client stands, for the all-clients dashboard. Compared as
     // text so it only saves when something in it actually changed.
     const summaryJson = useMemo(() => (clientId && result ? JSON.stringify(E.clientSummary(result, checklist, customSteps)) : ''), [clientId, result, checklist, customSteps]);
@@ -313,12 +340,23 @@
       if (excel) reader.readAsArrayBuffer(file); else reader.readAsText(file);
     });
 
+    const goToWork = useCallback((target) => {
+      setTaskTarget(target);
+      setTab(target.tab);
+      if (target.month) setCloseMonth(target.month);
+    }, []);
+    const switchTab = (id) => { setTaskTarget(null); setTab(id); };
+
     // Uses files that have been read (see readFile). With `append`, adds them to the files already
     // loaded (a file with the same name replaces the earlier copy). `opened` names the client
     // when the files came from the copies saved in this browser.
-    const ingest = useCallback((results, append, opened) => {
+    const ingest = useCallback((results, append, opened, nextWork) => {
       const bad = results.filter((r) => r.error);
       const good = results.filter((r) => r.parsed);
+      if (nextWork && (!good.length || good.some((f) => E.clientKey(f.parsed.meta) !== nextWork.id))) {
+        setError('Choose the Transaction Detail export for the client you selected.');
+        return;
+      }
       const lastOf = (key) => { const hits = results.filter((r) => r[key]); return hits.length ? { name: hits[hits.length - 1].name, parsed: hits[hits.length - 1][key], text: hits[hits.length - 1].text } : null; };
       const chartFile = lastOf('chart');
       const pnlFile = lastOf('pnl');
@@ -346,28 +384,46 @@
       } else {
         const keepPrev = append && prev.kind === 'upload';
         const kept = keepPrev ? prev.files.filter((f) => !good.some((g) => g.name === f.name)) : [];
+        if (!keepPrev) {
+          setCloseMonth(null);
+          setTaskTarget(null);
+          if (nextWork && nextWork.target) goToWork(nextWork.target);
+        }
         setSource({ kind: 'upload', files: [...kept, ...good], chart: chartFile || (keepPrev ? prev.chart : null), pnl: pnlFile || (keepPrev ? prev.pnl : null), budget: budgetFile || (keepPrev ? prev.budget : null), attachments: attachFile || (keepPrev ? prev.attachments : null), customers: customersFile || (keepPrev ? prev.customers : null), voided: voidedFile || (keepPrev ? prev.voided : null), employees: employeesFile || (keepPrev ? prev.employees : null), statements: withStatements(keepPrev ? prev.statements : null) });
       }
       setError(errors.join(' '));
-    }, []);
+    }, [goToWork]);
 
-    const loadFiles = useCallback(async (fileList, append) => {
+    const loadFiles = useCallback(async (fileList, append, nextWork) => {
       const files = [...(fileList || [])];
       if (!files.length) return;
+      const request = ++fileRequest.current;
       setReading(files.length);
-      const results = await Promise.all(files.map(readFile)).finally(() => setReading(0));
-      ingest(results, append);
+      const results = await Promise.all(files.map(readFile));
+      if (request !== fileRequest.current) return;
+      setReading(0);
+      ingest(results, append, null, nextWork);
     }, [ingest]);
 
-    const loadSample = () => { setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setUploadNote(null); setSource({ kind: 'sample' }); };
-    const goHome = () => { setCustomizing(false); setUploadNote(null); setError(''); setSource({ kind: 'home' }); };
+    const cancelFileLoad = () => { fileRequest.current += 1; setReading(0); setTaskTarget(null); setCloseMonth(null); };
+    const loadSample = () => { cancelFileLoad(); setError(''); setAccountClass({}); setCashInputs({ startingCash: '', cushion: '', includeDoubtful: false }); setUploadNote(null); setSource({ kind: 'sample' }); };
+    const goHome = () => { cancelFileLoad(); setCustomizing(false); setUploadNote(null); setError(''); setSource({ kind: 'home' }); };
+    const requestUpload = (id, target) => {
+      if (!id) { document.getElementById('csv-upload').click(); return; }
+      clientUpload.current = { id, target };
+      document.getElementById('client-task-upload').click();
+    };
     // Reopens a client from the copies of their files saved in this browser.
-    const openClient = useCallback(async (id) => {
+    const openClient = useCallback(async (id, target) => {
+      const request = ++fileRequest.current;
       const saved = await FileStore.get(id);
-      if (!saved || !saved.length) { setError('The saved files for this client could not be found. Upload their exports again.'); return; }
+      if (request !== fileRequest.current) return;
+      if (!saved || !saved.length) { setReading(0); setError('The saved files for this client could not be found. Upload their exports again.'); return; }
       setReading(saved.length);
-      const results = await Promise.all(saved.map((f) => Work.read({ text: f.text }).then((r) => ({ name: f.name, text: r.text, [r.kind]: r.data }), (e) => ({ name: f.name, error: e.message })))).finally(() => setReading(0));
-      ingest(results, false, (ClientStore.get(id) || {}).name || id);
+      const results = await Promise.all(saved.map((f) => Work.read({ text: f.text }).then((r) => ({ name: f.name, text: r.text, [r.kind]: r.data }), (e) => ({ name: f.name, error: e.message }))));
+      if (request !== fileRequest.current) return;
+      setReading(0);
+      ingest(results, false, (ClientStore.get(id) || {}).name || id, target ? { id, target } : null);
     }, [ingest]);
 
     useEffect(() => {
@@ -387,12 +443,10 @@
     // On the hosted site, visitors signed in to get here; offer a way out.
     const cfg = window.LedgerConfig || {};
     const signedInSite = !!cfg.signIn && (cfg.googleOrigins || []).includes(window.location.origin);
-    const closeProgress = useMemo(() => {
-      if (!result || !result.closableMonths || !result.closableMonths.length) return '';
-      const m = result.closableMonths[result.closableMonths.length - 1];
-      const c = E.closeChecklist(result, m, checklist[m], customSteps);
-      return `${c.done}/${c.total}`;
-    }, [result, checklist, customSteps]);
+    const months = result && result.closableMonths || [];
+    const activeMonth = months.includes(closeMonth) ? closeMonth : months[months.length - 1];
+    const currentClose = useMemo(() => activeMonth ? E.closeChecklist(result, activeMonth, checklist[activeMonth], customSteps) : null, [result, activeMonth, checklist, customSteps]);
+    const closeProgress = currentClose ? `${currentClose.done}/${currentClose.total}` : '';
     // Facts about what is on screen for a problem report: no client names or figures.
     const problemContext = useMemo(() => ({
       Tab: home ? 'home' : tab,
@@ -431,6 +485,7 @@
           <div class="actions">
             <label class="btn" for="csv-upload">${Icon.upload}Upload export</label>
             <input id="csv-upload" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, false); e.target.value = ''; }} />
+            <input id="client-task-upload" hidden type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, false, clientUpload.current); clientUpload.current = null; e.target.value = ''; }} />
             ${source.kind === 'upload' && html`<label class="btn" for="csv-add">${Icon.upload}Add export</label>
               <input id="csv-add" class="file-input" type="file" multiple accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange=${(e) => { loadFiles(e.target.files, true); e.target.value = ''; }} />`}
             ${source.kind === 'upload' && html`<button class="btn" onClick=${loadSample}>${Icon.sample}Load sample</button>`}
@@ -477,10 +532,11 @@
         ${restored && restored.synced && html`<${Banner} level="good" label="Synced">Brought in the latest work on ${restored.name} from your other device. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
         ${restored && !restored.synced && html`<${Banner} level="good" label="Settings restored">Picked up where you left off with ${restored.name}${restored.updatedAt ? ` (saved ${restored.updatedAt.slice(0, 10)})` : ''}: ${restored.corrections} account type correction${restored.corrections === 1 ? '' : 's'} and ${restored.reviews} reviewed flag${restored.reviews === 1 ? '' : 's'}. <button class="linkish" onClick=${() => setRestored(null)}>Dismiss</button></${Banner}>`}
 
-        ${home && html`<${HomePage} onOpen=${openClient} onUpload=${() => document.getElementById('csv-upload').click()} onSample=${loadSample} onHelp=${() => setHelpOpen(true)} onClients=${() => setClientsOpen(true)} />`}
+        ${home && html`<${HomePage} onOpen=${openClient} onUpload=${requestUpload} onSample=${loadSample} onHelp=${() => setHelpOpen(true)} onClients=${() => setClientsOpen(true)} />`}
+        ${result && !customizing && html`<${MonthlyWorkflow} close=${currentClose} hasPnl=${!!pnl} sample=${source.kind === 'sample'} portal=${portal} onLoad=${() => document.getElementById('csv-add').click()} onReview=${(target) => goToWork(target || { tab: 'audit' })} onClose=${() => goToWork({ tab: 'close', part: 'checklist' })} onReport=${() => setReportOpen(true)} />`}
         ${!home && html`<div class="tabs-row">
           <div class="tabs" role="tablist">
-            ${tabOrder.filter((id) => !hiddenTabs.has(id) || id === tab).map((id) => html`<button key=${id} class="tab" role="tab" id=${`tab-${id}`} aria-selected=${tab === id} onClick=${() => setTab(id)}>${tabs.find((t) => t[0] === id)[1]}${id === 'audit' ? html`<span class="count">${auditCount}</span>` : id === 'close' && closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>`)}
+            ${tabOrder.filter((id) => !hiddenTabs.has(id) || id === tab).map((id) => html`<button key=${id} class="tab" role="tab" id=${`tab-${id}`} aria-selected=${tab === id} onClick=${() => switchTab(id)}>${tabs.find((t) => t[0] === id)[1]}${id === 'audit' ? html`<span class="count">${auditCount}</span>` : id === 'close' && closeProgress ? html`<span class="count">${closeProgress}</span>` : ''}</button>`)}
           </div>
           ${result && !customizing && html`<button class="btn flag-toggle" onClick=${() => setFlagging(true)}>${Icon.flag}Flag a problem</button>`}
           ${result && !customizing && html`<button class="btn customize-toggle" onClick=${() => setCustomizing(true)}>${Icon.sliders}Customize</button>`}
@@ -490,7 +546,7 @@
         ${!result && analyzing && html`<div class="empty">Working through a large export. The results appear here in a moment.</div>`}
         ${result && html`<main role="tabpanel" aria-labelledby=${`tab-${tab}`} class=${analyzing ? 'stale' : ''} aria-busy=${analyzing ? 'true' : 'false'}>
           ${tab === 'audit' ? html`<${AuditTab} result=${result} accountClass=${accountClass} setAccountClass=${setAccountClass} onReview=${setReview} onClose=${(through) => { if (!through) setClosed(null); else Promise.resolve(result.closeBooks(through)).then(setClosed); }} canSave=${!!clientId} receiptLimit=${receiptLimit} setReceiptLimit=${setReceiptLimit} onRemoveAnswer=${(key) => setAnswers((prev) => { const n = { ...prev }; if (n[key] && n[key].photoKey) { const [c, r] = n[key].photoKey.split('|'); AttachStore.remove(c, r); } delete n[key]; return n; })} onReadAnswer=${(key, read) => setAnswers((prev) => (prev[key] ? { ...prev, [key]: { ...prev[key], read } } : prev))} />`
-            : tab === 'close' ? html`<${CloseTab} result=${result} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${setTab} />`
+            : tab === 'close' ? html`<${CloseTab} result=${result} month=${activeMonth} setMonth=${setCloseMonth} close=${currentClose} checklist=${checklist} setChecklist=${setChecklist} customSteps=${customSteps} setCustomSteps=${setCustomSteps} canSave=${!!clientId} goTo=${goToWork} onQuestions=${() => setQuestionsOpen(true)} onReport=${() => setReportOpen(true)} />`
             : tab === 'landscape' ? html`<${LandscapeTab} result=${result} inputs=${cashInputs} setInputs=${setCashInputs} />`
             : tab === 'fraud' ? html`<${FraudTab} result=${result} onAdd=${source.kind === 'upload' ? () => document.getElementById('csv-add').click() : null} />`
             : tab === 'growth' ? html`<${GrowthTab} result=${result} groupBy=${groupBy} setGroupBy=${setGroupBy} onReview=${setReview} />`
