@@ -498,6 +498,11 @@
   .close-list label { cursor: pointer; }
   .close-list li.done label { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--axis); }
   .close-list .sub { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin-top: 4px; }
+  .monthly-workflow { margin-top: 12px; }
+  .monthly-workflow ol { list-style: none; padding: 12px 18px; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 158px), 1fr)); gap: 12px; }
+  .monthly-workflow li { min-width: 0; }
+  .monthly-workflow .linkish { font-weight: 600; text-align: left; }
+  .monthly-workflow .sub { display: block; margin-top: 3px; }
   .close-extra { display: grid; gap: 14px; border-top: 1px solid var(--hair); }
   .add-step { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
   .add-step .field { flex: 1 1 280px; }

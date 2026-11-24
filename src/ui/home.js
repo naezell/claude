@@ -15,28 +15,31 @@
   const shortDay = (t) => new Date(t).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   const monthName = (key) => new Date(`${key}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' });
   const cleared = (r) => !!r && (r.status === 'ok' || r.status === 'fixed');
+  const taxWork = (kind) => kind === '1099'
+    ? { tab: 'vendors', part: 'tax1099' }
+    : { tab: 'taxprep', part: kind === 'estimate' ? 'estimates' : null };
 
   // Everything waiting, on the bookkeeper ("you") or on the client, for one saved client.
   function tasksFor(id, c) {
     const out = [];
-    const add = (who, rank, text, detail) => out.push({ id, name: c.name || id, who, rank, text, detail });
+    const add = (who, rank, text, detail, action, target) => out.push({ id, name: c.name || id, who, rank, text, detail, action, target });
     const s = c.summary;
     const answers = Object.entries(c.answers || {}).filter(([k]) => !cleared((c.reviewed || {})[k]));
     const portal = c.portal;
-    if (answers.length) add('you', 1, `${answers.length} client answer${answers.length === 1 ? '' : 's'} to review`, portal && portal.status === 'received' ? `Came in ${ago(portal.receivedAt)} through the answer link` : 'Under Client answers on the audit tab');
-    if (s && s.closedChanges) add('you', 2, `${s.closedChanges} change${s.closedChanges === 1 ? '' : 's'} to a closed month`, `Books were closed through ${monthName(s.closedThrough)}`);
-    if (c.loanRequest && c.loanRequest.requested && !c.loanRequest.builtAt) add('you', 3, 'Loan package requested', `Asked ${ago(c.loanRequest.requestedAt)}; create it on the Tax & lending tab`);
-    if (portal && portal.status === 'expired') add('you', 4, 'Answer link expired without answers', 'Send a new link from Client questions');
-    if (s && s.open && s.openTotal) add('you', 5, `${s.openTotal} flag${s.openTotal === 1 ? '' : 's'} to review`, [s.open.uncategorized && `${s.open.uncategorized} uncategorized`, s.open.duplicates && `${s.open.duplicates} possible duplicates`, s.open.balance && `${s.open.balance} balance sheet`, s.open.receipts && `${s.open.receipts} receipts`].filter(Boolean).join(', ') || 'On the audit tab');
-    if (s && s.landscape && s.landscape.missed) add('you', 5, `${s.landscape.missed} contract invoice${s.landscape.missed === 1 ? '' : 's'} not sent`, 'Customers billed every month with no invoice lately; see the Landscaping tab');
-    if (s && s.close && s.close.done < s.close.total) add('you', 6, `${monthName(s.close.month)} close: ${s.close.done} of ${s.close.total} done`, 'On the Month-end close tab');
-    if (s && s.landscape && s.landscape.stale) add('you', 8, `${s.landscape.stale} contract price${s.landscape.stale === 1 ? '' : 's'} unchanged for a year`, 'Worth raising at renewal; see the Landscaping tab');
+    if (answers.length) add('you', 1, `${answers.length} client answer${answers.length === 1 ? '' : 's'} to review`, portal && portal.status === 'received' ? `Came in ${ago(portal.receivedAt)} through the answer link` : '', 'Review client answers', { tab: 'audit', part: 'answers' });
+    if (s && s.closedChanges) add('you', 2, `${s.closedChanges} change${s.closedChanges === 1 ? '' : 's'} to a closed month`, `Books were closed through ${monthName(s.closedThrough)}`, 'Review closed months', { tab: 'audit', part: 'closed' });
+    if (c.loanRequest && c.loanRequest.requested && !c.loanRequest.builtAt) add('you', 3, 'Loan package requested', `Asked ${ago(c.loanRequest.requestedAt)}`, 'Review loan package', { tab: 'advisory', part: 'package' });
+    if (portal && portal.status === 'expired') add('you', 4, 'Answer link expired without answers', '', 'Review expired link', { tab: 'audit', drawer: 'questions' });
+    if (s && s.open && s.openTotal) add('you', 5, `${s.openTotal} flag${s.openTotal === 1 ? '' : 's'} to review`, [s.open.uncategorized && `${s.open.uncategorized} uncategorized`, s.open.duplicates && `${s.open.duplicates} possible duplicates`, s.open.balance && `${s.open.balance} balance sheet`, s.open.receipts && `${s.open.receipts} receipts`].filter(Boolean).join(', '), 'Review flags', { tab: 'audit' });
+    if (s && s.landscape && s.landscape.missed) add('you', 5, `${s.landscape.missed} contract invoice${s.landscape.missed === 1 ? '' : 's'} not sent`, 'Customers billed every month with no invoice lately', 'Review missed invoices', { tab: 'landscape', part: 'contracts' });
+    if (s && s.close && s.close.done < s.close.total) add('you', 6, `${monthName(s.close.month)} close: ${s.close.done} of ${s.close.total} done`, '', `Continue ${monthName(s.close.month)} close`, { tab: 'close', part: 'checklist', month: s.close.month });
+    if (s && s.landscape && s.landscape.stale) add('you', 8, `${s.landscape.stale} contract price${s.landscape.stale === 1 ? '' : 's'} unchanged for a year`, '', 'Review contract prices', { tab: 'landscape', part: 'contracts' });
     const soon = window.LedgerEngine.taxDeadlines(new Date().toISOString().slice(0, 10), 7, { entity: (c.tax && c.tax.entity) || 'sole', payroll: !!(s && s.payroll), contractors: !!(s && s.contractors > 0), skipExtended: true });
-    for (const d of soon) add('you', 2, d.label, d.days < 0 ? `Was due ${shortDay(Date.parse(d.date))}` : `Due ${d.days === 0 ? 'today' : d.days === 1 ? 'tomorrow' : `in ${d.days} days`}`);
-    if (daysAgo(c.loadedAt) > 35) add('you', 7, 'Due for a new export', s ? `Books loaded run to ${s.periodEnd}` : 'Upload their latest export');
+    for (const d of soon) add('you', 2, d.label, d.days < 0 ? `Was due ${shortDay(Date.parse(d.date))}` : `Due ${d.days === 0 ? 'today' : d.days === 1 ? 'tomorrow' : `in ${d.days} days`}`, d.kind === '1099' ? 'Review 1099s' : 'Open tax prep', taxWork(d.kind));
+    if (daysAgo(c.loadedAt) > 35) add('you', 7, 'Due for a new export', s ? `Books loaded run to ${s.periodEnd}` : '', 'Load latest export', { upload: true });
     if (portal && portal.status === 'waiting' && portal.expiresAt > Date.now()) {
       const d = daysAgo(portal.createdAt);
-      add('client', d >= 7 ? 1 : 2, `${portal.count} question${portal.count === 1 ? '' : 's'} sent, no answers yet`, `Sent ${ago(portal.createdAt)}${portal.email ? ` to ${portal.email}` : ''}; link works until ${shortDay(portal.expiresAt)}${d >= 7 ? '. Consider a reminder.' : ''}`);
+      add('client', d >= 7 ? 1 : 2, `${portal.count} question${portal.count === 1 ? '' : 's'} sent, no answers yet`, `Sent ${ago(portal.createdAt)}${portal.email ? ` to ${portal.email}` : ''}. Link works until ${shortDay(portal.expiresAt)}${d >= 7 ? '. Consider a reminder.' : ''}`, 'Open client questions', { tab: 'audit', drawer: 'questions' });
     }
     return out;
   }
@@ -109,7 +112,7 @@
             <h2>Welcome to Ledger Lens${Firm.name ? ` for ${Firm.name}` : ''}</h2>
             <p>Upload a client's QuickBooks <strong>Transaction Detail by Account</strong> export to review their books, forecast cash and prepare reports. Select all of their files at once: the chart of accounts, Profit and Loss and expense list are recognized too. Each client you load appears here with what needs doing.</p>
             <div class="backup-actions">
-              <button class="btn primary" onClick=${onUpload}>${Icon.upload}Upload a client's export</button>
+              <button class="btn primary" onClick=${() => onUpload()}>${Icon.upload}Upload a client's export</button>
               <button class="btn" onClick=${onSample}>${Icon.sample}Look around with sample data</button>
               <button class="btn" onClick=${onHelp}>${Icon.help}Getting started guide</button>
             </div>
@@ -123,13 +126,15 @@
     const theirs = tasks.filter((t) => t.who === 'client').sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
     const loans = ids.filter((id) => clients[id].loanRequest && clients[id].loanRequest.requested).length;
     const byUrgency = ids.map((id) => ({ id, c: clients[id], st: clientStatus(clients[id]) })).sort((a, b) => b.st.score - a.st.score || String(a.c.name || a.id).localeCompare(String(b.c.name || b.id)));
-    const openBtn = (id, label) => (FileStore.info(id)
-      ? html`<button class="btn" onClick=${() => onOpen(id)}>${label || 'Open'}</button>`
-      : html`<button class="btn" title="Their files are not saved in this browser; upload the latest export" onClick=${onUpload}>${Icon.upload}Upload</button>`);
+    const openBtn = (id, label, target) => {
+      if (target && target.upload) return html`<button class="btn" onClick=${() => onUpload(id)}>${label}</button>`;
+      if (FileStore.info(id)) return html`<button class="btn" onClick=${() => onOpen(id, target)}>${label || 'Open'}</button>`;
+      return html`<button class="btn" title="This client's files are missing from this browser" onClick=${() => onUpload(id, target)}>${Icon.upload}Load client export</button>`;
+    };
     const taskList = (list, empty) => (list.length
       ? html`<ul class="task-list">${list.map((t, i) => html`<li key=${`${t.id}-${i}`}>
-          <div><span class="task-client">${t.name}</span><span class="task-text">${t.text}</span><span class="sub">${t.detail}</span></div>
-          ${openBtn(t.id)}
+          <div><span class="task-client">${t.name}</span><span class="task-text">${t.text}</span>${t.detail && html`<span class="sub">${t.detail}</span>`}</div>
+          ${openBtn(t.id, t.action, t.target)}
         </li>`)}</ul>`
       : html`<div class="empty">${empty}</div>`);
     return html`<main class="home" aria-label="Home">
@@ -141,10 +146,10 @@
         <div class="kpi"><span class="kpi-label">Loan packages</span><span class="kpi-value">${loans}</span><span class="kpi-sub">requested by clients</span></div>
       </section>
       <div class="grid-2">
-        <section class="panel"><div class="panel-head"><h2>Waiting on you</h2><p>Most urgent first. Open a client to work on it.</p></div><div class="panel-body flush">${taskList(mine, 'Nothing waiting. Nice work.')}</div></section>
+        <section class="panel"><div class="panel-head"><h2>Waiting on you</h2><p>Most urgent first.</p></div><div class="panel-body flush">${taskList(mine, 'Nothing waiting. Nice work.')}</div></section>
         <section class="panel"><div class="panel-head"><h2>Waiting on clients</h2><p>Questions sent through an answer link. Answers come in by themselves.</p></div><div class="panel-body flush">${taskList(theirs, 'No questions out with clients.')}</div></section>
       </div>
-      <${TaxDeadlines} list=${deadlinesFor(ids, clients)} />
+      <${TaxDeadlines} list=${deadlinesFor(ids, clients)} openBtn=${openBtn} />
       <${YourTickets} />
       <section class="panel">
         <div class="panel-head"><h2>Clients</h2><p>Every client loaded in this browser. For backups and to forget a client, use the Clients button.</p></div>
@@ -160,7 +165,7 @@
         </div>
         <div class="panel-body" style=${{ borderTop: '1px solid var(--hair)' }}>
           <div class="backup-actions">
-            <button class="btn" onClick=${onUpload}>${Icon.upload}Upload a client's export</button>
+            <button class="btn" onClick=${() => onUpload()}>${Icon.upload}Upload a client's export</button>
             <button class="btn" onClick=${onClients}>${Icon.cloud}Clients & backup</button>
             <button class="btn" onClick=${onSample}>${Icon.sample}Sample data</button>
           </div>
@@ -182,13 +187,14 @@
         .map((d) => ({ ...d, id, name: c.name || id }));
     }).sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
   }
-  function TaxDeadlines({ list }) {
+  function TaxDeadlines({ list, openBtn }) {
     if (!list.length) return null;
     const when = (d) => (d.days < 0 ? `${-d.days} day${d.days === -1 ? '' : 's'} late` : d.days === 0 ? 'Today' : d.days === 1 ? 'Tomorrow' : `In ${d.days} days`);
     return html`<section class="panel">
       <div class="panel-head"><h2>Tax deadlines</h2><p>Federal due dates in the next six weeks, from each client's entity type (set on Tax & lending). Extended returns and state dates aren't shown.</p></div>
       <div class="panel-body flush"><ul class="task-list">${list.map((d, i) => html`<li key=${`${d.id}-${d.date}-${i}`}>
         <div><span class="task-client">${d.name}</span><span class="task-text">${d.label} <span class=${`pill ${d.days <= 7 ? 'high' : d.days <= 21 ? 'medium' : 'low'}`}><span class="dot"></span>${when(d)}</span></span><span class="sub">${KIND_LABEL[d.kind]} · due ${new Date(`${d.date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })}</span></div>
+        ${openBtn(d.id, d.kind === '1099' ? 'Review 1099s' : 'Open tax prep', taxWork(d.kind))}
       </li>`)}</ul></div>
     </section>`;
   }

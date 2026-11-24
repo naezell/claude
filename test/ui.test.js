@@ -1028,6 +1028,9 @@ test('Home: opens first, lists clients with what is waiting on Mark and on clien
   await page.click('#tab-advisory');
   await page.check('#loan-requested');
   await page.waitForTimeout(300);
+  await page.locator('.customize-toggle').click();
+  await page.locator('.arrange-item[data-part="package"]').getByRole('button', { name: 'Hide' }).click();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
   // An answer link is out with them (as the portal leaves it in the profile).
   await page.evaluate(() => {
     const S = window.LedgerStore.ClientStore;
@@ -1044,7 +1047,32 @@ test('Home: opens first, lists clients with what is waiting on Mark and on clien
   assert.match(theirs, /6 questions sent, no answers yet/);
   assert.match(theirs, /Consider a reminder/);
   assert.match(await page.locator('.client-card').innerText(), /Riverbend Plumbing/);
-  // Open from Home goes back to the client.
+  // Each queue action opens its destination and leaves the saved layout in place.
+  await mine.getByRole('button', { name: 'Review loan package' }).click();
+  await page.locator('[data-part="advisory:package"] h2:focus').waitFor();
+  assert.equal(await page.locator('#tab-advisory').getAttribute('aria-selected'), 'true');
+  assert.deepEqual(await page.evaluate(() => window.LedgerUI.Layout.load().pages.advisory.hidden), ['package']);
+  await page.click('#tab-close');
+  const previousMonth = await page.locator('#close-month option').nth(1).getAttribute('value');
+  await page.click('button:has-text("Home")');
+  await page.evaluate((month) => {
+    const store = window.LedgerStore.ClientStore;
+    const [id, client] = Object.entries(store.all())[0];
+    store.put(id, { ...client, summary: { ...client.summary, close: { ...client.summary.close, month } } });
+  }, previousMonth);
+  await mine.getByRole('button', { name: /Continue .* close/ }).click();
+  await page.locator('[data-part="close:checklist"] h2:focus').waitFor();
+  assert.equal(await page.inputValue('#close-month'), previousMonth);
+  const workflow = page.getByRole('navigation', { name: /Monthly workflow/ });
+  await workflow.getByRole('button', { name: 'Prepare client report' }).click();
+  await page.locator('.drawer', { has: page.getByRole('heading', { name: 'Client report', exact: true }) }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.click('button:has-text("Home")');
+  await page.getByRole('button', { name: 'Open client questions' }).click();
+  await page.getByRole('dialog', { name: 'Questions for the client' }).waitFor();
+  await page.keyboard.press('Escape');
+  await page.click('button:has-text("Home")');
+  // Client cards still open a client as before.
   await page.locator('.client-card button', { hasText: 'Open' }).click();
   await page.locator('.banner', { hasText: 'Opened Riverbend' }).waitFor();
   await page.waitForSelector('#tab-audit');

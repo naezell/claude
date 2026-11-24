@@ -51,7 +51,7 @@
 
   // parts: [id, label, content]; content that is empty for this client is skipped.
   function Arrange({ page, parts }) {
-    const { customizing, layout, setLayout } = useContext(LayoutContext);
+    const { customizing, layout, setLayout, revealedPart } = useContext(LayoutContext);
     const saved = (layout.pages && layout.pages[page]) || {};
     const byId = new Map(parts.map(([id, label, node]) => [id, { label, node }]));
     const order = arrangeIds(parts.map((p) => p[0]), saved.order);
@@ -59,7 +59,7 @@
     const shownIds = order.filter((id) => byId.get(id).node);
     const shown = new Set(shownIds);
     // The wrapper takes no space (display: contents); it names the section for Flag a problem.
-    if (!customizing) return shownIds.filter((id) => !hidden.has(id)).map((id) => html`<div key=${id} class="part" data-part=${`${page}:${id}`} data-part-label=${byId.get(id).label}>${byId.get(id).node}</div>`);
+    if (!customizing) return shownIds.filter((id) => !hidden.has(id) || revealedPart === `${page}:${id}`).map((id) => html`<div key=${id} class="part" data-part=${`${page}:${id}`} data-part-label=${byId.get(id).label}>${byId.get(id).node}</div>`);
     const update = (next) => setLayout({ ...layout, pages: { ...layout.pages, [page]: { order: next.order || order, hidden: next.hidden || [...hidden] } } });
     return shownIds.map((id, i) => {
       const { label, node } = byId.get(id);
