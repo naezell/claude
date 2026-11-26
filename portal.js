@@ -62,7 +62,7 @@
 
   function render(link, data, previous) {
     var answers = {};
-    ((previous && previous.answers) || []).forEach(function (a) { answers[a.ref] = { answer: a.answer || '', photos: a.photos || [] }; });
+    ((previous && previous.answers) || []).forEach(function (a) { answers[a.ref] = { answer: a.answer || '', photos: a.photos || [], category: a.category || '', job: a.job || '' }; });
     app.textContent = '';
     app.appendChild(el('header', {}, [
       data.firm && data.firm.logo ? el('img', { src: data.firm.logo, alt: '' }) : null,
@@ -74,8 +74,11 @@
     if (data.message) app.appendChild(el('div', { class: 'note', text: data.message }));
     if (previous) app.appendChild(el('div', { class: 'msg good', text: 'Your answers were received. You can change them below and send again until your bookkeeper collects them.' }));
 
+    var cards = [];
+    var deck = data.questions.some(function (q) { return q.coding && q.coding.length; });
+    var position = 0;
     data.questions.forEach(function (q) {
-      var state = answers[q.ref] || (answers[q.ref] = { answer: '', photos: [] });
+      var state = answers[q.ref] || (answers[q.ref] = { answer: '', photos: [], category: '', job: '' });
       var thumbs = el('div', { class: 'thumbs' });
       var id = 'a-' + q.ref;
       function drawThumbs() {
@@ -83,35 +86,85 @@
         state.photos.forEach(function (p, i) {
           thumbs.appendChild(el('span', { class: 'thumb' + (/^data:application\/pdf/.test(p.data) ? ' pdf' : '') }, [
             /^data:application\/pdf/.test(p.data) ? el('span', { class: 'pdf-name', text: 'PDF · ' + p.name }) : el('img', { src: p.data, alt: 'Photo ' + (i + 1) }),
-            el('button', { type: 'button', 'aria-label': 'Remove photo ' + (i + 1), text: '×', onclick: function () { state.photos.splice(i, 1); drawThumbs(); } }),
+            el('button', { type: 'button', 'aria-label': 'Remove photo ' + (i + 1), text: '×', onclick: function () { state.photos.splice(i, 1); drawThumbs(); refreshProgress(); } }),
           ]));
         });
       }
       var file = el('input', { type: 'file', accept: q.docs ? 'image/*,application/pdf' : 'image/*', multiple: 'multiple', id: 'f-' + q.ref, onchange: function (e) {
         var files = Array.prototype.slice.call(e.target.files || [], 0, MAX_PHOTOS - state.photos.length);
         e.target.value = '';
-        Promise.all(files.map(shrink)).then(function (ps) { state.photos = state.photos.concat(ps).slice(0, MAX_PHOTOS); drawThumbs(); }, function (err) { status(err.message, true); });
+        Promise.all(files.map(shrink)).then(function (ps) { state.photos = state.photos.concat(ps).slice(0, MAX_PHOTOS); drawThumbs(); refreshProgress(); }, function (err) { status(err.message, true); });
       } });
-      var ta = el('textarea', { id: id, placeholder: 'Your answer', oninput: function (e) { state.answer = e.target.value; } });
+      var ta = el('textarea', { id: id, placeholder: q.coding ? 'Optional details' : 'Your answer', maxlength: 4600, oninput: function (e) { state.answer = e.target.value; refreshProgress(); } });
       ta.value = state.answer;
-      app.appendChild(el('section', { class: 'q' }, [
+      var fields = null;
+      if (q.coding && q.coding.length) {
+        var picker = el('select', { id: 'c-' + q.ref, onchange: function (e) { state.category = e.target.value; refreshProgress(); } }, [
+          el('option', { value: '', text: 'Choose a category' }),
+        ].concat(q.coding.map(function (name) { return el('option', { value: name, text: name }); })));
+        picker.value = state.category;
+        var job = el('input', { id: 'j-' + q.ref, maxlength: 100, placeholder: 'e.g. Oak Street', oninput: function (e) { state.job = e.target.value; refreshProgress(); } });
+        job.value = state.job;
+        fields = el('div', { class: 'coding' }, [el('label', { for: picker.id, text: 'What kind of transaction was it?' }), picker, el('label', { for: job.id, text: 'Job or project (optional)' }), job]);
+      }
+      var card = el('section', { class: 'q' }, [
         el('p', { class: 'topic', text: q.topic }),
-        el('label', { class: 'text', for: id, text: q.question }),
+        el('label', { class: 'text question-title', for: id, tabindex: '-1', text: q.question }),
+        fields,
         ta,
         el('div', { class: 'row' }, [
           el('label', { class: 'btn', for: 'f-' + q.ref }, [document.createTextNode(q.docs ? 'Add a photo or PDF of it' : q.receipt ? 'Add a photo of the receipt' : 'Add a photo'), file]),
           thumbs,
         ]),
-      ]));
+      ]);
+      cards.push(card);
+      app.appendChild(card);
       drawThumbs();
     });
 
+    var progress, back, next;
+    function hasAnswer(a) { return a && (a.answer.trim() || a.category || a.job.trim() || a.photos.length); }
+    function refreshProgress() {
+      if (!progress) return;
+      var count = data.questions.filter(function (q) { return hasAnswer(answers[q.ref]); }).length;
+      progress.textContent = (position + 1) + ' of ' + cards.length + ' · ' + count + ' answered';
+    }
+    function showCard(index, focus) {
+      if (index < 0 || index >= cards.length) return;
+      position = index;
+      cards.forEach(function (card, i) { card.hidden = i !== position; });
+      back.disabled = position === 0;
+      next.disabled = position === cards.length - 1;
+      refreshProgress();
+      if (focus) cards[position].querySelector('.question-title').focus();
+    }
+    if (deck) {
+      progress = el('p', { class: 'hint deck-progress', role: 'status' });
+      back = el('button', { class: 'btn', type: 'button', text: 'Previous', onclick: function () { showCard(position - 1, true); } });
+      next = el('button', { class: 'btn', type: 'button', text: 'Next', onclick: function () { showCard(position + 1, true); } });
+      app.insertBefore(progress, cards[0]);
+      app.appendChild(el('div', { class: 'row deck-controls' }, [back, next]));
+      cards.forEach(function (card) {
+        var start;
+        card.addEventListener('touchstart', function (e) {
+          start = e.touches.length === 1 && !e.target.closest('button,input,select,textarea,label') ? e.touches[0] : null;
+        }, { passive: true });
+        card.addEventListener('touchend', function (e) {
+          if (!start) return;
+          var end = e.changedTouches[0];
+          var dx = end.clientX - start.clientX;
+          if (Math.abs(dx) >= 55 && Math.abs(dx) > Math.abs(end.clientY - start.clientY) * 1.4) showCard(position + (dx < 0 ? 1 : -1), true);
+          start = null;
+        }, { passive: true });
+      });
+      showCard(0, false);
+    }
     var msg = el('div', { role: 'status' });
     function status(text, bad) { msg.className = 'msg ' + (bad ? 'error' : 'good'); msg.textContent = text; }
     var send = el('button', { class: 'btn primary', type: 'button', text: previous ? 'Send updated answers' : 'Send answers', onclick: function () {
-      var list = data.questions.map(function (q) { var a = answers[q.ref]; return { ref: q.ref, answer: a.answer.trim(), photos: a.photos }; })
-        .filter(function (a) { return a.answer || a.photos.length; });
-      if (!list.length) { status('Type at least one answer or add a photo first.', true); return; }
+      var list = data.questions.map(function (q) { var a = answers[q.ref]; return { ref: q.ref, answer: a.answer.trim(), photos: a.photos, category: a.category, job: a.job.trim() }; })
+        .filter(function (a) { return hasAnswer(a); });
+      if (!list.length) { status('Choose a category, type an answer, or add a photo first.', true); return; }
       send.disabled = true;
       status('Sending…');
       Seal.seal(link.key, { answers: list, sentAt: new Date().toISOString() }).then(function (sealed) {

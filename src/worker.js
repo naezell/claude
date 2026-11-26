@@ -12,7 +12,7 @@
  */
 /* global importScripts, LedgerEngine, XLSX */
 'use strict';
-importScripts('engine.js');
+importScripts('csv-input.js', 'engine.js');
 const E = LedgerEngine;
 
 let parsed = null;

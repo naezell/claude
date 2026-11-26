@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Advisory tools | Ledger Lens</title>
+  <link rel="stylesheet" href="/src/advisory-pages.css">
+  <link rel="icon" href="/assets/7d-mark.png">
+  <script defer src="/src/csv-input.js"></script>
+  <script defer src="/src/engine.js"></script>
+  <script defer src="/src/statement-input.js"></script>
+  <script defer src="/src/statement-reports.js"></script>
+  <script defer src="/src/advisory-page.js"></script>
+</head>
+<body>
+<main>
+  <header><img src="/assets/7d-mark.png" alt=""><div><p>7D Business Solutions</p><h1>Advisory tools</h1></div></header>
+  <nav aria-label="Advisory tools"><a href="/">Ledger Lens home</a><a href="#monthly-brief">Monthly brief</a><a href="#watchdog">QuickBooks Watchdog</a><a href="/health-check.html">Public health check</a></nav>
+  <section id="monthly-brief" class="card">
+    <h2>Monthly executive brief</h2>
+    <p>Turn one month of QuickBooks reports into a one-page summary for the owner. Add last month’s reports to show what changed.</p>
+    <form id="brief-form">
+      <div class="grid">
+        <label for="period">Reporting month<input id="period" type="month" required></label>
+        <label for="report-name">Client or company name<input id="report-name" maxlength="100" autocomplete="off" placeholder="Shown on the brief"></label>
+      </div>
+      <div class="row" id="brief-connect" hidden>
+        <label for="brief-company">Connected QuickBooks company<select id="brief-company"></select></label>
+        <button id="pull-brief" type="button">Generate from QuickBooks</button>
+      </div>
+      <div class="grid">
+        <label for="current">This month’s P&amp;L<input id="current" type="file" accept=".csv,.xlsx,.xls" required></label>
+        <label for="balance">This month’s Balance Sheet<input id="balance" type="file" accept=".csv,.xlsx,.xls" required></label>
+      </div>
+      <details>
+        <summary>Add comparisons and cash flow</summary>
+        <div class="grid">
+          <label for="prior">Last month’s P&amp;L<input id="prior" type="file" accept=".csv,.xlsx,.xls"></label>
+          <label for="priorBalance">Last month’s Balance Sheet<input id="priorBalance" type="file" accept=".csv,.xlsx,.xls"></label>
+          <label for="cashFlow">This month’s Statement of Cash Flows<input id="cashFlow" type="file" accept=".csv,.xlsx,.xls"></label>
+        </div>
+        <p class="hint">Export one month per file with columns set to Total only. The Cash Flows report shows how cash moved through operations, investing, and financing.</p>
+      </details>
+      <button type="submit">Generate from files</button>
+      <p id="brief-status" class="status" role="status"></p>
+    </form>
+  </section>
+  <section id="brief-preview" class="card brief-copy" hidden>
+    <p>7D Business Solutions</p>
+    <h2 id="brief-title" tabindex="-1"></h2>
+    <p id="brief-period"></p>
+    <dl id="brief-numbers" class="numbers"></dl>
+    <h3>Where cash moved</h3><ul id="brief-cash"></ul>
+    <h3>What changed since last month</h3><ul id="brief-changes"></ul>
+    <h3>What to do next</h3><ol id="brief-actions"></ol>
+    <button class="no-print" id="print-brief">Print or save PDF</button>
+  </section>
+  <section id="watchdog" class="card">
+    <h2>QuickBooks Watchdog</h2>
+    <p>Review connected companies in one place. Checks cover changes in posted uncategorized purchases and deposits, QuickBooks access, and reconciliation dates you record.</p>
+    <p class="hint">Verify bank-feed issues in QuickBooks. Record the date through which an account was reconciled. If a company has several accounts, use the oldest date.</p>
+    <button id="connect" type="button" hidden>Connect QuickBooks company</button>
+    <p id="qbo-status" class="status" role="status">Looking for QuickBooks connections…</p>
+    <div id="company-list"></div>
+  </section>
+  <section id="transaction-chaser" class="card">
+    <h2>Uncategorized transaction chaser</h2>
+    <p>Open a client’s Transaction Detail CSV or Excel report on Ledger Lens home. Go to <strong>Client questions</strong>, select the items to ask about, and create a private answer link to email or text. Categories, job tags, and receipts return to Ledger Lens for review.</p>
+    <p id="chaser-start" hidden>For a connected company, open a saved client with the matching company name. In <strong>Client questions</strong>, choose a month and use <strong>Pull questions from QuickBooks</strong>.</p>
+    <a href="/">Open Ledger Lens</a>
+  </section>
+</main>
+</body>
+</html>

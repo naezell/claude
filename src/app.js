@@ -491,6 +491,7 @@
             ${source.kind === 'upload' && html`<button class="btn" onClick=${loadSample}>${Icon.sample}Load sample</button>`}
             ${!home && html`<button class="btn" onClick=${goHome}>${Icon.home}Home</button>`}
             <button class="btn" onClick=${() => setClientsOpen(true)}>${Icon.cloud}Clients</button>
+            ${/^https?:$/.test(location.protocol) && html`<a class="btn" href="/advisory.html">Advisory tools</a>`}
             ${!home && html`<button class="btn" disabled=${!result} onClick=${() => setQuestionsOpen(true)}>${Icon.copy}Client questions</button>
             <button class="btn primary" disabled=${!result} onClick=${() => setReportOpen(true)}>${Icon.report}Client report</button>`}
             <button class="btn" onClick=${() => setHelpOpen(true)}>${Icon.help}Help</button>

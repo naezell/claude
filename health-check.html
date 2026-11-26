@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Bookkeeping health check | 7D Business Solutions</title>
+  <link rel="stylesheet" href="/src/advisory-pages.css">
+  <link rel="icon" href="/assets/7d-mark.png">
+  <script defer src="/src/csv-input.js"></script>
+  <script defer src="/src/statement-input.js"></script>
+  <script defer src="/src/statement-reports.js"></script>
+  <script defer src="/src/health-check.js"></script>
+</head>
+<body class="public">
+<main>
+  <header><img src="/assets/7d-mark.png" alt=""><div><p>7D Business Solutions</p><h1>Bookkeeping health check</h1></div></header>
+  <section class="card">
+    <p>See which balances deserve a closer look and get an estimate of how much cleanup the books may need. Trial Balance files stay in this browser.</p>
+    <form id="grade-form">
+      <div class="grid">
+        <label for="trial">QuickBooks Trial Balance<input id="trial" type="file" accept=".csv,.xlsx,.xls" required></label>
+        <label for="months">Unreconciled months (if known)<input id="months" type="number" min="0" max="36" step="1" placeholder="Optional"></label>
+      </div>
+      <div class="row">
+        <button type="submit">Grade my books</button>
+        <button id="grade-qbo" hidden type="button">Connect QuickBooks for one check</button>
+        <a id="grade-separate" hidden href="/health-check.html" target="_blank" rel="noopener">Open full page to connect QuickBooks</a>
+      </div>
+      <p id="grade-status" class="status" role="status"></p>
+    </form>
+  </section>
+  <section id="grade" class="card" hidden>
+    <h2 id="grade-title" tabindex="-1"></h2>
+    <ul id="grade-details"></ul>
+    <p class="hint">This estimate is based on the accounts and reconciliation information available. Your bookkeeper can confirm the scope after reviewing the books.</p>
+  </section>
+  <section id="contact" class="card" hidden>
+    <h2>Ask 7D about cleanup</h2>
+    <p id="contact-fallback"><a href="https://www.7dbusinesssolutions.com" target="_blank" rel="noopener">Contact 7D Business Solutions</a></p>
+    <form id="lead-form" hidden>
+      <p>Share your contact details if you’d like 7D to follow up. Your score and bookkeeping data stay separate.</p>
+      <div class="grid">
+        <label for="lead-name">Name<input id="lead-name" name="name" maxlength="100" autocomplete="name" required></label>
+        <label for="lead-company">Company (optional)<input id="lead-company" name="company" maxlength="140" autocomplete="organization"></label>
+        <label for="lead-email">Email<input id="lead-email" name="email" type="email" maxlength="180" autocomplete="email" required></label>
+      </div>
+      <label for="lead-trap" class="form-trap" aria-hidden="true">Website<input id="lead-trap" name="website" tabindex="-1" autocomplete="off"></label>
+      <label class="check"><input name="consent" type="checkbox" required>7D may contact me about cleaning up my books.</label>
+      <p><button type="submit">Request a follow-up</button></p>
+      <p id="lead-status" class="status" role="status"></p>
+    </form>
+  </section>
+</main>
+</body>
+</html>

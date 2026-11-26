@@ -28,7 +28,43 @@
     const [include, setInclude] = useState({ uncategorized: true, duplicates: true, coding: true, unusual: true, receipts: true, receivables: true, w9: true });
     const [status, setStatus] = useState('');
     const preRef = useRef(null);
-    const q = useMemo(() => E.clientQuestions(result, { greeting: greeting.trim() || undefined, preparer, include, firm: Firm, answers }), [result, greeting, preparer, include, answers]);
+    const [company, setCompany] = useState(null);
+    const [connectedResult, setConnectedResult] = useState(null);
+    const [fetching, setFetching] = useState(false);
+    const q = useMemo(() => E.clientQuestions(connectedResult || result, {
+      greeting: greeting.trim() || undefined, preparer, include: connectedResult
+        ? Object.fromEntries(QUESTION_SECTIONS.map(([k]) => [k, k === 'uncategorized']))
+        : include,
+      firm: Firm, answers,
+    }), [connectedResult, result, greeting, preparer, include, answers]);
+    useEffect(() => {
+      if (!canSave || !UI.Portal.available()) return;
+      let live = true;
+      fetch('/api/qbo/connections', { cache: 'no-store' }).then((res) => res.ok ? res.json() : null).then((data) => {
+        const matches = (data?.companies || []).filter((c) => E.clientKey({ company: c.name }) === E.clientKey(result.meta));
+        if (live) setCompany(matches.length === 1 ? matches[0] : null);
+      }).catch(() => {});
+      return () => { live = false; };
+    }, [canSave, result.meta.company]);
+    const loadPosted = async (e) => {
+      e.preventDefault();
+      setFetching(true);
+      try {
+        const period = new FormData(e.currentTarget).get('period');
+        const res = await fetch('/api/qbo/chaser', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ realm: company.realm, period }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'QuickBooks could not load the transactions.');
+        if (!data.count) {
+          setConnectedResult(null);
+          setStatus('QuickBooks found no posted uncategorized purchases or deposits for this month. Showing questions from your uploaded files.');
+          return;
+        }
+        setConnectedResult(E.analyze(E.parseTransactions(data.csv)));
+        setStatus('Showing posted QuickBooks items for ' + period + '.');
+      } catch (err) { setStatus(err.message); }
+      finally { setFetching(false); }
+    };
     const filename = `${slug(result.meta.company)}-questions-${result.period.end}.txt`;
     useEffect(() => { safeStore.set('ll.preparer', preparer); }, [preparer]);
     useEscape(onClose);
@@ -47,6 +83,16 @@
             <div class="chips">${QUESTION_SECTIONS.map(([k, l]) => html`<button key=${k} class="chip" aria-pressed=${include[k]} onClick=${() => setInclude({ ...include, [k]: !include[k] })}>${l}</button>`)}</div>
           </div>
         </div>
+        ${company && html`<form class="portal-block" onSubmit=${loadPosted}>
+          <h3>Use posted QuickBooks transactions</h3>
+          <div class="drawer-fields">
+            <label class="field">Month for ${company.name}<input name="period" type="month" defaultValue=${result.period.end.slice(0, 7)} required /></label>
+          </div>
+          <div class="backup-actions">
+            <button class="btn" type="submit" disabled=${fetching}>Pull questions from QuickBooks</button>
+            ${connectedResult && html`<button class="btn" type="button" onClick=${() => { setConnectedResult(null); setStatus('Showing questions from your uploaded files.'); }}>Use uploaded files</button>`}
+          </div>
+        </form>`}
         <${PortalBlock} q=${q} portal=${portal} setPortal=${setPortal} canSave=${canSave} client=${result.meta.company || ''} greeting=${greeting.trim()} preparer=${preparer} onCheck=${onCheckPortal} taxYear=${result.taxPrep ? result.taxPrep.year : undefined} taxForm=${result.taxPrep ? result.taxPrep.form : undefined} />
         <pre class="report-pre" ref=${preRef}>${q.text}</pre>
         <div class="drawer-foot">

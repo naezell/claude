@@ -31,7 +31,7 @@
     // Seals the questions and stores them; resolves with the record to keep in the profile.
     async create({ rows, client, message, email, replaces }) {
       const { id, key } = Seal.newLink();
-      const questions = rows.map((r) => ({ ref: r.ref, topic: r.section, question: r.question, receipt: /receipt/i.test(r.section) || !!r.docs, docs: !!r.docs }));
+      const questions = rows.map((r) => ({ ref: r.ref, topic: r.section, question: r.question, receipt: !!r.coding || /receipt/i.test(r.section) || !!r.docs, coding: r.coding, docs: !!r.docs }));
       const firm = { name: Firm.name || '', website: Firm.website || '', logo: Firm.logo ? 'assets/7d-logo.png' : '' };
       const box = await Seal.seal(key, { client, message, questions, firm });
       const res = await post('create', { id, box, expiresAt: Date.now() + DAYS * 864e5, replaces: replaces || undefined });
@@ -68,7 +68,11 @@
           if (!q) continue;
           const photos = (a.photos || []).filter((p) => p && /^data:(image\/(jpeg|png|webp)|application\/pdf);base64,/.test(p.data)).slice(0, 3);
           if (photos.length) await AttachStore.put(cid, a.ref, photos);
-          entries[q.key] = { ref: a.ref, topic: q.topic, question: q.question, answer: String(a.answer || '').slice(0, 5000), receipt: photos.length > 0, photos: photos.length, photoKey: photos.length ? `${cid}|${a.ref}` : undefined, docs: q.docs || undefined, expect: q.amount != null ? { date: q.date || '', payee: q.payee || '', amount: q.amount } : undefined, at, via: 'portal' };
+          const category = String(a.category || '').trim().slice(0, 100);
+          const job = String(a.job || '').trim().slice(0, 100);
+          const notes = String(a.answer || '').slice(0, 4600);
+          const answer = [category && `Category: ${category}`, job && `Job: ${job}`, notes].filter(Boolean).join(' · ');
+          entries[q.key] = { ref: a.ref, topic: q.topic, question: q.question, answer, category: category || undefined, job: job || undefined, receipt: photos.length > 0, photos: photos.length, photoKey: photos.length ? `${cid}|${a.ref}` : undefined, docs: q.docs || undefined, expect: q.amount != null ? { date: q.date || '', payee: q.payee || '', amount: q.amount } : undefined, at, via: 'portal' };
         }
         const record = { ...rec, status: 'received', receivedAt: Date.now(), receivedCount: Object.keys(entries).length };
         if (cid === openId && applyOpen) applyOpen(entries, record);
@@ -137,6 +141,7 @@
     if (!Portal.available()) return html`<div class="portal-block"><h3>${Icon.link}Answer link</h3><p class="hint">Answer links work on the app's own site (${(window.LedgerConfig && (window.LedgerConfig.googleOrigins || [])[0]) || 'the hosted address'}).</p></div>`;
     if (!canSave) return html`<div class="portal-block"><h3>${Icon.link}Answer link</h3><p class="hint">Upload a client's export to send them an answer link; the sample data can't be sent.</p></div>`;
     const active = Portal.active(portal);
+    const sms = active ? `sms:${/iPhone|iPad|iPod/.test(navigator.userAgent) ? '&' : '?'}body=${encodeURIComponent(`Please review these questions about your books: ${Portal.linkOf(portal)}`)}` : '';
     const link = active ? Portal.linkOf(portal) : '';
     const firmName = Firm.name || 'your bookkeeper';
     const mailto = active ? `mailto:${encodeURIComponent(portal.email || email)}?subject=${encodeURIComponent(`Questions about your books from ${firmName}`)}&body=${encodeURIComponent(`${text}\n\nAnswer here (the link is private to you and works until ${shortDate(portal.expiresAt)}):\n${link}`)}` : '';
@@ -145,7 +150,7 @@
       try {
         const rec = await Portal.create({ rows, client, message: text, email: email.trim(), replaces: active ? portal.id : undefined });
         setPortal(rec);
-        setStatus(`Link ready for ${rec.count} question${rec.count === 1 ? '' : 's'}. Press Email to client to send it from your email.`);
+        setStatus(`Link ready for ${rec.count} question${rec.count === 1 ? '' : 's'}. Use Email to client, Text link, or Copy link to share it.`);
       } catch (e) { setStatus(`The link could not be created: ${e.message}.`); }
       setBusy(false);
     };
@@ -162,6 +167,7 @@
           <input class="text portal-link" readonly value=${link} aria-label="Answer link" onFocus=${(e) => e.target.select()} />
           <div class="backup-actions">
             <a class="btn primary" href=${mailto}>${Icon.mail}Email to client</a>
+            <a class="btn" href=${sms}>Text link</a>
             <button class="btn" onClick=${async (e) => { const input = e.currentTarget.closest('.portal-block').querySelector('.portal-link'); const picked = () => { input.select(); return 'Link selected. Press Ctrl+C / Cmd+C to copy.'; }; setStatus(navigator.clipboard && navigator.clipboard.writeText ? await navigator.clipboard.writeText(link).then(() => 'Link copied.', picked) : picked()); }}>${Icon.copy}Copy link</button>
             <button class="btn" disabled=${busy} onClick=${async () => { setBusy(true); setStatus('Checking…'); const n = await onCheck(); setStatus(n ? '' : 'No answers yet.'); setBusy(false); }}>Check for answers</button>
             <button class="btn" disabled=${busy || !rows.length} title="Replace it with a link for the questions as they are now" onClick=${create}>New link</button>

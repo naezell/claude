@@ -144,6 +144,10 @@ subset with `node --test --test-name-pattern="..." test/ui.test.js`.
 - Free health check: `healthCheckFacts()` and `buildHealthCheck()` in the engine, the "Free health
   check" format in the Client report drawer. It gives counts and dollar totals only; it must never
   name a transaction, customer or vendor (a test checks). Landscapers get their own section.
+- Advisory tools (`advisory.html`) and the prospect health check (`health-check.html`) share
+  `src/statement-reports.js` for report-only analysis. `src/csv-input.js` loads before
+  `engine.js`, including in the worker. OAuth credentials and Watchdog state are encrypted
+  in a separate server-side store. See [docs/advisory-tools.md](docs/advisory-tools.md).
 - Branding comes from `src/firm.js`. Settings (Google client ID, support email) are in
   `src/config.js`.
 

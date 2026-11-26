@@ -61,31 +61,7 @@
   const Firm = window.LedgerFirm || {};
   const emptyProfile = (p) => !p || (!Object.keys(p.accountClass || {}).length && !Object.keys(p.reviewed || {}).length && !p.closed && !Object.keys(p.checklist || {}).length && !(p.customSteps || []).length && !p.cushion && !p.bench && !(p.loan && p.loan.amount) && !(p.tax && (p.tax.entity !== 'sole' || p.tax.rate || p.tax.salary || p.tax.paid)));
 
-  // The Excel reader (SheetJS) is large, so it loads only when an Excel file is dropped in.
-  const XLSX_URL = 'vendor/xlsx.full.min.js';
-  let xlsxLoading = null;
-  function loadXlsx() {
-    if (window.XLSX) return Promise.resolve(window.XLSX);
-    if (!xlsxLoading) {
-      xlsxLoading = new Promise((resolve, reject) => {
-        const el = document.createElement('script');
-        el.src = XLSX_URL;
-        el.onload = () => (window.XLSX ? resolve(window.XLSX) : reject(new Error('the Excel reader did not load')));
-        el.onerror = () => { xlsxLoading = null; reject(new Error('could not load the Excel reader. Check the connection, or export the report as CSV instead')); };
-        document.head.appendChild(el);
-      });
-    }
-    return xlsxLoading;
-  }
-
-  // First sheet of a workbook as CSV text, using the cells' displayed values (dates stay dates).
-  async function excelToCsv(buffer) {
-    const XLSX = await loadXlsx();
-    const wb = XLSX.read(new Uint8Array(buffer), { type: 'array' });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    if (!sheet) throw new Error('has no sheets.');
-    return XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
-  }
+  const { excelToCsv } = window.LedgerFiles;
 
   async function saveTextFile(filename, data) {
     const downloads = await downloadsReady;

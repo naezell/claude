@@ -112,5 +112,7 @@ export async function verifyGoogleToken(token, { clientId, keys, nowSec = Math.f
 export const PUBLIC_PATHS = ['/login', '/login.html', '/login.js', '/portal', '/portal.html', '/portal.js', '/src/sealed.js', '/api/portal/q', '/api/portal/answer', '/auth/verify', '/auth/logout', '/src/config.js', '/assets/7d-logo.png', '/assets/7d-mark.png', '/favicon.ico'];
 // Ticket screenshots (already blanked out) are shown in GitHub issues, so they open without
 // sign-in; each has a long random name that can't be guessed.
-export const PUBLIC_PREFIXES = ['/api/ticket/img/'];
-export const isPublic = (path) => PUBLIC_PATHS.includes(path) || PUBLIC_PREFIXES.some((p) => path.startsWith(p) && !path.includes('..'));
+const HEALTH_ASSETS = new Set(['/health-check', '/health-check.html', '/src/advisory-pages.css', '/src/health-check.js',
+  '/src/statement-input.js', '/src/statement-reports.js', '/src/csv-input.js', '/vendor/xlsx.full.min.js']);
+export const PUBLIC_PREFIXES = ['/api/ticket/img/', '/api/health-check/'];
+export const isPublic = (path) => PUBLIC_PATHS.includes(path) || HEALTH_ASSETS.has(path) || PUBLIC_PREFIXES.some((p) => path.startsWith(p) && !path.includes('..'));
