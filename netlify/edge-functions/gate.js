@@ -4,6 +4,13 @@ import { COOKIE, allowedList, getCookie, isPublic, readSession } from './lib/aut
 
 export default async (request, context) => {
   const url = new URL(request.url);
+  if (url.pathname === '/health-check.html' || url.pathname === '/health-check') {
+    const original = await context.next();
+    const headers = new Headers(original.headers);
+    headers.delete('X-Frame-Options');
+    headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'self' https://www.7dbusinesssolutions.com https://7dbusinesssolutions.com");
+    return new Response(original.body, { status: original.status, headers });
+  }
   if (isPublic(url.pathname)) return context.next();
   const secret = Netlify.env.get('SESSION_SECRET');
   const allowed = allowedList(Netlify.env.get('ALLOWED_EMAILS'));

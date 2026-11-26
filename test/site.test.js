@@ -202,6 +202,11 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   const first = client.page.locator('section.q').first();
   const firstQuestion = await first.locator('label.text').innerText();
   await first.locator('textarea').fill('Printer paper for the office');
+  await first.locator('select').selectOption('Office or software');
+  await first.getByLabel('Job or project').fill('Oak Street');
+  await client.page.getByRole('button', { name: 'Next', exact: true }).click();
+  await client.page.getByRole('button', { name: 'Previous', exact: true }).click();
+  assert.equal(await first.locator('select').inputValue(), 'Office or software');
   // A photo of a receipt for the amount asked about, drawn in the page.
   const amount = (firstQuestion.match(/\$[\d,]+\.\d{2}/) || ['$0.00'])[0];
   const receipt = Buffer.from(await client.page.evaluate((amt) => {
@@ -226,7 +231,7 @@ test('answer link: Mark sends it, the client answers with a photo, the answers c
   await page.click('.drawer-head button');
   const panel = page.locator('section.panel', { has: page.locator('h2', { hasText: 'Client answers' }) });
   await panel.waitFor();
-  assert.match(await panel.innerText(), /Printer paper for the office/);
+  assert.match(await panel.innerText(), /Category: Office or software · Job: Oak Street · Printer paper for the office/);
   assert.ok((await panel.innerText()).includes(firstQuestion.slice(0, 30)));
   await panel.locator('.answer-photos img').waitFor();
   // The receipt is read in the browser and checked against the amount asked about.
@@ -340,4 +345,34 @@ test('Flag a problem: pick a panel, the picture has amounts and names blanked, a
   assert.deepEqual(await page.evaluate(() => window.__csp), []);
   assert.deepEqual(errors, []);
   await page.close();
+});
+
+test('Advisory tools and the public file grader work on desktop and phone', async (t) => {
+  if (skip) return t.skip(skip);
+  const profit = 'Oak Services\nProfit and Loss\nFebruary 2026\n,Total\nIncome\nTotal Income,10000\nGross Profit,4800\nNet Income,3700';
+  const balance = 'Oak Services\nBalance Sheet\nAs of February 28 2026\n,Total\nASSETS\nTotal Bank Accounts,6000\nTOTAL ASSETS,6000\nLIABILITIES AND EQUITY';
+  const trial = 'Oak Services\nTrial Balance\nAccount,Account Type,Debit,Credit\nChecking,Bank,,50\nAsk My Accountant,Expenses,1500,';
+  const upload = (name, data) => ({ name, mimeType: 'text/csv', buffer: Buffer.from(data) });
+  for (const width of [1280, 400]) {
+    const adviser = await open('/advisory.html');
+    const health = await open('/health-check.html');
+    await adviser.page.setViewportSize({ width, height: 900 });
+    await health.page.setViewportSize({ width, height: 900 });
+    await adviser.page.fill('#period', '2026-02');
+    await adviser.page.setInputFiles('#current', upload('profit.csv', profit));
+    await adviser.page.setInputFiles('#balance', upload('balance.csv', balance));
+    await adviser.page.getByRole('button', { name: 'Generate from files' }).click();
+    await adviser.page.getByText('$3,700').waitFor();
+    await health.page.setInputFiles('#trial', upload('trial.csv', trial));
+    await health.page.fill('#months', '2');
+    await health.page.getByRole('button', { name: 'Grade my books' }).click();
+    await health.page.getByText('2 unreconciled months reported by you.').waitFor();
+    for (const { page, errors } of [adviser, health]) {
+      assert.deepEqual(errors, []);
+      assert.deepEqual(await page.evaluate(() => window.__csp), []);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      if (process.env.ADVISORY_SCREENSHOTS) await page.screenshot({ path: '/tmp/ledger-' + new URL(page.url()).pathname.slice(1) + '-' + width + '.png', fullPage: true });
+      await page.close();
+    }
+  }
 });
