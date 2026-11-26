@@ -75,7 +75,6 @@
     if (previous) app.appendChild(el('div', { class: 'msg good', text: 'Your answers were received. You can change them below and send again until your bookkeeper collects them.' }));
 
     var cards = [];
-    var deck = data.questions.some(function (q) { return q.coding && q.coding.length; });
     var position = 0;
     data.questions.forEach(function (q) {
       var state = answers[q.ref] || (answers[q.ref] = { answer: '', photos: [], category: '', job: '' });
@@ -117,7 +116,7 @@
           thumbs,
         ]),
       ]);
-      cards.push(card);
+      if (fields) cards.push({ card: card, ref: q.ref });
       app.appendChild(card);
       drawThumbs();
     });
@@ -126,25 +125,26 @@
     function hasAnswer(a) { return a && (a.answer.trim() || a.category || a.job.trim() || a.photos.length); }
     function refreshProgress() {
       if (!progress) return;
-      var count = data.questions.filter(function (q) { return hasAnswer(answers[q.ref]); }).length;
+      var count = cards.filter(function (item) { return hasAnswer(answers[item.ref]); }).length;
       progress.textContent = (position + 1) + ' of ' + cards.length + ' · ' + count + ' answered';
     }
     function showCard(index, focus) {
       if (index < 0 || index >= cards.length) return;
       position = index;
-      cards.forEach(function (card, i) { card.hidden = i !== position; });
+      cards.forEach(function (item, i) { item.card.hidden = i !== position; });
       back.disabled = position === 0;
       next.disabled = position === cards.length - 1;
       refreshProgress();
-      if (focus) cards[position].querySelector('.question-title').focus();
+      if (focus) cards[position].card.querySelector('.question-title').focus();
     }
-    if (deck) {
+    if (cards.length > 1) {
       progress = el('p', { class: 'hint deck-progress', role: 'status' });
       back = el('button', { class: 'btn', type: 'button', text: 'Previous', onclick: function () { showCard(position - 1, true); } });
       next = el('button', { class: 'btn', type: 'button', text: 'Next', onclick: function () { showCard(position + 1, true); } });
-      app.insertBefore(progress, cards[0]);
-      app.appendChild(el('div', { class: 'row deck-controls' }, [back, next]));
-      cards.forEach(function (card) {
+      app.insertBefore(progress, cards[0].card);
+      app.insertBefore(el('div', { class: 'row deck-controls' }, [back, next]), cards[cards.length - 1].card.nextSibling);
+      cards.forEach(function (item) {
+        var card = item.card;
         var start;
         card.addEventListener('touchstart', function (e) {
           start = e.touches.length === 1 && !e.target.closest('button,input,select,textarea,label') ? e.touches[0] : null;
